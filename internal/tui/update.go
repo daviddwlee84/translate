@@ -35,6 +35,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hist.SetItems(toListItems(msg.items))
 		return m, nil
 
+	case modelsLoadedMsg:
+		m.modelsLoading = false
+		m.modelsErr = msg.err
+		m.cachedModels = msg.models
+		m.modelList.SetItems(modelItems(msg.models, m.currentModelID()))
+		return m, nil
+
+	case tea.MouseWheelMsg:
+		return m.handleMouseWheel(msg)
+
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
@@ -91,27 +104,19 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	// History browsing mode captures keys until closed.
-	if m.showHistory {
+	// An open overlay (history / language / model picker) captures keys.
+	if m.overlay != overlayNone {
 		switch msg.String() {
 		case "ctrl+c":
 			m.cancelInflight()
 			return m, tea.Quit
-		case "esc", "ctrl+r":
-			m.showHistory = false
+		case "esc":
+			m.overlay = overlayNone
 			return m, nil
 		case "enter":
-			if it, ok := m.hist.SelectedItem().(histItem); ok {
-				m.ta.SetValue(it.rec.Input)
-				m.ta.MoveToEnd()
-				m.showHistory = false
-				return m.launch()
-			}
-			m.showHistory = false
-			return m, nil
+			return m.overlaySelect()
 		}
-		var cmd tea.Cmd
-		m.hist, cmd = m.hist.Update(msg)
+		cmd := m.overlayListUpdate(msg)
 		return m, cmd
 	}
 
@@ -121,8 +126,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.History):
-		m.showHistory = true
+		m.overlay = overlayHistory
 		return m, loadHistoryCmd(m.p.Store)
+
+	case key.Matches(msg, m.keys.PickLang):
+		m.overlay = overlayLang
+		return m, nil
+
+	case key.Matches(msg, m.keys.PickModel):
+		return m.openModelPicker()
 
 	case key.Matches(msg, m.keys.ToggleLive):
 		m.live = !m.live
@@ -206,6 +218,7 @@ func (m Model) launch() (tea.Model, tea.Cmd) {
 		Target: m.target,
 		Mode:   ne.Mode,
 		Stream: true, // ignored by non-streaming engines (google/dict)
+		Model:  m.modelOverride,
 	}
 	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
@@ -226,6 +239,97 @@ func (m *Model) cancelInflight() {
 		m.cancel = nil
 	}
 	m.inflight = 0
+}
+
+// currentModelID is the model id currently in effect (for the ✓ marker).
+func (m Model) currentModelID() string {
+	if m.modelOverride != "" {
+		return m.modelOverride
+	}
+	return m.curModel
+}
+
+// openModelPicker opens the model overlay, fetching the model list once per session.
+func (m Model) openModelPicker() (tea.Model, tea.Cmd) {
+	m.overlay = overlayModel
+	if m.cachedModels == nil && !m.modelsLoading && m.modelsErr == nil {
+		m.modelsLoading = true
+		return m, fetchModelsCmd(m.p.ModelSource)
+	}
+	return m, nil
+}
+
+// overlayListUpdate forwards a message to the active overlay's list.
+func (m *Model) overlayListUpdate(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	switch m.overlay {
+	case overlayHistory:
+		m.hist, cmd = m.hist.Update(msg)
+	case overlayLang:
+		m.langList, cmd = m.langList.Update(msg)
+	case overlayModel:
+		m.modelList, cmd = m.modelList.Update(msg)
+	}
+	return cmd
+}
+
+// overlaySelect applies the highlighted overlay item and closes the overlay.
+func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
+	switch m.overlay {
+	case overlayHistory:
+		if it, ok := m.hist.SelectedItem().(histItem); ok {
+			m.ta.SetValue(it.rec.Input)
+			m.ta.MoveToEnd()
+			m.overlay = overlayNone
+			return m.launch()
+		}
+	case overlayLang:
+		if it, ok := m.langList.SelectedItem().(langItem); ok {
+			m.target = it.code
+			m.overlay = overlayNone
+			if strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch()
+			}
+			return m, nil
+		}
+	case overlayModel:
+		if it, ok := m.modelList.SelectedItem().(modelItem); ok {
+			m.modelOverride = it.id
+			m.overlay = overlayNone
+			if strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch()
+			}
+			return m, nil
+		}
+	}
+	m.overlay = overlayNone
+	return m, nil
+}
+
+// handleMouseWheel scrolls the active overlay list, or the result viewport.
+func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	if m.overlay != overlayNone {
+		cmd := m.overlayListUpdate(msg)
+		return m, cmd
+	}
+	var cmd tea.Cmd
+	m.vp, cmd = m.vp.Update(msg)
+	return m, cmd
+}
+
+// handleMouseClick routes clicks. In an overlay it forwards to the list; in
+// normal mode a click on the footer row opens the language picker (like clicking
+// the language selector in a translator UI).
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if m.overlay != overlayNone {
+		cmd := m.overlayListUpdate(msg)
+		return m, cmd
+	}
+	if m.height > 0 && msg.Y == m.height-1 {
+		m.overlay = overlayLang
+		return m, nil
+	}
+	return m, nil
 }
 
 // recordFor builds a history record for a completed result.
@@ -268,5 +372,8 @@ func (m *Model) relayout() {
 	m.ta.SetHeight(inputH)
 	m.vp.SetWidth(compW)
 	m.vp.SetHeight(resultH)
-	m.hist.SetSize(m.width-2, m.height-footerH-1)
+	overlayH := m.height - footerH - 1
+	m.hist.SetSize(m.width-2, overlayH)
+	m.langList.SetSize(m.width-2, overlayH)
+	m.modelList.SetSize(m.width-2, overlayH)
 }

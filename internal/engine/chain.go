@@ -85,6 +85,7 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 	go func() {
 		defer close(out)
 		var lastErr error
+		var warns []string // reasons earlier engines were skipped/failed
 		for _, e := range cands {
 			if ctx.Err() != nil { // request abandoned (e.g. user typed more)
 				out <- Chunk{Kind: ChunkError, Err: ctx.Err()}
@@ -92,11 +93,13 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 			}
 			if c.recentlyDown(e) {
 				lastErr = fmt.Errorf("%s: recently unavailable", e.Name())
+				warns = append(warns, e.Name()+" skipped (recently unavailable)")
 				continue
 			}
 			sub, err := e.Translate(ctx, req)
 			if err != nil {
 				lastErr = err
+				warns = append(warns, err.Error()) // engine errors are already name-prefixed
 				c.mark(e, false)
 				continue
 			}
@@ -109,6 +112,9 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 					out <- ch
 				case ChunkDone:
 					c.mark(e, true)
+					if ch.Result != nil && len(warns) > 0 {
+						ch.Result.Warnings = append(ch.Result.Warnings, warns...)
+					}
 					out <- ch
 					return
 				case ChunkError:
@@ -123,7 +129,8 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 					out <- Chunk{Kind: ChunkError, Err: ctx.Err()}
 					return
 				}
-				if streamed { // already showed partial output: surface, don't restart
+				warns = append(warns, lastErr.Error()) // already name-prefixed
+				if streamed {                          // already showed partial output: surface, don't restart
 					out <- Chunk{Kind: ChunkError, Err: lastErr}
 					return
 				}

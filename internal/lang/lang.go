@@ -143,6 +143,13 @@ func Resolve(q string) (Match, []Match) {
 	return ranked[0], ranked[1:top]
 }
 
+// List returns all known languages (for the target-language picker).
+func List() []Lang {
+	out := make([]Lang, len(table))
+	copy(out, table)
+	return out
+}
+
 // Name returns the English name for a code, or the code itself if unknown.
 func Name(code string) string {
 	if strings.EqualFold(code, "auto") || code == "" {

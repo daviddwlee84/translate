@@ -25,8 +25,9 @@ type Request struct {
 	Source  string // BCP-47-ish code or "auto"/""
 	Target  string // e.g. "en", "zh"
 	Mode    Mode
-	MaxAlts int  // cap on Alternatives; 0 => engine default
-	Stream  bool // caller wants token streaming (LLM only; others ignore)
+	MaxAlts int    // cap on Alternatives; 0 => engine default
+	Stream  bool   // caller wants token streaming (LLM only; others ignore)
+	Model   string // optional per-request model override (LLM engines)
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it
@@ -38,6 +39,10 @@ type TranslateResult struct {
 	Alternatives   []string `json:"alternatives,omitempty"`
 	Notes          string   `json:"notes,omitempty"`
 	Confidence     float64  `json:"confidence,omitempty"`
+
+	// Warnings records non-fatal problems, e.g. a chain engine that failed before
+	// this (fallback) engine served the result — so a downgrade is never silent.
+	Warnings []string `json:"warnings,omitempty"`
 
 	// Provenance — stamped by the producing engine / chain.
 	Engine string `json:"engine,omitempty"`

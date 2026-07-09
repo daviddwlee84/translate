@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -173,10 +174,72 @@ func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, e
 		return nil, ErrEmptyInput
 	}
 	model := NormalizeModelID(e.cfg.Model)
+	if req.Model != "" {
+		model = NormalizeModelID(req.Model) // per-request override (model picker)
+	}
 	if isAnthropicModel(model) {
 		return e.translateAnthropic(ctx, req, model)
 	}
 	return e.translateOpenAI(ctx, req, model)
+}
+
+// ModelLister is implemented by engines that can enumerate their models.
+type ModelLister interface {
+	Models(ctx context.Context) ([]string, error)
+}
+
+type modelsResponse struct {
+	Data []struct {
+		ID                 string   `json:"id"`
+		SupportedEndpoints []string `json:"supported_endpoints"`
+	} `json:"data"`
+}
+
+// Models fetches the provider's model ids, keeping only those usable through the
+// transports this engine speaks: OpenAI /chat/completions, or (for claude-*) the
+// Anthropic /v1/messages endpoint. Ids needing only /responses are dropped.
+func (e *LLMEngine) Models(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.endpoint("/models"), nil)
+	if err != nil {
+		return nil, err
+	}
+	e.auth(req)
+	resp, err := e.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, e.httpError(resp)
+	}
+	var mr modelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&mr); err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, m := range mr.Data {
+		if usableModel(m.ID, m.SupportedEndpoints) {
+			out = append(out, m.ID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// usableModel reports whether a model id can be driven by this engine.
+func usableModel(id string, endpoints []string) bool {
+	if isAnthropicModel(id) {
+		return true // routed via /v1/messages
+	}
+	for _, ep := range endpoints {
+		if ep == "/chat/completions" {
+			return true
+		}
+	}
+	// No endpoint metadata (e.g. Ollama) => assume chat-usable.
+	return len(endpoints) == 0
 }
 
 // finalize builds the terminal result from the accumulated translation text.

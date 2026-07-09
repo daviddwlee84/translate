@@ -26,13 +26,14 @@ type NamedEngine struct {
 
 // Params configures a TUI session.
 type Params struct {
-	Engines    []NamedEngine // selectable engines; index 0 is the default
-	Store      store.Store   // nil when history is disabled
-	Source     string
-	Target     string
-	Model      string // display model id for the footer (initial)
-	Live       bool   // live-debounce default state
-	DebounceMs int
+	Engines     []NamedEngine      // selectable engines; index 0 is the default
+	ModelSource engine.ModelLister // fetches the model list for the model picker (may be nil)
+	Store       store.Store        // nil when history is disabled
+	Source      string
+	Target      string
+	Model       string // display model id for the footer (initial)
+	Live        bool   // live-debounce default state
+	DebounceMs  int
 }
 
 type status int
@@ -51,21 +52,29 @@ type Model struct {
 	p    Params
 	base context.Context
 
-	ta   textarea.Model
-	vp   viewport.Model
-	hist list.Model
-	sp   spinner.Model
-	keys keyMap
-	st   styles
+	ta        textarea.Model
+	vp        viewport.Model
+	hist      list.Model
+	langList  list.Model
+	modelList list.Model
+	sp        spinner.Model
+	keys      keyMap
+	st        styles
 
 	width, height int
 	ready         bool
-	showHistory   bool
+	overlay       overlayKind
 
 	source string
 	target string
 	live   bool
 	engIdx int // index into p.Engines (the active engine)
+
+	// model picker state (session-cached)
+	cachedModels  []string
+	modelOverride string
+	modelsLoading bool
+	modelsErr     error
 
 	// curEngine/curModel reflect the engine that actually served the last
 	// result (may differ from the selected engine when the auto chain falls back).
@@ -116,23 +125,33 @@ func New(ctx context.Context, p Params) Model {
 	hist.Title = "History (↵ recall · esc close)"
 	hist.SetShowHelp(false)
 
+	langList := list.New(langItems(), list.NewDefaultDelegate(), 0, 0)
+	langList.Title = "Target language (↵ select · esc close)"
+	langList.SetShowHelp(false)
+
+	modelList := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	modelList.Title = "Model (↵ select · esc close)"
+	modelList.SetShowHelp(false)
+
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 
 	return Model{
-		p:        p,
-		base:     ctx,
-		ta:       ta,
-		vp:       viewport.New(),
-		hist:     hist,
-		sp:       sp,
-		keys:     defaultKeys(),
-		st:       newStyles(),
-		source:   p.Source,
-		target:   p.Target,
-		live:     p.Live,
-		status:   statusIdle,
-		debounce: debounce,
+		p:         p,
+		base:      ctx,
+		ta:        ta,
+		vp:        viewport.New(),
+		hist:      hist,
+		langList:  langList,
+		modelList: modelList,
+		sp:        sp,
+		keys:      defaultKeys(),
+		st:        newStyles(),
+		source:    p.Source,
+		target:    p.Target,
+		live:      p.Live,
+		status:    statusIdle,
+		debounce:  debounce,
 	}
 }
 

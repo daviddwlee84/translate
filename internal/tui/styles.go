@@ -7,6 +7,7 @@ var (
 	colAccent = lg.Color("#7D56F4")
 	colDim    = lg.Color("#6C6C6C")
 	colErr    = lg.Color("#FF5F87")
+	colWarn   = lg.Color("#E0A500")
 	colOK     = lg.Color("#5FD787")
 	colText   = lg.Color("#D0D0D0")
 )
@@ -20,6 +21,7 @@ type styles struct {
 	trans   lg.Style
 	alt     lg.Style
 	notes   lg.Style
+	warn    lg.Style
 	errText lg.Style
 	dim     lg.Style
 	liveOn  lg.Style
@@ -37,6 +39,7 @@ func newStyles() styles {
 		trans:   lg.NewStyle().Foreground(colText).Bold(true),
 		alt:     lg.NewStyle().Foreground(colDim),
 		notes:   lg.NewStyle().Foreground(colDim).Italic(true),
+		warn:    lg.NewStyle().Foreground(colWarn),
 		errText: lg.NewStyle().Foreground(colErr),
 		dim:     lg.NewStyle().Foreground(colDim),
 		liveOn:  lg.NewStyle().Foreground(colOK),

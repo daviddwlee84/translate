@@ -225,14 +225,20 @@ func saveLastPair(source, target, engineName string) {
 // runTUI launches the interactive Bubble Tea front-end and persists the last
 // pair on exit.
 func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st store.Store, source, target string) error {
+	// A model source for the ^p model picker: the resolved LLM provider (if any).
+	var modelSrc engine.ModelLister
+	if res.Provider != nil {
+		modelSrc = llmFromProvider(res.Provider, res.Model)
+	}
 	p := tui.Params{
-		Engines:    buildEngineSet(res, eng),
-		Store:      st,
-		Source:     source,
-		Target:     target,
-		Model:      res.Model,
-		Live:       res.Cfg.General.LiveTranslate,
-		DebounceMs: res.Cfg.General.DebounceMs,
+		Engines:     buildEngineSet(res, eng),
+		ModelSource: modelSrc,
+		Store:       st,
+		Source:      source,
+		Target:      target,
+		Model:       res.Model,
+		Live:        res.Cfg.General.LiveTranslate,
+		DebounceMs:  res.Cfg.General.DebounceMs,
 	}
 	final, err := tea.NewProgram(tui.New(ctx, p), tea.WithContext(ctx)).Run()
 	if err != nil {
@@ -292,6 +298,15 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 			fmt.Println() // terminate any partial line before the error surfaces
 		}
 		return nil, err
+	}
+
+	// Never downgrade silently: if the auto-chain fell back, say which engine
+	// failed and why, and how to switch.
+	for _, w := range res.Warnings {
+		fmt.Fprintf(os.Stderr, "translate: warning: %s\n", w)
+	}
+	if len(res.Warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "translate: used %q (switch with --engine, or check the model/provider)\n", res.Engine)
 	}
 
 	switch {
