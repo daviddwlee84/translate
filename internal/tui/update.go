@@ -174,6 +174,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 			return m.launch(false)
 		}
+		m.clearResult()
 		return m, nil
 
 	case key.Matches(msg, m.keys.Copy):
@@ -196,11 +197,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.engIdx = (m.engIdx + 1) % n
 			m.curEngine, m.curModel = "", ""
 			m.relayout() // footer content (engine/mode) changed
-			// Only re-translate automatically in live mode; otherwise just switch
-			// the engine and let the user press Enter.
+			// Only re-translate automatically in live mode; otherwise switch the
+			// engine, clear the now-stale result, and wait for Enter.
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(true)
 			}
+			m.clearResult()
 		}
 		return m, nil
 
@@ -339,6 +341,18 @@ func (m *Model) cancelInflight() {
 	m.inflight = 0
 }
 
+// clearResult drops the shown result. Used when a setting (engine/lang/model/
+// style/pair) changes without an immediate re-translate, so the pane never shows
+// output that's stale relative to the (now different) footer.
+func (m *Model) clearResult() {
+	m.cancelInflight()
+	m.result = nil
+	m.streamBuf = ""
+	m.err = nil
+	m.status = statusIdle
+	m.vp.SetContent("")
+}
+
 // copyText returns the text to place on the clipboard for the current result.
 func (m Model) copyText() string {
 	if m.result == nil {
@@ -402,6 +416,7 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(true)
 			}
+			m.clearResult()
 			return m, nil
 		}
 	case overlayModel:
@@ -411,6 +426,7 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(true)
 			}
+			m.clearResult()
 			return m, nil
 		}
 	case overlaySuggest:
@@ -429,6 +445,7 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(false)
 			}
+			m.clearResult()
 			return m, nil
 		}
 	}
