@@ -95,7 +95,11 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 				m.curModel = msg.chunk.Result.Model
 			}
 			m.vp.SetContent(m.renderResult(*msg.chunk.Result))
-			return m, saveHistoryCmd(m.p.Store, m.recordFor(*msg.chunk.Result))
+			// Don't persist a suggestions-only result (empty translation, no entry).
+			if r := *msg.chunk.Result; r.Dictionary != nil || r.Translation != "" {
+				return m, saveHistoryCmd(m.p.Store, m.recordFor(r))
+			}
+			return m, nil
 		}
 		return m, nil
 
@@ -140,6 +144,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.PickModel):
+		if m.active().Mode == engine.ModeDict {
+			return m, nil // no model concept in dictionary mode
+		}
 		return m.openModelPicker()
 
 	case key.Matches(msg, m.keys.ToggleLive):
@@ -170,6 +177,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Translate):
+		// After a dictionary miss the input still equals the missed word, so a
+		// second Enter means "help me choose" — open the ranked suggestions.
+		if m.result != nil && len(m.result.Suggestions) > 0 &&
+			strings.TrimSpace(m.ta.Value()) == m.lastInput {
+			m.suggestList.SetItems(suggestItems(m.result.Suggestions))
+			m.overlay = overlaySuggest
+			return m, nil
+		}
 		return m.launch(true)
 	}
 
@@ -284,6 +299,8 @@ func (m *Model) overlayListUpdate(msg tea.Msg) tea.Cmd {
 		m.langList, cmd = m.langList.Update(msg)
 	case overlayModel:
 		m.modelList, cmd = m.modelList.Update(msg)
+	case overlaySuggest:
+		m.suggestList, cmd = m.suggestList.Update(msg)
 	}
 	return cmd
 }
@@ -316,6 +333,14 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 				return m.launch(true)
 			}
 			return m, nil
+		}
+	case overlaySuggest:
+		// Picking a suggestion updates the input and looks it up.
+		if it, ok := m.suggestList.SelectedItem().(suggestItem); ok {
+			m.ta.SetValue(it.word)
+			m.ta.MoveToEnd()
+			m.overlay = overlayNone
+			return m.launch(true)
 		}
 	}
 	m.overlay = overlayNone
@@ -393,4 +418,5 @@ func (m *Model) relayout() {
 	m.hist.SetSize(m.width-2, overlayH)
 	m.langList.SetSize(m.width-2, overlayH)
 	m.modelList.SetSize(m.width-2, overlayH)
+	m.suggestList.SetSize(m.width-2, overlayH)
 }

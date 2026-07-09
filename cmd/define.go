@@ -55,12 +55,12 @@ func runDefine(cmd *cobra.Command, args []string) error {
 func renderDict(res *engine.TranslateResult) string {
 	d := res.Dictionary
 	if d == nil {
+		if len(res.Suggestions) > 0 {
+			return "no exact match — did you mean: " + strings.Join(res.Suggestions, ", ") + "\n"
+		}
 		return res.Translation + "\n"
 	}
 	var b strings.Builder
-	if res.Fuzzy && res.FuzzyMatched != "" {
-		b.WriteString(fmt.Sprintf("(no exact match — showing nearest: %s)\n", res.FuzzyMatched))
-	}
 	head := d.Word
 	if d.Phonetic != "" {
 		head += "  " + d.Phonetic

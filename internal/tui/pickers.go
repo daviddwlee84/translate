@@ -19,6 +19,7 @@ const (
 	overlayHistory
 	overlayLang
 	overlayModel
+	overlaySuggest
 )
 
 // --- target-language picker ---
@@ -60,6 +61,22 @@ func modelItems(models []string, current string) []list.Item {
 	items := make([]list.Item, len(models))
 	for i, id := range models {
 		items[i] = modelItem{id: id, current: id == current}
+	}
+	return items
+}
+
+// --- dictionary "did you mean" suggestions ---
+
+type suggestItem struct{ word string }
+
+func (s suggestItem) Title() string       { return s.word }
+func (s suggestItem) Description() string { return "" }
+func (s suggestItem) FilterValue() string { return s.word }
+
+func suggestItems(words []string) []list.Item {
+	items := make([]list.Item, len(words))
+	for i, w := range words {
+		items[i] = suggestItem{word: w}
 	}
 	return items
 }

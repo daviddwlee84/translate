@@ -52,9 +52,11 @@ type TranslateResult struct {
 	Model  string `json:"model,omitempty"`
 
 	// Dictionary payload (Mode == ModeDict); nil for translate mode.
-	Dictionary   *DictEntry `json:"dictionary,omitempty"`
-	Fuzzy        bool       `json:"fuzzy,omitempty"`
-	FuzzyMatched string     `json:"fuzzy_matched,omitempty"`
+	Dictionary *DictEntry `json:"dictionary,omitempty"`
+	// Suggestions is a ranked "did you mean" list, set by the dictionary engine
+	// when no exact entry was found (Dictionary and Translation stay empty). The
+	// frontend decides how to present/select — the engine no longer auto-picks.
+	Suggestions []string `json:"suggestions,omitempty"`
 }
 
 // DictEntry is a dictionary lookup payload (populated by the dictionary engine).

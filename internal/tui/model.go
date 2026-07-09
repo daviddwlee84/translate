@@ -53,14 +53,15 @@ type Model struct {
 	p    Params
 	base context.Context
 
-	ta        textarea.Model
-	vp        viewport.Model
-	hist      list.Model
-	langList  list.Model
-	modelList list.Model
-	sp        spinner.Model
-	keys      keyMap
-	st        styles
+	ta          textarea.Model
+	vp          viewport.Model
+	hist        list.Model
+	langList    list.Model
+	modelList   list.Model
+	suggestList list.Model
+	sp          spinner.Model
+	keys        keyMap
+	st          styles
 
 	width, height int
 	ready         bool
@@ -136,25 +137,30 @@ func New(ctx context.Context, p Params) Model {
 	modelList.Title = "Model (↵ select · esc close)"
 	modelList.SetShowHelp(false)
 
+	suggestList := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	suggestList.Title = "Did you mean? (↵ look up · esc close)"
+	suggestList.SetShowHelp(false)
+
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 
 	return Model{
-		p:         p,
-		base:      ctx,
-		ta:        ta,
-		vp:        viewport.New(),
-		hist:      hist,
-		langList:  langList,
-		modelList: modelList,
-		sp:        sp,
-		keys:      defaultKeys(),
-		st:        newStyles(),
-		source:    p.Source,
-		target:    p.Target,
-		live:      p.Live,
-		status:    statusIdle,
-		debounce:  debounce,
+		p:           p,
+		base:        ctx,
+		ta:          ta,
+		vp:          viewport.New(),
+		hist:        hist,
+		langList:    langList,
+		modelList:   modelList,
+		suggestList: suggestList,
+		sp:          sp,
+		keys:        defaultKeys(),
+		st:          newStyles(),
+		source:      p.Source,
+		target:      p.Target,
+		live:        p.Live,
+		status:      statusIdle,
+		debounce:    debounce,
 	}
 }
 

@@ -7,12 +7,16 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/agnivade/levenshtein"
 )
+
+// suggestLimit caps the number of ranked "did you mean" candidates on a miss.
+const suggestLimit = 7
 
 // DictConfig configures the dictionary engine.
 type DictConfig struct {
@@ -75,31 +79,28 @@ func (e *DictEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, 
 
 	entry, status, err := e.fetch(ctx, word)
 	if err == nil && status == http.StatusOK && entry != nil {
-		return single(e.result(entry, req, false, ""), nil), nil
+		return single(e.result(entry, req), nil), nil
 	}
 	if err != nil {
 		return single(nil, fmt.Errorf("dictionary: %w", err)), nil
 	}
 
-	// 404 (or empty): try the nearest local headword.
-	if status == http.StatusNotFound && e.cfg.Fuzzy {
-		if cand, ok := e.wl.nearest(word, 2); ok && cand != word {
-			if entry2, s2, e2 := e.fetch(ctx, cand); e2 == nil && s2 == http.StatusOK && entry2 != nil {
-				return single(e.result(entry2, req, true, cand), nil), nil
-			}
+	// 404: return a ranked "did you mean" list (the frontend chooses one). Gated
+	// to English because the bundled wordlist (/usr/share/dict/words) is English.
+	if status == http.StatusNotFound && e.cfg.Fuzzy && strings.HasPrefix(strings.ToLower(e.cfg.Lang), "en") {
+		if cands := e.wl.nearestN(word, 2, suggestLimit); len(cands) > 0 {
+			return single(&TranslateResult{Target: req.Target, Engine: e.Name(), Suggestions: cands}, nil), nil
 		}
 	}
 	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word)), nil
 }
 
-func (e *DictEngine) result(entry *DictEntry, req Request, fuzzy bool, matched string) *TranslateResult {
+func (e *DictEngine) result(entry *DictEntry, req Request) *TranslateResult {
 	return &TranslateResult{
-		Translation:  entry.gloss(),
-		Target:       req.Target,
-		Engine:       e.Name(),
-		Dictionary:   entry,
-		Fuzzy:        fuzzy,
-		FuzzyMatched: matched,
+		Translation: entry.gloss(),
+		Target:      req.Target,
+		Engine:      e.Name(),
+		Dictionary:  entry,
 	}
 }
 
@@ -223,27 +224,37 @@ func (wi *wordIndex) load() {
 	})
 }
 
-// nearest returns the closest word within maxDist edits, or ("", false).
-func (wi *wordIndex) nearest(word string, maxDist int) (string, bool) {
+// nearestN returns up to n headwords within maxDist edits of word, closest first
+// (ties broken alphabetically), excluding word itself.
+func (wi *wordIndex) nearestN(word string, maxDist, n int) []string {
 	wi.load()
-	best := ""
-	bestD := maxDist + 1
+	type cand struct {
+		w string
+		d int
+	}
+	var cs []cand
 	for _, w := range wi.words {
-		if abs(len(w)-len(word)) > maxDist {
+		if w == word || abs(len(w)-len(word)) > maxDist {
 			continue
 		}
-		d := levenshtein.ComputeDistance(word, w)
-		if d < bestD {
-			bestD, best = d, w
-			if d == 0 {
-				break
-			}
+		if d := levenshtein.ComputeDistance(word, w); d <= maxDist {
+			cs = append(cs, cand{w, d})
 		}
 	}
-	if best != "" && bestD <= maxDist {
-		return best, true
+	sort.Slice(cs, func(i, j int) bool {
+		if cs[i].d != cs[j].d {
+			return cs[i].d < cs[j].d
+		}
+		return cs[i].w < cs[j].w
+	})
+	if len(cs) > n {
+		cs = cs[:n]
 	}
-	return "", false
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.w
+	}
+	return out
 }
 
 func abs(n int) int {

@@ -53,14 +53,19 @@ func (m Model) overlayBody() string {
 		default:
 			return m.modelList.View()
 		}
+	case overlaySuggest:
+		return m.suggestList.View()
 	}
 	return ""
 }
 
 func (m Model) overlayFooter() string {
 	hint := "↵ select  esc close  ^c quit"
-	if m.overlay == overlayHistory {
+	switch m.overlay {
+	case overlayHistory:
 		hint = "↵ recall  esc close  ^c quit"
+	case overlaySuggest:
+		hint = "↵ look up  esc close  ^c quit"
 	}
 	return m.st.footer.Width(m.width).Render(m.st.dim.Render(hint))
 }
@@ -75,18 +80,6 @@ func altView(content string) tea.View {
 
 // statusLine renders the state segment and the key hints.
 func (m Model) statusLine() string {
-	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
-
-	// Engine segment: the selected engine name, plus the model that actually
-	// served the last result (once known).
-	engineSeg := m.active().Name
-	if m.curEngine != "" && m.curEngine != m.active().Name {
-		engineSeg = m.curEngine // chain fell back to a specific engine
-	}
-	if m.curModel != "" {
-		engineSeg = fmt.Sprintf("%s (%s)", engineSeg, m.curModel)
-	}
-
 	live := m.st.liveOff.Render("live○")
 	if m.live {
 		live = m.st.liveOn.Render("live●")
@@ -98,6 +91,31 @@ func (m Model) statusLine() string {
 		state = m.sp.View() + " " + m.st.dim.Render("translating")
 	case statusError:
 		state = m.st.errText.Render("error")
+	}
+
+	// Dictionary mode: no source→target pair (the API is English-only), and no
+	// ^t lang / ^p model (neither applies).
+	if m.active().Mode == engine.ModeDict {
+		left := strings.Join([]string{
+			m.st.label.Render("dictionary (English)"),
+			live,
+		}, m.st.dim.Render(" · "))
+		if state != "" {
+			left += "  " + state
+		}
+		return left + "  " + m.st.dim.Render("↵ define  ^l live  ^e engine  ^r history  ^c quit")
+	}
+
+	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
+
+	// Engine segment: the selected engine name, plus the model that actually
+	// served the last result (once known).
+	engineSeg := m.active().Name
+	if m.curEngine != "" && m.curEngine != m.active().Name {
+		engineSeg = m.curEngine // chain fell back to a specific engine
+	}
+	if m.curModel != "" {
+		engineSeg = fmt.Sprintf("%s (%s)", engineSeg, m.curModel)
 	}
 
 	left := strings.Join([]string{
@@ -113,11 +131,14 @@ func (m Model) statusLine() string {
 	return left + "  " + help
 }
 
-// renderResult formats a completed translation, or a dictionary entry when the
-// active engine returned one.
+// renderResult formats a completed translation, a dictionary entry, or a ranked
+// "did you mean" list when a dictionary lookup missed.
 func (m Model) renderResult(res engine.TranslateResult) string {
 	if res.Dictionary != nil {
 		return m.renderDictionary(res)
+	}
+	if len(res.Suggestions) > 0 {
+		return m.renderSuggestions(res)
 	}
 	var b strings.Builder
 	b.WriteString(m.st.trans.Render(res.Translation))
@@ -144,9 +165,6 @@ func (m Model) renderResult(res engine.TranslateResult) string {
 func (m Model) renderDictionary(res engine.TranslateResult) string {
 	d := res.Dictionary
 	var b strings.Builder
-	if res.Fuzzy && res.FuzzyMatched != "" {
-		b.WriteString(m.st.dim.Render("nearest: "+res.FuzzyMatched) + "\n")
-	}
 	head := d.Word
 	if d.Phonetic != "" {
 		head += "  " + d.Phonetic
@@ -161,5 +179,16 @@ func (m Model) renderDictionary(res engine.TranslateResult) string {
 			b.WriteString("\n" + m.st.alt.Render("• "+def.Text))
 		}
 	}
+	return b.String()
+}
+
+// renderSuggestions renders the ranked "did you mean" list for a dictionary miss.
+func (m Model) renderSuggestions(res engine.TranslateResult) string {
+	var b strings.Builder
+	b.WriteString(m.st.dim.Render("no exact match — did you mean:"))
+	for i, w := range res.Suggestions {
+		b.WriteString("\n" + m.st.dim.Render(fmt.Sprintf("%d.", i+1)) + " " + m.st.alt.Render(w))
+	}
+	b.WriteString("\n" + m.st.dim.Render("↵ choose"))
 	return b.String()
 }
