@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"translate/internal/engine"
+	"translate/internal/store"
 )
 
 // Update handles messages. Value receiver returning the modified copy is the
@@ -28,6 +29,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // a newer keystroke arrived; this tick is stale
 		}
 		return m.launch()
+
+	case historyLoadedMsg:
+		m.hist.SetItems(toListItems(msg.items))
+		return m, nil
 
 	case streamMsg:
 		return m.handleStream(msg)
@@ -65,6 +70,7 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 				m.curModel = msg.chunk.Result.Model
 			}
 			m.vp.SetContent(m.renderResult(*msg.chunk.Result))
+			return m, saveHistoryCmd(m.p.Store, m.recordFor(*msg.chunk.Result))
 		}
 		return m, nil
 
@@ -79,10 +85,38 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// History browsing mode captures keys until closed.
+	if m.showHistory {
+		switch msg.String() {
+		case "ctrl+c":
+			m.cancelInflight()
+			return m, tea.Quit
+		case "esc", "ctrl+r":
+			m.showHistory = false
+			return m, nil
+		case "enter":
+			if it, ok := m.hist.SelectedItem().(histItem); ok {
+				m.ta.SetValue(it.rec.Input)
+				m.ta.MoveToEnd()
+				m.showHistory = false
+				return m.launch()
+			}
+			m.showHistory = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.hist, cmd = m.hist.Update(msg)
+		return m, cmd
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		m.cancelInflight()
 		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.History):
+		m.showHistory = true
+		return m, loadHistoryCmd(m.p.Store)
 
 	case key.Matches(msg, m.keys.ToggleLive):
 		m.live = !m.live
@@ -146,6 +180,7 @@ func (m Model) launch() (tea.Model, tea.Cmd) {
 	m.streamBuf.Reset()
 	m.err = nil
 	m.result = nil
+	m.lastInput = text
 
 	seq := m.seq
 	req := engine.Request{
@@ -176,6 +211,24 @@ func (m *Model) cancelInflight() {
 	m.inflight = 0
 }
 
+// recordFor builds a history record for a completed result.
+func (m Model) recordFor(res engine.TranslateResult) store.Record {
+	src := m.source
+	if src == "auto" && res.DetectedSource != "" {
+		src = res.DetectedSource
+	}
+	return store.Record{
+		SourceLang:   src,
+		TargetLang:   m.target,
+		Engine:       res.Engine,
+		Model:        res.Model,
+		Input:        m.lastInput,
+		Output:       res.Translation,
+		Alternatives: res.Alternatives,
+		Notes:        res.Notes,
+	}
+}
+
 // relayout recomputes component sizes for the current window. Widths account for
 // each box's border (2) and horizontal padding (2).
 func (m *Model) relayout() {
@@ -198,4 +251,5 @@ func (m *Model) relayout() {
 	m.ta.SetHeight(inputH)
 	m.vp.SetWidth(compW)
 	m.vp.SetHeight(resultH)
+	m.hist.SetSize(m.width-2, m.height-footerH-1)
 }

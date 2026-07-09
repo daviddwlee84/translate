@@ -8,16 +8,19 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"translate/internal/engine"
+	"translate/internal/store"
 )
 
 // Params configures a TUI session.
 type Params struct {
 	Engine     engine.Engine
+	Store      store.Store // nil when history is disabled
 	Source     string
 	Target     string
 	Provider   string // display name for the footer
@@ -44,11 +47,13 @@ type Model struct {
 
 	ta   textarea.Model
 	vp   viewport.Model
+	hist list.Model
 	keys keyMap
 	st   styles
 
 	width, height int
 	ready         bool
+	showHistory   bool
 
 	source string
 	target string
@@ -71,6 +76,7 @@ type Model struct {
 	stream    <-chan engine.Chunk
 	streamBuf strings.Builder
 	debounce  time.Duration
+	lastInput string // input text that produced the in-flight/last request
 }
 
 // New builds a TUI model.
@@ -88,11 +94,16 @@ func New(ctx context.Context, p Params) Model {
 		debounce = 400 * time.Millisecond
 	}
 
+	hist := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	hist.Title = "History (↵ recall · esc close)"
+	hist.SetShowHelp(false)
+
 	return Model{
 		p:        p,
 		base:     ctx,
 		ta:       ta,
 		vp:       viewport.New(),
+		hist:     hist,
 		keys:     defaultKeys(),
 		st:       newStyles(),
 		source:   p.Source,
@@ -102,6 +113,10 @@ func New(ctx context.Context, p Params) Model {
 		debounce: debounce,
 	}
 }
+
+// Pair returns the current source and target language codes (read by the caller
+// after the program exits to persist the last pair).
+func (m Model) Pair() (source, target string) { return m.source, m.target }
 
 // Init requests the initial window size and starts the cursor blink.
 func (m Model) Init() tea.Cmd {

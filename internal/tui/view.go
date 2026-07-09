@@ -15,10 +15,13 @@ import (
 // AltScreen is set declaratively (the v2 way; there is no WithAltScreen option).
 func (m Model) View() tea.View {
 	if !m.ready {
-		v := tea.NewView("initializing…")
-		v.AltScreen = true
-		return v
+		return altView("initializing…")
 	}
+	if m.showHistory {
+		footer := m.st.footer.Width(m.width).Render(m.st.dim.Render("↵ recall  esc close  ^c quit"))
+		return altView(lg.JoinVertical(lg.Left, m.hist.View(), footer))
+	}
+
 	inStyle := m.st.input
 	if m.ta.Focused() {
 		inStyle = m.st.inputHi
@@ -27,8 +30,12 @@ func (m Model) View() tea.View {
 	result := m.st.result.Width(m.width - 2).Render(m.vp.View())
 	footer := m.st.footer.Width(m.width).Render(m.statusLine())
 
-	body := lg.JoinVertical(lg.Left, input, result, footer)
-	v := tea.NewView(body)
+	return altView(lg.JoinVertical(lg.Left, input, result, footer))
+}
+
+// altView wraps content in a full-screen (alt-screen) tea.View.
+func altView(content string) tea.View {
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }
