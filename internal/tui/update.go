@@ -29,7 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.seq {
 			return m, nil // a newer keystroke arrived; this tick is stale
 		}
-		return m.launch()
+		return m.launch(false)
 
 	case historyLoadedMsg:
 		m.hist.SetItems(toListItems(msg.items))
@@ -51,6 +51,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
+		// Animate the placeholder inside the (fixed-height) viewport so the
+		// layout never jumps while waiting for the first token.
+		if m.status == statusTranslating && m.streamBuf == "" {
+			m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…"))
+		}
 		return m, cmd
 
 	case streamMsg:
@@ -80,6 +85,7 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 		m.inflight = 0
 		m.status = statusDone
 		m.err = nil
+		m.lastDone = m.lastInput // remember what was translated (skip re-runs)
 		if msg.chunk.Result != nil {
 			m.result = msg.chunk.Result
 			if msg.chunk.Result.Engine != "" {
@@ -144,8 +150,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if n := len(m.p.Engines); n > 1 {
 			m.engIdx = (m.engIdx + 1) % n
 			m.curEngine, m.curModel = "", ""
-			if strings.TrimSpace(m.ta.Value()) != "" {
-				return m.launch() // re-run with the newly selected engine
+			// Only re-translate automatically in live mode; otherwise just switch
+			// the engine and let the user press Enter.
+			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch(true)
 			}
 		}
 		return m, nil
@@ -162,7 +170,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Translate):
-		return m.launch()
+		return m.launch(true)
 	}
 
 	// Ordinary keystroke: update the textarea, then (re)arm the debounce.
@@ -191,11 +199,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // launch starts a streaming translation for the current input, cancelling any
 // in-flight request first. It is the single place a translation begins.
-func (m Model) launch() (tea.Model, tea.Cmd) {
+// When force is false (the live/debounce path) it skips re-translating text that
+// was already translated, to avoid redundant LLM/API calls.
+func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 	text := strings.TrimSpace(m.ta.Value())
 	if text == "" {
 		m.status = statusIdle
 		return m, nil
+	}
+	if !force && text == m.lastDone && m.status == statusDone {
+		return m, nil // nothing changed since the last translation
 	}
 	m.seq++
 	if m.cancel != nil {
@@ -209,16 +222,18 @@ func (m Model) launch() (tea.Model, tea.Cmd) {
 	m.err = nil
 	m.result = nil
 	m.lastInput = text
+	m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…")) // fixed-height placeholder
 
 	seq := m.seq
 	ne := m.active()
 	req := engine.Request{
-		Text:   text,
-		Source: m.source,
-		Target: m.target,
-		Mode:   ne.Mode,
-		Stream: true, // ignored by non-streaming engines (google/dict)
-		Model:  m.modelOverride,
+		Text:          text,
+		Source:        m.source,
+		Target:        m.target,
+		Mode:          ne.Mode,
+		Stream:        true, // ignored by non-streaming engines (google/dict)
+		Model:         m.modelOverride,
+		ModelProvider: m.p.ModelProvider,
 	}
 	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
@@ -277,18 +292,19 @@ func (m *Model) overlayListUpdate(msg tea.Msg) tea.Cmd {
 func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 	switch m.overlay {
 	case overlayHistory:
+		// Recall is an explicit "show me this" action: always translate.
 		if it, ok := m.hist.SelectedItem().(histItem); ok {
 			m.ta.SetValue(it.rec.Input)
 			m.ta.MoveToEnd()
 			m.overlay = overlayNone
-			return m.launch()
+			return m.launch(true)
 		}
 	case overlayLang:
 		if it, ok := m.langList.SelectedItem().(langItem); ok {
 			m.target = it.code
 			m.overlay = overlayNone
-			if strings.TrimSpace(m.ta.Value()) != "" {
-				return m.launch()
+			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch(true)
 			}
 			return m, nil
 		}
@@ -296,8 +312,8 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 		if it, ok := m.modelList.SelectedItem().(modelItem); ok {
 			m.modelOverride = it.id
 			m.overlay = overlayNone
-			if strings.TrimSpace(m.ta.Value()) != "" {
-				return m.launch()
+			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch(true)
 			}
 			return m, nil
 		}
@@ -372,6 +388,7 @@ func (m *Model) relayout() {
 	m.ta.SetHeight(inputH)
 	m.vp.SetWidth(compW)
 	m.vp.SetHeight(resultH)
+	m.resultH = resultH
 	overlayH := m.height - footerH - 1
 	m.hist.SetSize(m.width-2, overlayH)
 	m.langList.SetSize(m.width-2, overlayH)

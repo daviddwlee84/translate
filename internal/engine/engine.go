@@ -28,6 +28,9 @@ type Request struct {
 	MaxAlts int    // cap on Alternatives; 0 => engine default
 	Stream  bool   // caller wants token streaming (LLM only; others ignore)
 	Model   string // optional per-request model override (LLM engines)
+	// ModelProvider scopes Model to one provider by name; other engines ignore
+	// the override (so a copilot model id never leaks to an Ollama fallback).
+	ModelProvider string
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it

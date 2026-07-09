@@ -27,13 +27,9 @@ func (m Model) View() tea.View {
 	}
 	input := inStyle.Width(m.width - 2).Render(m.ta.View())
 
-	// While waiting for the first token, show an animated spinner in the result
-	// pane so inference is clearly perceptible (esp. for non-streaming engines).
-	body := m.vp.View()
-	if m.status == statusTranslating && m.streamBuf == "" {
-		body = m.sp.View() + " " + m.st.dim.Render("translating…")
-	}
-	result := m.st.result.Width(m.width - 2).Render(body)
+	// The result box is kept at a fixed height (viewport height) so the layout
+	// never jumps between the "translating…" placeholder and streamed output.
+	result := m.st.result.Width(m.width - 2).Height(m.resultH).Render(m.vp.View())
 	footer := m.st.footer.Width(m.width).Render(m.statusLine())
 
 	return altView(lg.JoinVertical(lg.Left, input, result, footer))

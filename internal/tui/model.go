@@ -26,14 +26,15 @@ type NamedEngine struct {
 
 // Params configures a TUI session.
 type Params struct {
-	Engines     []NamedEngine      // selectable engines; index 0 is the default
-	ModelSource engine.ModelLister // fetches the model list for the model picker (may be nil)
-	Store       store.Store        // nil when history is disabled
-	Source      string
-	Target      string
-	Model       string // display model id for the footer (initial)
-	Live        bool   // live-debounce default state
-	DebounceMs  int
+	Engines       []NamedEngine      // selectable engines; index 0 is the default
+	ModelSource   engine.ModelLister // fetches the model list for the model picker (may be nil)
+	ModelProvider string             // provider name the model override applies to
+	Store         store.Store        // nil when history is disabled
+	Source        string
+	Target        string
+	Model         string // display model id for the footer (initial)
+	Live          bool   // live-debounce default state
+	DebounceMs    int
 }
 
 type status int
@@ -64,6 +65,7 @@ type Model struct {
 	width, height int
 	ready         bool
 	overlay       overlayKind
+	resultH       int // result viewport height (kept fixed to avoid layout jumps)
 
 	source string
 	target string
@@ -96,6 +98,7 @@ type Model struct {
 	streamBuf string
 	debounce  time.Duration
 	lastInput string // input text that produced the in-flight/last request
+	lastDone  string // input text of the last COMPLETED translation (skip re-runs)
 }
 
 // active returns the currently selected engine.

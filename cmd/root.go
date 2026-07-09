@@ -227,18 +227,21 @@ func saveLastPair(source, target, engineName string) {
 func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st store.Store, source, target string) error {
 	// A model source for the ^p model picker: the resolved LLM provider (if any).
 	var modelSrc engine.ModelLister
+	modelProvider := ""
 	if res.Provider != nil {
 		modelSrc = llmFromProvider(res.Provider, res.Model)
+		modelProvider = res.Provider.Name
 	}
 	p := tui.Params{
-		Engines:     buildEngineSet(res, eng),
-		ModelSource: modelSrc,
-		Store:       st,
-		Source:      source,
-		Target:      target,
-		Model:       res.Model,
-		Live:        res.Cfg.General.LiveTranslate,
-		DebounceMs:  res.Cfg.General.DebounceMs,
+		Engines:       buildEngineSet(res, eng),
+		ModelSource:   modelSrc,
+		ModelProvider: modelProvider,
+		Store:         st,
+		Source:        source,
+		Target:        target,
+		Model:         res.Model,
+		Live:          res.Cfg.General.LiveTranslate,
+		DebounceMs:    res.Cfg.General.DebounceMs,
 	}
 	final, err := tea.NewProgram(tui.New(ctx, p), tea.WithContext(ctx)).Run()
 	if err != nil {

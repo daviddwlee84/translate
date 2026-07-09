@@ -174,8 +174,10 @@ func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, e
 		return nil, ErrEmptyInput
 	}
 	model := NormalizeModelID(e.cfg.Model)
-	if req.Model != "" {
-		model = NormalizeModelID(req.Model) // per-request override (model picker)
+	// Apply a per-request model override only when it targets this provider, so a
+	// copilot model id never reaches an Ollama fallback (which would 404).
+	if req.Model != "" && (req.ModelProvider == "" || req.ModelProvider == e.cfg.Name) {
+		model = NormalizeModelID(req.Model)
 	}
 	if isAnthropicModel(model) {
 		return e.translateAnthropic(ctx, req, model)

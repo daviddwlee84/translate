@@ -94,8 +94,8 @@ func Default() *Config {
 			DefaultTarget:     "en",
 			DefaultSource:     "auto",
 			RememberLastPair:  true,
-			LiveTranslate:     true,
-			DebounceMs:        400,
+			LiveTranslate:     false, // off by default to avoid spamming LLM/API while typing
+			DebounceMs:        700,   // when live is on, wait longer before firing
 			Engine:            "auto",
 			Tier:              "fast", // haiku by default — snappy for short, quick translations
 			AlternativesCount: 3,

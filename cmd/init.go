@@ -51,15 +51,17 @@ func runInit(cmd *cobra.Command, _ []string) error {
 				).
 				Value(&engineChoice),
 
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Default target language").
-				Description("Name or code; typos are resolved (e.g. chinees → zh).").
-				Value(&target).
-				Validate(validateLang),
+				Description("Type to filter; auto-detect is always the source.").
+				Options(targetLangOptions()...).
+				Height(12).
+				Filtering(true).
+				Value(&target),
 
 			huh.NewConfirm().
 				Title("Live translate?").
-				Description("Auto-translate ~400ms after you stop typing.").
+				Description("Auto-translate as you type. Off by default to avoid spamming the API.").
 				Value(&live),
 		),
 	)
@@ -67,9 +69,6 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if m, _ := lang.Resolve(target); m.Code != "" {
-		target = m.Code
-	}
 	cfg.General.Engine = engineChoice
 	cfg.General.DefaultTarget = target
 	cfg.General.LiveTranslate = live
@@ -95,14 +94,14 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func validateLang(s string) error {
-	if strings.TrimSpace(s) == "" {
-		return fmt.Errorf("a target language is required")
+// targetLangOptions builds the language dropdown options (name + code).
+func targetLangOptions() []huh.Option[string] {
+	ls := lang.List()
+	opts := make([]huh.Option[string], 0, len(ls))
+	for _, l := range ls {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%s)", l.Name, l.Code), l.Code))
 	}
-	if m, _ := lang.Resolve(s); m.Code == "" {
-		return fmt.Errorf("unknown language %q", s)
-	}
-	return nil
+	return opts
 }
 
 func probeLabel(name string, up bool) string {

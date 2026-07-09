@@ -120,15 +120,17 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 				case ChunkError:
 					lastErr = ch.Err
 					failed = true
-					c.mark(e, false)
+					// Marking deferred until after the loop: a cancelled request
+					// (live-mode typing) must NOT be treated as an engine failure.
 				}
 			}
 
 			if failed {
-				if ctx.Err() != nil { // cancelled: don't waste other engines
+				if ctx.Err() != nil { // cancelled: don't mark down, don't fail over
 					out <- Chunk{Kind: ChunkError, Err: ctx.Err()}
 					return
 				}
+				c.mark(e, false)
 				warns = append(warns, lastErr.Error()) // already name-prefixed
 				if streamed {                          // already showed partial output: surface, don't restart
 					out <- Chunk{Kind: ChunkError, Err: lastErr}
