@@ -19,6 +19,14 @@ type streamMsg struct {
 	chunk engine.Chunk
 }
 
+// flashClearMsg clears a transient footer notice.
+type flashClearMsg struct{}
+
+// flashCmd shows a transient footer notice for ~1.5s.
+func flashCmd() tea.Cmd {
+	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return flashClearMsg{} })
+}
+
 // armDebounce schedules a debounceMsg after d. tea.Tick fires exactly once, so N
 // keystrokes arm N ticks; the seq guard collapses them to the last.
 func armDebounce(seq int, d time.Duration) tea.Cmd {

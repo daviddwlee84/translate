@@ -9,6 +9,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.5
 	github.com/abadojack/whatlanggo v1.0.1
 	github.com/agnivade/levenshtein v1.2.1
+	github.com/atotto/clipboard v0.1.4
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/spf13/cobra v1.10.2
@@ -17,7 +18,6 @@ require (
 )
 
 require (
-	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/catppuccin/go v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect

@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/atotto/clipboard"
 
 	"translate/internal/engine"
 	"translate/internal/lang"
@@ -58,6 +59,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…"))
 		}
 		return m, cmd
+
+	case flashClearMsg:
+		m.flash = ""
+		return m, nil
 
 	case streamMsg:
 		return m.handleStream(msg)
@@ -158,6 +163,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.presetList.SetItems(presetItems(m.preset))
 		m.overlay = overlayPreset
+		return m, nil
+
+	case key.Matches(msg, m.keys.TogglePair):
+		m.pair = !m.pair
+		if m.pair && m.pairWith == "" {
+			m.pairWith = "en"
+		}
+		m.relayout() // footer pair segment changed
+		if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+			return m.launch(false)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Copy):
+		if txt := m.copyText(); txt != "" {
+			if err := clipboard.WriteAll(txt); err != nil {
+				m.flash = "copy failed"
+			} else {
+				m.flash = "copied ✓"
+			}
+			return m, flashCmd()
+		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.ToggleLive):
@@ -310,6 +337,14 @@ func (m *Model) cancelInflight() {
 		m.cancel = nil
 	}
 	m.inflight = 0
+}
+
+// copyText returns the text to place on the clipboard for the current result.
+func (m Model) copyText() string {
+	if m.result == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.result.Translation)
 }
 
 // currentModelID is the model id currently in effect (for the ✓ marker).

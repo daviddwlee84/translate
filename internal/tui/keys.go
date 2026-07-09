@@ -12,6 +12,8 @@ type keyMap struct {
 	PickLang    key.Binding
 	PickModel   key.Binding
 	PickPreset  key.Binding
+	TogglePair  key.Binding
+	Copy        key.Binding
 	History     key.Binding
 	Clear       key.Binding
 	Quit        key.Binding
@@ -25,7 +27,9 @@ func defaultKeys() keyMap {
 		CycleEngine: key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("^e", "engine")),
 		PickLang:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "lang")),
 		PickModel:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "model")),
-		PickPreset:  key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "style")),
+		PickPreset:  key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("^o", "style")),
+		TogglePair:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "pair")),
+		Copy:        key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "copy")),
 		History:     key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "history")),
 		Clear:       key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("^u", "clear")),
 		Quit:        key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("^c", "quit")),

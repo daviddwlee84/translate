@@ -36,8 +36,9 @@ Precedence: **flag > env > config > default**.
 
 ## TUI keys
 
-`↵` translate · live-debounce auto-translates ~400ms after you stop typing ·
-`^l` toggle live · `^r` history (↵ recall) · `^u` clear · `⌥↵` newline · `^c`/`esc` quit.
+`↵` translate · live-debounce auto-translates ~700ms after you stop typing (off by default) ·
+`^y` copy · `^l` toggle live · `^e` cycle engine · `^t` target language · `^p` model ·
+`^o` style · `^g` toggle pair mode · `^r` history · `^u` clear · `⌥↵` newline · `^c`/`esc` quit.
 
 ## Engines & fallback
 

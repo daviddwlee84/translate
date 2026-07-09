@@ -95,6 +95,7 @@ type Model struct {
 	status status
 	result *engine.TranslateResult
 	err    error
+	flash  string // transient footer notice (e.g. "copied ✓")
 
 	// request lifecycle: one monotonic seq drives debounce-collapse, cancel, and
 	// stale-stream-drop. cancel/stream/streamBuf belong to the in-flight request.

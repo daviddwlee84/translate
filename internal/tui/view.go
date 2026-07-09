@@ -105,6 +105,8 @@ func (m Model) footerContent(forceState bool) string {
 	var state string
 	if forceState {
 		state = m.st.dim.Render("⠿ translating")
+	} else if m.flash != "" {
+		state = m.st.liveOn.Render(m.flash)
 	} else {
 		switch m.status {
 		case statusTranslating:
@@ -123,7 +125,7 @@ func (m Model) footerContent(forceState bool) string {
 		if state != "" {
 			left += "  " + state
 		}
-		return left + "  " + m.st.dim.Render("↵ define  ^l live  ^e engine  ^r history  ^c quit")
+		return left + "  " + m.st.dim.Render("↵ define  ^y copy  ^l live  ^e engine  ^r history  ^c quit")
 	}
 
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
@@ -151,7 +153,7 @@ func (m Model) footerContent(forceState bool) string {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^l live  ^e engine  ^t lang  ^p model  ^y style  ^r history  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^y copy  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^r history  ^c quit")
 	return left + "  " + help
 }
 
