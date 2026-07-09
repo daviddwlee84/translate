@@ -43,6 +43,11 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		preset = engine.PresetContextual
 	}
 	instructions := cfg.General.Instructions
+	pair := cfg.General.Pair
+	pairWith := cfg.General.PairWith
+	if pairWith == "" {
+		pairWith = "en"
+	}
 
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -84,6 +89,19 @@ func runInit(cmd *cobra.Command, _ []string) error {
 				Title("Live translate?").
 				Description("Auto-translate as you type. Off by default to avoid spamming the API.").
 				Value(&live),
+
+			huh.NewConfirm().
+				Title("Bidirectional pair mode?").
+				Description("When you write in your target language, translate it to another instead. e.g. others → zh-TW, but zh → en.").
+				Value(&pair),
+
+			huh.NewSelect[string]().
+				Title("…pair with (used only if pair mode is on)").
+				Description("Where your target-language input goes.").
+				Options(targetLangOptions()...).
+				Height(10).
+				Filtering(true).
+				Value(&pairWith),
 		),
 	)
 	if err := form.Run(); err != nil {
@@ -95,6 +113,8 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	cfg.General.LiveTranslate = live
 	cfg.General.Preset = preset
 	cfg.General.Instructions = strings.TrimSpace(instructions)
+	cfg.General.Pair = pair
+	cfg.General.PairWith = pairWith
 	// Refresh copilot model ids to the verified-working recommendations (repairs
 	// configs written before a model id changed / was un-served by the proxy).
 	if p := cfg.ProviderByName("copilot"); p != nil {

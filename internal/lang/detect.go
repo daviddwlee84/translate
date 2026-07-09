@@ -1,6 +1,7 @@
 package lang
 
 import (
+	"strings"
 	"unicode"
 
 	"github.com/abadojack/whatlanggo"
@@ -26,4 +27,42 @@ func IsChinese(text string) bool {
 		}
 	}
 	return false
+}
+
+// PairTarget implements bidirectional "pair" mode: if the input is written in
+// the home language, translate it to away; otherwise translate it to home. This
+// makes "foreign → my language, my language → foreign" work from one input box
+// (e.g. home=zh-TW, away=en: Chinese → en, everything else → zh-TW).
+func PairTarget(home, away, text string) string {
+	if away == "" || away == home {
+		return home
+	}
+	if inLang(text, home) {
+		return away
+	}
+	return home
+}
+
+// inLang reports whether text is (best-effort) in the language of code. Chinese
+// uses a reliable Han-script check; others fall back to offline detection.
+func inLang(text, code string) bool {
+	base := baseCode(code)
+	switch base {
+	case "", "auto":
+		return false
+	case "zh":
+		return IsChinese(text)
+	default:
+		d := Detect(text)
+		return d != "" && d == base
+	}
+}
+
+// baseCode strips a region suffix: "zh-TW" → "zh".
+func baseCode(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if i := strings.IndexByte(code, '-'); i > 0 {
+		return code[:i]
+	}
+	return code
 }

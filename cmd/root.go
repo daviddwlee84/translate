@@ -34,6 +34,8 @@ var (
 	flagTier         string
 	flagPreset       string
 	flagInstructions string
+	flagPair         bool
+	flagPairWith     string
 	flagJSON         bool
 	flagNoHistory    bool
 )
@@ -64,6 +66,8 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagTier, "tier", "", "model tier: default|fast|max")
 	f.StringVar(&flagPreset, "preset", "", "LLM prompt style: concise|contextual|dictionary")
 	f.StringVar(&flagInstructions, "instructions", "", "extra system-prompt guidance (domain focus, etc.)")
+	f.BoolVar(&flagPair, "pair", false, "bidirectional mode: home-language input → --pair-with, else → --to")
+	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 
@@ -88,6 +92,8 @@ func overrides() config.Overrides {
 		Tier:         flagTier,
 		Preset:       flagPreset,
 		Instructions: flagInstructions,
+		Pair:         flagPair,
+		PairWith:     flagPairWith,
 	}
 }
 
@@ -105,6 +111,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	res := cfg.Resolve(overrides())
 	applyLastPair(cfg, &res) // remember_last_pair: seed source/target from state
 	src, tgt := resolvePair(res.Source, res.Target)
+	pairWith := ""
+	if res.Pair {
+		pwm, _ := lang.Resolve(res.PairWith)
+		pairWith = pwm.Code
+	}
 
 	if res.Provider == nil && res.Engine != "auto" {
 		return fmt.Errorf("no provider configured; check %s", config.Path())
@@ -122,11 +133,12 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	switch {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
-		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset, res.Instructions)
+		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
 		if err != nil {
 			return err
 		}
-		recordAndRemember(ctx, st, cfg, r, text, src, tgt)
+		recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
 		return nil
 
 	case !term.IsTerminal(int(os.Stdin.Fd())):
@@ -138,16 +150,25 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if text == "" {
 			return fmt.Errorf("no input on stdin")
 		}
-		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset, res.Instructions)
+		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
 		if err != nil {
 			return err
 		}
-		recordAndRemember(ctx, st, cfg, r, text, src, tgt)
+		recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
 		return nil
 
 	default:
-		return runTUI(ctx, eng, res, st, src, tgt)
+		return runTUI(ctx, eng, res, st, src, tgt, pairWith)
 	}
+}
+
+// effectiveTarget applies pair mode: home-language input → away, else → home.
+func effectiveTarget(pair bool, home, away, text string) string {
+	if pair && away != "" {
+		return lang.PairTarget(home, away, text)
+	}
+	return home
 }
 
 // applyLastPair overrides the resolved source/target with the persisted last
@@ -230,7 +251,7 @@ func saveLastPair(source, target, engineName string) {
 
 // runTUI launches the interactive Bubble Tea front-end and persists the last
 // pair on exit.
-func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st store.Store, source, target string) error {
+func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st store.Store, source, target, pairWith string) error {
 	// A model source for the ^p model picker: the resolved LLM provider (if any).
 	var modelSrc engine.ModelLister
 	modelProvider := ""
@@ -245,6 +266,8 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		Store:         st,
 		Source:        source,
 		Target:        target,
+		Pair:          res.Pair,
+		PairWith:      pairWith,
 		Model:         res.Model,
 		Preset:        res.Preset,
 		Instructions:  res.Instructions,

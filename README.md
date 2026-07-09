@@ -30,7 +30,7 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate init` | Interactive config wizard (probes providers) |
 | `translate config path\|show` · `lang resolve <q>` | Introspection helpers |
 
-Flags: `--engine auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--no-history`.
+Flags: `--engine auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--no-history`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`.
 Precedence: **flag > env > config > default**.
 

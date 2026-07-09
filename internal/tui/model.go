@@ -32,6 +32,8 @@ type Params struct {
 	Store         store.Store        // nil when history is disabled
 	Source        string
 	Target        string
+	Pair          bool   // bidirectional pair mode
+	PairWith      string // the "away" language (resolved code)
 	Model         string // display model id for the footer (initial)
 	Preset        string // LLM prompt style
 	Instructions  string // extra system-prompt guidance
@@ -71,11 +73,13 @@ type Model struct {
 	overlay       overlayKind
 	resultH       int // result viewport height (kept fixed to avoid layout jumps)
 
-	source string
-	target string
-	preset string
-	live   bool
-	engIdx int // index into p.Engines (the active engine)
+	source   string
+	target   string
+	pair     bool
+	pairWith string
+	preset   string
+	live     bool
+	engIdx   int // index into p.Engines (the active engine)
 
 	// model picker state (session-cached)
 	cachedModels  []string
@@ -173,6 +177,8 @@ func New(ctx context.Context, p Params) Model {
 		st:          newStyles(),
 		source:      p.Source,
 		target:      p.Target,
+		pair:        p.Pair,
+		pairWith:    p.PairWith,
 		preset:      preset,
 		live:        p.Live,
 		status:      statusIdle,

@@ -15,6 +15,8 @@ type Overrides struct {
 	Tier         string
 	Preset       string
 	Instructions string
+	Pair         bool // --pair forces pair mode on
+	PairWith     string
 }
 
 // Resolved is the effective, merged view handed to the engine layer and TUI.
@@ -27,6 +29,8 @@ type Resolved struct {
 	Tier         string
 	Preset       string
 	Instructions string
+	Pair         bool
+	PairWith     string
 	Stream       bool
 	Color        string
 	Cfg          *Config
@@ -58,6 +62,8 @@ func (c *Config) Resolve(o Overrides) Resolved {
 		Tier:         pick(o.Tier, "TRANSLATE_TIER", c.General.Tier),
 		Preset:       pick(o.Preset, "TRANSLATE_PRESET", c.General.Preset),
 		Instructions: pick(o.Instructions, "TRANSLATE_INSTRUCTIONS", c.General.Instructions),
+		Pair:         o.Pair || c.General.Pair || envVal("TRANSLATE_PAIR") != "",
+		PairWith:     pick(o.PairWith, "TRANSLATE_PAIR_WITH", c.General.PairWith),
 		Color:        c.General.Color,
 		Stream:       c.General.Stream,
 	}

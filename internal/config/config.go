@@ -26,7 +26,9 @@ type Config struct {
 // General holds behavior settings.
 type General struct {
 	DefaultTarget     string `toml:"default_target"`
-	DefaultSource     string `toml:"default_source"` // "auto" or a fixed code
+	DefaultSource     string `toml:"default_source"`      // "auto" or a fixed code
+	Pair              bool   `toml:"pair"`                // bidirectional: home-language input → pair_with, else → default_target
+	PairWith          string `toml:"pair_with,omitempty"` // the "away" language for pair mode
 	RememberLastPair  bool   `toml:"remember_last_pair"`
 	LiveTranslate     bool   `toml:"live_translate"`
 	DebounceMs        int    `toml:"debounce_ms"`
@@ -103,6 +105,8 @@ func Default() *Config {
 		General: General{
 			DefaultTarget:     "en",
 			DefaultSource:     "auto",
+			Pair:              false,
+			PairWith:          "en", // used when pair mode is enabled
 			RememberLastPair:  true,
 			LiveTranslate:     false, // off by default to avoid spamming LLM/API while typing
 			DebounceMs:        700,   // when live is on, wait longer before firing

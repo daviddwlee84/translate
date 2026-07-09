@@ -127,6 +127,9 @@ func (m Model) footerContent(forceState bool) string {
 	}
 
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
+	if m.pair && m.pairWith != "" {
+		pair = fmt.Sprintf("pair %s⇄%s", m.target, m.pairWith) // compact codes
+	}
 
 	// Engine segment: the selected engine name, plus the model that actually
 	// served the last result (once known).

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"translate/internal/engine"
+	"translate/internal/lang"
 	"translate/internal/store"
 )
 
@@ -275,10 +276,14 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 
 	seq := m.seq
 	ne := m.active()
+	target := m.target
+	if m.pair && m.pairWith != "" && ne.Mode == engine.ModeTranslate {
+		target = lang.PairTarget(m.target, m.pairWith, text) // home-lang input → away, else home
+	}
 	req := engine.Request{
 		Text:          text,
 		Source:        m.source,
-		Target:        m.target,
+		Target:        target,
 		Mode:          ne.Mode,
 		Stream:        true, // ignored by non-streaming engines (google/dict)
 		Model:         m.modelOverride,
@@ -428,9 +433,13 @@ func (m Model) recordFor(res engine.TranslateResult) store.Record {
 	if src == "auto" && res.DetectedSource != "" {
 		src = res.DetectedSource
 	}
+	target := m.target
+	if res.Target != "" {
+		target = res.Target // effective target (may differ in pair mode)
+	}
 	return store.Record{
 		SourceLang:   src,
-		TargetLang:   m.target,
+		TargetLang:   target,
 		Engine:       res.Engine,
 		Model:        res.Model,
 		Input:        m.lastInput,
