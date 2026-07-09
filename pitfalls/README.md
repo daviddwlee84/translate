@@ -1,0 +1,104 @@
+# Pitfalls
+
+Past traps we've stepped on. **Symptoms-first** knowledge base — when a
+problem recurs (on a new machine, after an upgrade, with a new tool combo),
+grepping the symptom here lands you on the root cause and workaround in
+seconds, instead of re-debugging from scratch.
+
+This folder is maintainer-facing repo metadata. It lives in the git repo but
+never reaches users — `go install` / `go build` compile only Go sources, so
+`TODO.md`, `backlog/`, and `pitfalls/` have no effect on the built binary.
+
+## Pitfalls vs the rest
+
+| Surface | Time direction | Question it answers | Access pattern |
+|---|---|---|---|
+| `docs/<tool>.md` | Present | "How does this tool work / how do I configure it?" | Read top to bottom |
+| `pitfalls/<slug>.md` | **Past** | **"I see error X — has this happened before?"** | **Grep symptoms** |
+| `backlog/<slug>.md` | Future | "We thought about doing Y — what was the analysis?" | Index in `TODO.md` |
+| `AGENTS.md` Hard invariants | Present | "What rules MUST agents follow?" | Read top to bottom |
+
+A pitfall **graduates** to a Hard invariant when the trap is serious enough
+that you can't rely on memory or grep — typically when (a) it recurs across
+machines, (b) it silently corrupts state, or (c) the workaround is non-obvious
+and easy to undo by accident. When graduating, leave a `pitfalls/<slug>.md`
+as historical record and link to it from the new invariant.
+
+## When to add a pitfall doc
+
+Add `pitfalls/<slug>.md` when you've spent more than ~15 minutes on something
+that wasn't googleable, AND any of:
+
+- The symptom is non-obvious from the root cause (silent state, weird side
+  effect, behaviour change without error)
+- The fix is "do nothing different but in a specific order"
+- The same trap could be hit by a new agent / new machine / new contributor
+- An upstream bug exists with no ETA — workaround needs to outlive memory
+- A specific tool version is required (or forbidden) and failure at the
+  wrong version is silent / confusing
+
+## When NOT to add a pitfall doc
+
+- Trivially googleable (next person solves in 30 seconds)
+- Already covered in `docs/<tool>.md` — cross-link from this README's
+  "Cross-referenced pitfalls" table below instead of duplicating
+- Already a Hard invariant (cross-link only)
+- One-off transient (network glitch, machine-specific config rot)
+
+## File template
+
+See [`pitfall-doc.md.template`] in the
+[`project-knowledge-harness` skill](https://github.com/daviddwlee84/agent-skills/tree/main/skills/local/project-knowledge-harness)
+for the per-doc template.
+
+Key sections (different from `backlog/` template — symptom-first, not
+context-first):
+
+```markdown
+# <Title describing the SYMPTOM, not the root cause>
+
+**Symptoms** (grep this section): <verbatim error messages, observable behaviour>
+**First seen**: YYYY-MM
+**Affects**: <tool/version/OS combo>
+**Status**: workaround documented / fixed upstream in vX.Y / WONTFIX
+
+## Symptom
+
+Full error messages (verbatim — preserves grep-ability).
+
+## Root cause
+
+Why this happens, with source/docs/upstream issue link.
+
+## Workaround
+
+Copy-pasteable commands or config diff.
+
+## Prevention
+
+How to avoid stepping on this again.
+
+## Related
+
+Links to docs, sibling pitfalls, TODO entries, upstream issues.
+```
+
+## Index
+
+Pitfalls owned by this folder. Keep alphabetical.
+
+| Slug | Symptom keywords | Status |
+|---|---|---|
+| `duplicate-translate-on-path-dotfiles-bin-shadows-local-bin` | two `translate` on PATH, `command -v -a`, reinstall has no effect, `~/.dotfiles/bin` shadows `~/.local/bin` | workaround; fix in TODO P2 |
+| `go-install-module-path-mismatch` | `module declares its path as: translate`, `but was required as`, `parsing go.mod` | fixed (module renamed) |
+| `gobin-points-at-mise-toolchain-dir` | binary vanishes after Go upgrade, `go env GOBIN` = `.../mise/installs/go/<ver>/bin` | workaround (pin GOBIN) |
+
+## Cross-referenced pitfalls (still in their original homes)
+
+These traps are documented elsewhere and aren't duplicated here — the table
+exists so grepping `pitfalls/` still finds them. Move into this folder only
+if their original location stops being a natural reading flow.
+
+| Trap | Lives in | Why not here |
+|---|---|---|
+| (example: Tool X version Y bug) | `docs/tool-x.md` → "Known issues" | Already part of the tool's normal config narrative |
