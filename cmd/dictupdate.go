@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"translate/internal/config"
-	"translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/engine"
 )
 
 func newDictCmd() *cobra.Command {

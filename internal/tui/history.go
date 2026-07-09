@@ -8,7 +8,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
-	"translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/store"
 )
 
 // histItem adapts a history Record to the bubbles list Item/DefaultItem interface.

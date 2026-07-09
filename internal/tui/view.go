@@ -7,8 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lg "charm.land/lipgloss/v2"
 
-	"translate/internal/engine"
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // View renders the two-box layout (input, result) plus a status/help footer.

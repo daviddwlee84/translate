@@ -10,7 +10,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"translate/internal/xdgpath"
+	"github.com/daviddwlee84/translate/internal/xdgpath"
 )
 
 // Config is the top-level config.toml schema.

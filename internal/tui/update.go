@@ -9,9 +9,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 
-	"translate/internal/engine"
-	"translate/internal/lang"
-	"translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/store"
 )
 
 // Update handles messages. Value receiver returning the modified copy is the

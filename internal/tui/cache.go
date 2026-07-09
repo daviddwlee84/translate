@@ -1,6 +1,6 @@
 package tui
 
-import "translate/internal/engine"
+import "github.com/daviddwlee84/translate/internal/engine"
 
 // cacheKey identifies a translation result for the session cache. It is
 // comparable, so it can be a map key. Keying on the *selected* engine name

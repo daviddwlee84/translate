@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 func newLangCmd() *cobra.Command {

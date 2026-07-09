@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"translate/internal/config"
-	"translate/internal/engine"
-	"translate/internal/tui"
+	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/tui"
 )
 
 // buildEngine constructs the Engine for an invocation from resolved settings.

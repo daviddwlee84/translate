@@ -1,4 +1,4 @@
-module translate
+module github.com/daviddwlee84/translate
 
 go 1.26.4
 

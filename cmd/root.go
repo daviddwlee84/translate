@@ -16,13 +16,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"translate/internal/config"
-	"translate/internal/engine"
-	"translate/internal/lang"
-	"translate/internal/state"
-	"translate/internal/store"
-	"translate/internal/tui"
-	"translate/internal/xdgpath"
+	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/state"
+	"github.com/daviddwlee84/translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/tui"
+	"github.com/daviddwlee84/translate/internal/xdgpath"
 )
 
 var (

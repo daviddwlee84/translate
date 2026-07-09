@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // Preset selects the LLM translate prompt style. Only ModeTranslate LLM engines

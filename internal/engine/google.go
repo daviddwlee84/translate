@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // GoogleConfig configures the free, unofficial Google translate_a/single endpoint.

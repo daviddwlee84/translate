@@ -13,8 +13,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"translate/internal/engine"
-	"translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/store"
 )
 
 // NamedEngine is one selectable engine in the TUI's ^e cycle.

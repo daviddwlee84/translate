@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // LLMConfig parameterizes an OpenAI-compatible backend (copilot-proxy, Ollama,

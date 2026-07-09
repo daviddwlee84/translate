@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"translate/internal/config"
-	"translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/store"
 )
 
 func newHistoryCmd() *cobra.Command {

@@ -11,9 +11,9 @@ import (
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
-	"translate/internal/config"
-	"translate/internal/engine"
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 func newInitCmd() *cobra.Command {

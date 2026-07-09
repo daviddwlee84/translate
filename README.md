@@ -5,6 +5,12 @@ interactive live-translating TUI. Backed by an auto fallback chain over your
 local LLM providers (copilot-proxy → Ollama), a free web API (Google), and a
 dictionary, with typo-tolerant language resolution and translation history.
 
+## Install
+
+```sh
+go install github.com/daviddwlee84/translate@latest   # into $GOBIN (or ~/go/bin)
+```
+
 ## Build & run
 
 ```sh

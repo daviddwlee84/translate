@@ -7,7 +7,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 
-	"translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/config"
 )
 
 func newConfigCmd() *cobra.Command {

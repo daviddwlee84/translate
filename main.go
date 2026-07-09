@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	"translate/cmd"
+	"github.com/daviddwlee84/translate/cmd"
 )
 
 func main() {

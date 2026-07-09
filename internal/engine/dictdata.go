@@ -15,7 +15,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"translate/internal/xdgpath"
+	"github.com/daviddwlee84/translate/internal/xdgpath"
 )
 
 // DictDir returns the directory holding local dictionary data.

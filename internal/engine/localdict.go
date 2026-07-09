@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // LocalDictConfig configures the offline bilingual dictionary engine.

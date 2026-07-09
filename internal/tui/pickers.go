@@ -7,8 +7,8 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
-	"translate/internal/engine"
-	"translate/internal/lang"
+	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 // overlayKind selects which full-screen picker (if any) is showing.

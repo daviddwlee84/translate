@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/engine"
 )
 
 // debounceMsg fires debounce after the last keystroke. It carries the seq it was

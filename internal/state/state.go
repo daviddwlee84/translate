@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"translate/internal/xdgpath"
+	"github.com/daviddwlee84/translate/internal/xdgpath"
 )
 
 // State is the persisted last-session snapshot.
