@@ -7,12 +7,18 @@ import (
 	"translate/internal/lang"
 )
 
-// translateSystemPrompt drives the primary (hot-path) translation. It asks for
-// ONLY the translated text — no JSON, no commentary — so the reply streams
-// token-by-token identically across every OpenAI-compatible backend and is
-// latency-optimal. Richer output (alternatives/notes/confidence) is a separate,
-// optional enrichment pass, not part of this stream.
-const translateSystemPrompt = `You are a precise, professional translation engine.
+// Preset selects the LLM translate prompt style. Only ModeTranslate LLM engines
+// honor it; google/dict ignore it.
+const (
+	PresetConcise    = "concise"    // terse direct translation (default)
+	PresetContextual = "contextual" // short list of common-sense translations
+	PresetDictionary = "dictionary" // translation + 1-2 example sentences
+)
+
+// translateSystemPromptConcise drives the primary (hot-path) translation. It asks
+// for ONLY the translated text so the reply streams token-by-token identically
+// across every backend and is latency-optimal.
+const translateSystemPromptConcise = `You are a precise, professional translation engine.
 Translate the user's text into the target language faithfully and idiomatically.
 
 Rules:
@@ -23,6 +29,48 @@ Rules:
   no commentary before or after.
 - If the source language equals the target language, return the text unchanged (lightly
   corrected if it was misspelled).`
+
+// translateSystemPromptContextual lists translations across common senses.
+const translateSystemPromptContextual = `You are a precise, professional translation engine.
+Translate the user's text into the target language, showing how the translation changes
+across the most common senses or contexts of the source.
+
+Rules:
+- Preserve meaning, tone, and register. The text may contain typos, slang, or ungrammatical
+  phrasing — interpret the INTENDED meaning; never refuse and never translate a typo literally.
+- Output a SHORT list of 2-4 lines, one line per distinct common sense/context.
+- Format each line EXACTLY as: "N. <translation> — <short context label in the TARGET language>".
+- Order lines from the most likely/common sense to the least.
+- If the text has only one natural sense, output a single line — do not invent senses.
+- Output ONLY the list. No preamble, no headings, no commentary before or after.`
+
+// translateSystemPromptDictionary gives a translation plus example sentences.
+const translateSystemPromptDictionary = `You are a precise, professional translation engine
+that also gives brief usage examples.
+Translate the user's text into the target language, then illustrate it with example sentences.
+
+Rules:
+- Preserve meaning, tone, and register. Interpret the INTENDED meaning of typos/slang; never refuse.
+- The FIRST line is ONLY the translation of the user's text — no label, no quotes.
+- Then a blank line, then 1-2 example sentences that use the translation naturally.
+- Format each example on two lines:
+    line 1: the example sentence in the TARGET language,
+    line 2: its translation in the source language (the language of the user's input),
+            prefixed with "  ↳ ".
+- Keep examples short and idiomatic. Output ONLY the translation and the examples —
+  no headings, no numbering of the first line, no commentary.`
+
+// systemPromptFor returns the system prompt for a preset (defaults to concise).
+func systemPromptFor(preset string) string {
+	switch preset {
+	case PresetContextual:
+		return translateSystemPromptContextual
+	case PresetDictionary:
+		return translateSystemPromptDictionary
+	default:
+		return translateSystemPromptConcise
+	}
+}
 
 // translateUserPrompt frames the concrete request.
 const translateUserPrompt = `Source language: %s
@@ -42,5 +90,5 @@ func buildTranslatePrompt(req Request) (system, user string) {
 		src = fmt.Sprintf("%s (%s)", lang.Name(src), src)
 	}
 	tgt := fmt.Sprintf("%s (%s)", lang.Name(req.Target), req.Target)
-	return translateSystemPrompt, fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
+	return systemPromptFor(req.Preset), fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
 }

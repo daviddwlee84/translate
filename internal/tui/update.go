@@ -85,9 +85,10 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 		m.inflight = 0
 		m.status = statusDone
 		m.err = nil
-		m.lastDone = m.lastInput // remember what was translated (skip re-runs)
+		m.lastDoneKey = m.pendingKey // remember what was translated (skip re-runs)
 		if msg.chunk.Result != nil {
 			m.result = msg.chunk.Result
+			m.cache[m.pendingKey] = msg.chunk.Result // write-through (force overwrites)
 			if msg.chunk.Result.Engine != "" {
 				m.curEngine = msg.chunk.Result.Engine
 			}
@@ -148,6 +149,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil // no model concept in dictionary mode
 		}
 		return m.openModelPicker()
+
+	case key.Matches(msg, m.keys.PickPreset):
+		if m.active().Mode == engine.ModeDict {
+			return m, nil // presets are LLM translate styles
+		}
+		m.presetList.SetItems(presetItems(m.preset))
+		m.overlay = overlayPreset
+		return m, nil
 
 	case key.Matches(msg, m.keys.ToggleLive):
 		m.live = !m.live
@@ -222,8 +231,30 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		m.status = statusIdle
 		return m, nil
 	}
-	if !force && text == m.lastDone && m.status == statusDone {
-		return m, nil // nothing changed since the last translation
+	key := m.cacheKeyFor(text)
+	if !force && key == m.lastDoneKey && m.status == statusDone {
+		return m, nil // already showing this exact result
+	}
+	// Cache hit on the live/debounce path: render instantly with NO API call.
+	// Enter (force) always re-fetches and overwrites.
+	if !force {
+		if cached, ok := m.cache[key]; ok {
+			m.cancelInflight()
+			m.status = statusDone
+			m.err = nil
+			m.result = cached
+			if cached.Engine != "" {
+				m.curEngine = cached.Engine
+			}
+			if cached.Model != "" {
+				m.curModel = cached.Model
+			}
+			m.streamBuf = ""
+			m.lastInput = text
+			m.lastDoneKey = key
+			m.vp.SetContent(m.renderResult(*cached))
+			return m, nil
+		}
 	}
 	m.seq++
 	if m.cancel != nil {
@@ -237,6 +268,7 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 	m.err = nil
 	m.result = nil
 	m.lastInput = text
+	m.pendingKey = key
 	m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…")) // fixed-height placeholder
 
 	seq := m.seq
@@ -249,6 +281,7 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		Stream:        true, // ignored by non-streaming engines (google/dict)
 		Model:         m.modelOverride,
 		ModelProvider: m.p.ModelProvider,
+		Preset:        m.preset,
 	}
 	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
@@ -301,6 +334,8 @@ func (m *Model) overlayListUpdate(msg tea.Msg) tea.Cmd {
 		m.modelList, cmd = m.modelList.Update(msg)
 	case overlaySuggest:
 		m.suggestList, cmd = m.suggestList.Update(msg)
+	case overlayPreset:
+		m.presetList, cmd = m.presetList.Update(msg)
 	}
 	return cmd
 }
@@ -341,6 +376,15 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 			m.ta.MoveToEnd()
 			m.overlay = overlayNone
 			return m.launch(true)
+		}
+	case overlayPreset:
+		if it, ok := m.presetList.SelectedItem().(presetItem); ok {
+			m.preset = it.id
+			m.overlay = overlayNone
+			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch(false)
+			}
+			return m, nil
 		}
 	}
 	m.overlay = overlayNone
@@ -419,4 +463,5 @@ func (m *Model) relayout() {
 	m.langList.SetSize(m.width-2, overlayH)
 	m.modelList.SetSize(m.width-2, overlayH)
 	m.suggestList.SetSize(m.width-2, overlayH)
+	m.presetList.SetSize(m.width-2, overlayH)
 }

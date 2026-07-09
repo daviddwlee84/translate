@@ -11,6 +11,7 @@ type keyMap struct {
 	CycleEngine key.Binding
 	PickLang    key.Binding
 	PickModel   key.Binding
+	PickPreset  key.Binding
 	History     key.Binding
 	Clear       key.Binding
 	Quit        key.Binding
@@ -18,12 +19,13 @@ type keyMap struct {
 
 func defaultKeys() keyMap {
 	return keyMap{
-		Translate:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "translate")),
+		Translate:   key.NewBinding(key.WithKeys("enter", "ctrl+enter"), key.WithHelp("↵", "translate")),
 		Newline:     key.NewBinding(key.WithKeys("alt+enter"), key.WithHelp("⌥↵", "newline")),
 		ToggleLive:  key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("^l", "live")),
 		CycleEngine: key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("^e", "engine")),
 		PickLang:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "lang")),
 		PickModel:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "model")),
+		PickPreset:  key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "style")),
 		History:     key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "history")),
 		Clear:       key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("^u", "clear")),
 		Quit:        key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("^c", "quit")),

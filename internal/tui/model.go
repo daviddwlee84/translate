@@ -33,6 +33,7 @@ type Params struct {
 	Source        string
 	Target        string
 	Model         string // display model id for the footer (initial)
+	Preset        string // LLM prompt style
 	Live          bool   // live-debounce default state
 	DebounceMs    int
 }
@@ -59,6 +60,7 @@ type Model struct {
 	langList    list.Model
 	modelList   list.Model
 	suggestList list.Model
+	presetList  list.Model
 	sp          spinner.Model
 	keys        keyMap
 	st          styles
@@ -70,6 +72,7 @@ type Model struct {
 
 	source string
 	target string
+	preset string
 	live   bool
 	engIdx int // index into p.Engines (the active engine)
 
@@ -92,14 +95,16 @@ type Model struct {
 	// stale-stream-drop. cancel/stream/streamBuf belong to the in-flight request.
 	// streamBuf is a plain string (NOT strings.Builder): the model is copied by
 	// value on every Update, and copying a used Builder panics.
-	seq       int
-	inflight  int
-	cancel    context.CancelFunc
-	stream    <-chan engine.Chunk
-	streamBuf string
-	debounce  time.Duration
-	lastInput string // input text that produced the in-flight/last request
-	lastDone  string // input text of the last COMPLETED translation (skip re-runs)
+	seq         int
+	inflight    int
+	cancel      context.CancelFunc
+	stream      <-chan engine.Chunk
+	streamBuf   string
+	debounce    time.Duration
+	lastInput   string     // input text that produced the in-flight/last request
+	lastDoneKey cacheKey   // key of the last COMPLETED result (skip identical re-runs)
+	pendingKey  cacheKey   // cache key of the in-flight request
+	cache       cacheStore // session result cache (live cache-hit = instant, no API call)
 }
 
 // active returns the currently selected engine.
@@ -141,6 +146,14 @@ func New(ctx context.Context, p Params) Model {
 	suggestList.Title = "Did you mean? (↵ look up · esc close)"
 	suggestList.SetShowHelp(false)
 
+	preset := p.Preset
+	if preset == "" {
+		preset = engine.PresetConcise
+	}
+	presetList := list.New(presetItems(preset), list.NewDefaultDelegate(), 0, 0)
+	presetList.Title = "Style (↵ select · esc close)"
+	presetList.SetShowHelp(false)
+
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 
@@ -153,14 +166,17 @@ func New(ctx context.Context, p Params) Model {
 		langList:    langList,
 		modelList:   modelList,
 		suggestList: suggestList,
+		presetList:  presetList,
 		sp:          sp,
 		keys:        defaultKeys(),
 		st:          newStyles(),
 		source:      p.Source,
 		target:      p.Target,
+		preset:      preset,
 		live:        p.Live,
 		status:      statusIdle,
 		debounce:    debounce,
+		cache:       cacheStore{},
 	}
 }
 

@@ -20,6 +20,7 @@ const (
 	overlayLang
 	overlayModel
 	overlaySuggest
+	overlayPreset
 )
 
 // --- target-language picker ---
@@ -77,6 +78,36 @@ func suggestItems(words []string) []list.Item {
 	items := make([]list.Item, len(words))
 	for i, w := range words {
 		items[i] = suggestItem{word: w}
+	}
+	return items
+}
+
+// --- LLM prompt-style presets ---
+
+type presetItem struct {
+	id, desc string
+	current  bool
+}
+
+func (p presetItem) Title() string {
+	if p.current {
+		return p.id + "  ✓"
+	}
+	return p.id
+}
+func (p presetItem) Description() string { return p.desc }
+func (p presetItem) FilterValue() string { return p.id }
+
+func presetItems(current string) []list.Item {
+	defs := []presetItem{
+		{id: engine.PresetConcise, desc: "terse direct translation"},
+		{id: engine.PresetContextual, desc: "translations across common senses"},
+		{id: engine.PresetDictionary, desc: "translation + example sentences"},
+	}
+	items := make([]list.Item, len(defs))
+	for i, d := range defs {
+		d.current = d.id == current
+		items[i] = d
 	}
 	return items
 }

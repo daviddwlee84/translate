@@ -31,6 +31,7 @@ type Request struct {
 	// ModelProvider scopes Model to one provider by name; other engines ignore
 	// the override (so a copilot model id never leaks to an Ollama fallback).
 	ModelProvider string
+	Preset        string // LLM prompt style: "" => concise (LLM translate only)
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it

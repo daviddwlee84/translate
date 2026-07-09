@@ -13,6 +13,7 @@ type Overrides struct {
 	Provider string
 	Model    string
 	Tier     string
+	Preset   string
 }
 
 // Resolved is the effective, merged view handed to the engine layer and TUI.
@@ -23,6 +24,7 @@ type Resolved struct {
 	Provider *Provider
 	Model    string
 	Tier     string
+	Preset   string
 	Stream   bool
 	Color    string
 	Cfg      *Config
@@ -52,6 +54,7 @@ func (c *Config) Resolve(o Overrides) Resolved {
 		Target: pick(o.Target, "TRANSLATE_TARGET", c.General.DefaultTarget),
 		Engine: pick(o.Engine, "TRANSLATE_ENGINE", c.General.Engine),
 		Tier:   pick(o.Tier, "TRANSLATE_TIER", c.General.Tier),
+		Preset: pick(o.Preset, "TRANSLATE_PRESET", c.General.Preset),
 		Color:  c.General.Color,
 		Stream: c.General.Stream,
 	}

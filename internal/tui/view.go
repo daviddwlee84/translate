@@ -55,6 +55,8 @@ func (m Model) overlayBody() string {
 		}
 	case overlaySuggest:
 		return m.suggestList.View()
+	case overlayPreset:
+		return m.presetList.View()
 	}
 	return ""
 }
@@ -121,13 +123,14 @@ func (m Model) statusLine() string {
 	left := strings.Join([]string{
 		m.st.label.Render(pair),
 		m.st.dim.Render(engineSeg),
+		m.st.dim.Render("style:" + m.preset),
 		live,
 	}, m.st.dim.Render(" · "))
 	if state != "" {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^l live  ^e engine  ^t lang  ^p model  ^r history  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^l live  ^e engine  ^t lang  ^p model  ^y style  ^r history  ^c quit")
 	return left + "  " + help
 }
 
