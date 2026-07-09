@@ -35,11 +35,12 @@ type ModelRec struct {
 	Note string
 }
 
-// Recommended is the built-in model recommendation table (verified to work
-// through copilot-proxy). Only models whose provider probes up are offered.
+// Recommended is the built-in model recommendation table. Claude models route
+// through the Anthropic Messages API automatically. Only models whose provider
+// probes up are offered.
 var Recommended = []ModelRec{
-	{Role: "fast", ID: "gemini-3.5-flash", Note: "snappy; default for quick translations"},
+	{Role: "fast", ID: "claude-haiku-4-5", Note: "snappy; default for quick translations"},
 	{Role: "default", ID: "claude-sonnet-5", Note: "balanced quality/speed"},
-	{Role: "max", ID: "gpt-5.4", Note: "highest quality"},
+	{Role: "max", ID: "claude-opus-4-8", Note: "highest quality"},
 	{Role: "offline", ID: "llama3.2:3b", Note: "Ollama, no network"},
 }

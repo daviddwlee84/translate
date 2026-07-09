@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strings"
+
+	"translate/internal/lang"
 )
 
 // translateSystemPrompt drives the primary (hot-path) translation. It asks for
@@ -30,11 +32,15 @@ Text:
 %s`
 
 // buildTranslatePrompt returns the (system, user) messages for a plain-text
-// translation request.
+// translation request. Language codes are expanded to readable names so the
+// model handles regional variants (e.g. zh-TW → "chinese (traditional)").
 func buildTranslatePrompt(req Request) (system, user string) {
 	src := strings.TrimSpace(req.Source)
-	if src == "" {
+	if src == "" || src == "auto" {
 		src = "auto"
+	} else {
+		src = fmt.Sprintf("%s (%s)", lang.Name(src), src)
 	}
-	return translateSystemPrompt, fmt.Sprintf(translateUserPrompt, src, req.Target, req.Text)
+	tgt := fmt.Sprintf("%s (%s)", lang.Name(req.Target), req.Target)
+	return translateSystemPrompt, fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
 }

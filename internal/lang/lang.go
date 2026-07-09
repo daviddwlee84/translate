@@ -30,6 +30,8 @@ type Match struct {
 var table = []Lang{
 	{"en", "english", []string{"eng"}},
 	{"zh", "chinese", []string{"mandarin", "zho", "chi", "中文", "汉语", "漢語", "普通话"}},
+	{"zh-TW", "chinese (traditional)", []string{"traditional chinese", "chinese traditional", "zh-hant", "zht", "繁體中文", "繁体中文", "繁中", "taiwanese mandarin", "taiwan"}},
+	{"zh-CN", "chinese (simplified)", []string{"simplified chinese", "chinese simplified", "zh-hans", "zhs", "简体中文", "简中", "mainland chinese"}},
 	{"es", "spanish", []string{"spa", "español", "castellano"}},
 	{"fr", "french", []string{"fra", "fre", "français"}},
 	{"de", "german", []string{"deu", "ger", "deutsch"}},
@@ -77,8 +79,8 @@ func buildCandidates() []candidate {
 	var cs []candidate
 	for i := range table {
 		l := &table[i]
-		cs = append(cs, candidate{token: l.Code, lang: l, primary: true})
-		cs = append(cs, candidate{token: l.Name, lang: l, primary: true})
+		cs = append(cs, candidate{token: strings.ToLower(l.Code), lang: l, primary: true})
+		cs = append(cs, candidate{token: strings.ToLower(l.Name), lang: l, primary: true})
 		for _, a := range l.Aliases {
 			cs = append(cs, candidate{token: strings.ToLower(a), lang: l})
 		}
@@ -143,12 +145,11 @@ func Resolve(q string) (Match, []Match) {
 
 // Name returns the English name for a code, or the code itself if unknown.
 func Name(code string) string {
-	code = strings.ToLower(code)
-	if code == "auto" {
+	if strings.EqualFold(code, "auto") || code == "" {
 		return "auto-detect"
 	}
 	for i := range table {
-		if table[i].Code == code {
+		if strings.EqualFold(table[i].Code, code) {
 			return table[i].Name
 		}
 	}

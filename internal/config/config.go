@@ -78,13 +78,13 @@ type History struct {
 	Path    string `toml:"path,omitempty"`
 }
 
-// Recommended copilot-proxy model ids per tier. These are verified to work for
-// chat completions through the proxy (its /v1/models lists more ids than it
-// will actually serve — e.g. claude-haiku-4-5 and claude-opus-4-8 are rejected).
+// Recommended copilot-proxy model ids per tier. Claude models are served via the
+// Anthropic Messages API (/v1/messages); the LLM engine routes them there
+// automatically (they 400 on /chat/completions).
 const (
 	ModelDefault = "claude-sonnet-5"  // balanced
-	ModelFast    = "gemini-3.5-flash" // snappy — the out-of-box default tier
-	ModelMax     = "gpt-5.4"          // highest quality
+	ModelFast    = "claude-haiku-4-5" // snappy — the out-of-box default tier
+	ModelMax     = "claude-opus-4-8"  // highest quality
 )
 
 // Default returns a config with sensible defaults, written on first run.
