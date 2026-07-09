@@ -39,11 +39,12 @@ Someday / nice-to-have.
 
 Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
 
-- [ ] **[?/L] Wire `translate` into chezmoi dotfiles as an auto-installed go tool** — make it install on every `chezmoi apply`/host. Spike done: idiomatic home is a new `go_tools` ansible role (mirror `rust_cargo_tools`) wired at ~8 points + CLAUDE.md-mandated doc updates; lighter alt is a standalone `run_onchange` script. Awaiting scope choice. → [research](backlog/chezmoi-go-tool-integration.md)
 - [ ] **[?/L] Ship prebuilt release binaries (goreleaser + GitHub Releases)** — cross-compile per OS/arch (pure-Go, no cgo — trivial) so hosts without a Go toolchain install via chezmoi `.chezmoiexternal` with a templated `{{ .chezmoi.os }}/{{ .chezmoi.arch }}` URL instead of `go install`. Also unlocks shipping the dictionary DB as a release asset. → [research](backlog/release-binaries.md)
 - [ ] **[?/M] Bundle or prebuild the dictionary vs the 67 MB runtime `dict update`** — evaluate embedding a trimmed DB via `go:embed`, or shipping the built ECDICT sqlite + CC-CEDICT as release assets, so first run isn't a big download/build. Weigh binary-size blowup vs first-run friction. → [research](backlog/dict-bundling.md)
 
 ## Done
+
+- ✅ [2026-07-09] [P?/L] Wire `translate` into chezmoi dotfiles as an auto-installed go tool — go_tools ansible role added to dotfiles (commit 306bfb0): go install → ~/.local/bin, mise-gated, + cat_go upgrade path. Pending chezmoi apply on normal cadence.
 
 Recently shipped. When implementing an active item, in the same commit run:
 

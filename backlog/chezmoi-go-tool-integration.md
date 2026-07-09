@@ -1,7 +1,7 @@
 # Wire `translate` into chezmoi dotfiles as an auto-installed go tool
 
-**Status**: P? — spike done (this doc); awaiting scope decision before implementing
-**Effort**: L (idiomatic route) / S (lightweight route)
+**Status**: shipped (2026-07, dotfiles commit 306bfb0) — pending `chezmoi apply`
+**Effort**: L (idiomatic route, chosen)
 **Related**: `TODO.md` P? · dotfiles repo at `chezmoi source-path` (`~/.local/share/chezmoi`) · [release-binaries.md](release-binaries.md) · pitfalls/gobin-points-at-mise-toolchain-dir.md
 
 ## Context
@@ -80,9 +80,12 @@ Do NOT install `@latest` implicitly.
 
 ## Decision (if any)
 
-`2026-07` — research complete; **paused pending user's scope choice**. Primary
-"resident binary" goal already met via `go install`; this is the auto-on-apply
-layer.
+`2026-07` — chose the idiomatic route (A). Shipped as the `go_tools` ansible
+role in the dotfiles repo (commit 306bfb0): all 8 checklist steps done + the
+completion regen row. Verified via ansible `--syntax-check`, template render
+(go_tools in TAGS), and the dotfiles pre-commit suite. Not yet `chezmoi
+apply`'d — will land on the next normal apply cadence (no-op on this host,
+translate already in `~/.local/bin`).
 
 ## References
 
