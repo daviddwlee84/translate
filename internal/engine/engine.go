@@ -1,0 +1,141 @@
+// Package engine defines the translation backend abstraction and its
+// implementations (LLM via OpenAI-compatible APIs, free web APIs, dictionaries).
+//
+// The engine layer is pure Go with context.Context and imports zero TUI code:
+// the one-shot CLI and the Bubble Tea TUI drive the identical Engine values and
+// diverge only at presentation.
+package engine
+
+import "context"
+
+// Mode selects what kind of lookup a Request performs.
+type Mode int
+
+const (
+	// ModeTranslate is register-aware, faithful translation (the default).
+	ModeTranslate Mode = iota
+	// ModeDict is a dictionary/definition lookup.
+	ModeDict
+)
+
+// Request is the single input to every engine. A Source of "" or "auto" asks
+// the engine to detect the source language.
+type Request struct {
+	Text    string
+	Source  string // BCP-47-ish code or "auto"/""
+	Target  string // e.g. "en", "zh"
+	Mode    Mode
+	MaxAlts int  // cap on Alternatives; 0 => engine default
+	Stream  bool // caller wants token streaming (LLM only; others ignore)
+}
+
+// TranslateResult is the "Marvin-lite" typed result. Every engine fills what it
+// can; zero-value fields are simply absent. It is also the history record shape.
+type TranslateResult struct {
+	Translation    string   `json:"translation"`
+	DetectedSource string   `json:"detected_source,omitempty"`
+	Target         string   `json:"target"`
+	Alternatives   []string `json:"alternatives,omitempty"`
+	Notes          string   `json:"notes,omitempty"`
+	Confidence     float64  `json:"confidence,omitempty"`
+
+	// Provenance — stamped by the producing engine / chain.
+	Engine string `json:"engine,omitempty"`
+	Model  string `json:"model,omitempty"`
+
+	// Dictionary payload (Mode == ModeDict); nil for translate mode.
+	Dictionary   *DictEntry `json:"dictionary,omitempty"`
+	Fuzzy        bool       `json:"fuzzy,omitempty"`
+	FuzzyMatched string     `json:"fuzzy_matched,omitempty"`
+}
+
+// DictEntry is a dictionary lookup payload (populated by the dictionary engine).
+type DictEntry struct {
+	Word      string    `json:"word"`
+	Phonetic  string    `json:"phonetic,omitempty"`
+	Meanings  []Meaning `json:"meanings,omitempty"`
+	SourceURL string    `json:"source_url,omitempty"`
+}
+
+// Meaning groups definitions by part of speech.
+type Meaning struct {
+	PartOfSpeech string       `json:"part_of_speech"`
+	Definitions  []Definition `json:"definitions"`
+	Synonyms     []string     `json:"synonyms,omitempty"`
+	Antonyms     []string     `json:"antonyms,omitempty"`
+}
+
+// Definition is a single sense of a word.
+type Definition struct {
+	Text    string `json:"definition"`
+	Example string `json:"example,omitempty"`
+}
+
+// ChunkKind distinguishes streamed tokens from the terminal result/error.
+type ChunkKind int
+
+const (
+	// ChunkToken is one streamed unit of translation text.
+	ChunkToken ChunkKind = iota
+	// ChunkDone carries the final structured result and ends the stream.
+	ChunkDone
+	// ChunkError carries a terminal error and ends the stream.
+	ChunkError
+)
+
+// Chunk is one unit emitted on an engine's result channel.
+type Chunk struct {
+	Kind   ChunkKind
+	Text   string           // token text (ChunkToken)
+	Result *TranslateResult // final result (ChunkDone)
+	Err    error            // terminal error (ChunkError)
+}
+
+// Engine is the provider abstraction. Every method honors ctx cancellation.
+//
+// Translate returns a receive-only channel and MUST close it after sending
+// exactly one terminal Chunk (ChunkDone or ChunkError). Streaming engines emit
+// zero or more ChunkToken then one ChunkDone; non-streaming engines emit a
+// single ChunkDone. This uniform "channel closed == finished" contract lets the
+// TUI's self-resubscribing reader and the CLI's drain loop share one code path.
+// The synchronous error return is only for immediate setup failures; all
+// runtime/network errors flow as a terminal ChunkError.
+type Engine interface {
+	Name() string
+	Translate(ctx context.Context, req Request) (<-chan Chunk, error)
+	Detect(ctx context.Context, text string) (string, error)
+	Available(ctx context.Context) bool
+	Supports(m Mode) bool
+}
+
+// single is a helper for non-streaming engines: it returns a closed channel
+// carrying exactly one terminal Chunk.
+func single(res *TranslateResult, err error) <-chan Chunk {
+	ch := make(chan Chunk, 1)
+	if err != nil {
+		ch <- Chunk{Kind: ChunkError, Err: err}
+	} else {
+		ch <- Chunk{Kind: ChunkDone, Result: res}
+	}
+	close(ch)
+	return ch
+}
+
+// Drain consumes an engine channel to completion, returning the final result.
+// It streams tokens to onToken (if non-nil) as they arrive. Used by the
+// one-shot CLI path; the TUI drives the channel directly via its Update loop.
+func Drain(ch <-chan Chunk, onToken func(string)) (*TranslateResult, error) {
+	for c := range ch {
+		switch c.Kind {
+		case ChunkToken:
+			if onToken != nil {
+				onToken(c.Text)
+			}
+		case ChunkDone:
+			return c.Result, nil
+		case ChunkError:
+			return nil, c.Err
+		}
+	}
+	return nil, ErrNoResult
+}
