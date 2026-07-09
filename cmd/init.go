@@ -73,6 +73,11 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	cfg.General.Engine = engineChoice
 	cfg.General.DefaultTarget = target
 	cfg.General.LiveTranslate = live
+	// Refresh copilot model ids to the verified-working recommendations (repairs
+	// configs written before a model id changed / was un-served by the proxy).
+	if p := cfg.ProviderByName("copilot"); p != nil {
+		p.Model, p.ModelFast, p.ModelMax = config.ModelDefault, config.ModelFast, config.ModelMax
+	}
 	if err := config.Save(cfg); err != nil {
 		return err
 	}

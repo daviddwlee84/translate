@@ -45,8 +45,10 @@ The `auto` engine tries `chain.order` in turn, failing over **before the first
 token** (so a down provider switches cleanly; a mid-stream error surfaces rather
 than restarting):
 
-- **copilot-proxy** — OpenAI-compatible at `http://localhost:4141/v1`, no API key
-  (default model `claude-sonnet-5`; fast `claude-haiku-4-5`; max `claude-opus-4-8`).
+- **copilot-proxy** — OpenAI-compatible at `http://localhost:4141/v1`, no API key.
+  Default tier is **fast** (`gemini-3.5-flash`) for snappy short translations;
+  `--tier default` → `claude-sonnet-5`, `--tier max` → `gpt-5.4`. (The proxy's
+  `/v1/models` lists more ids than it will serve — the config ships verified-working ones.)
 - **Ollama** — `http://localhost:11434/v1` (offline; `llama3.2:3b`).
 - **Google** — free, keyless; also reports the detected source language.
 - **openrouter** — configured but off the default chain; needs `OPENROUTER_API_KEY`.

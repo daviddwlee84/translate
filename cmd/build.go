@@ -6,6 +6,7 @@ import (
 
 	"translate/internal/config"
 	"translate/internal/engine"
+	"translate/internal/tui"
 )
 
 // buildEngine constructs the Engine for an invocation from resolved settings.
@@ -79,4 +80,23 @@ func dictFromConfig(cfg *config.Config) *engine.DictEngine {
 		Fuzzy:    cfg.Dict.Fuzzy,
 		Wordlist: cfg.Dict.Wordlist,
 	})
+}
+
+// buildEngineSet builds the list of engines the TUI can cycle through with ^e:
+// the resolved primary (translate), plus Google (fast, keyless) and the
+// dictionary (word lookup), so the user can switch on the fly.
+func buildEngineSet(res config.Resolved, primary engine.Engine) []tui.NamedEngine {
+	cfg := res.Cfg
+	primaryName := res.Engine
+	if primaryName == "" {
+		primaryName = "auto"
+	}
+	set := []tui.NamedEngine{{Name: primaryName, Engine: primary, Mode: engine.ModeTranslate}}
+	if primaryName != "google" && cfg.Google.Enabled {
+		set = append(set, tui.NamedEngine{Name: "google", Engine: googleFromConfig(cfg), Mode: engine.ModeTranslate})
+	}
+	if cfg.Dict.Enabled {
+		set = append(set, tui.NamedEngine{Name: "dictionary", Engine: dictFromConfig(cfg), Mode: engine.ModeDict})
+	}
+	return set
 }

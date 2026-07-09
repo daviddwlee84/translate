@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"translate/internal/engine"
@@ -34,6 +35,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hist.SetItems(toListItems(msg.items))
 		return m, nil
 
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.sp, cmd = m.sp.Update(msg)
+		return m, cmd
+
 	case streamMsg:
 		return m.handleStream(msg)
 	}
@@ -52,8 +58,8 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.chunk.Kind {
 	case engine.ChunkToken:
-		m.streamBuf.WriteString(msg.chunk.Text)
-		m.vp.SetContent(m.st.trans.Render(m.streamBuf.String()))
+		m.streamBuf += msg.chunk.Text
+		m.vp.SetContent(m.st.trans.Render(m.streamBuf))
 		m.vp.GotoBottom()
 		return m, waitStream(m.stream, m.inflight) // re-subscribe for the next token
 
@@ -122,13 +128,23 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.live = !m.live
 		return m, nil
 
+	case key.Matches(msg, m.keys.CycleEngine):
+		if n := len(m.p.Engines); n > 1 {
+			m.engIdx = (m.engIdx + 1) % n
+			m.curEngine, m.curModel = "", ""
+			if strings.TrimSpace(m.ta.Value()) != "" {
+				return m.launch() // re-run with the newly selected engine
+			}
+		}
+		return m, nil
+
 	case key.Matches(msg, m.keys.Clear):
 		m.cancelInflight()
 		m.seq++
 		m.ta.Reset()
 		m.result = nil
 		m.err = nil
-		m.streamBuf.Reset()
+		m.streamBuf = ""
 		m.status = statusIdle
 		m.vp.SetContent("")
 		return m, nil
@@ -146,7 +162,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cancelInflight()
 		m.seq++
 		m.result = nil
-		m.streamBuf.Reset()
+		m.streamBuf = ""
 		m.status = statusIdle
 		m.vp.SetContent("")
 		return m, cmd
@@ -177,20 +193,21 @@ func (m Model) launch() (tea.Model, tea.Cmd) {
 	m.cancel = cancel
 	m.inflight = m.seq
 	m.status = statusTranslating
-	m.streamBuf.Reset()
+	m.streamBuf = ""
 	m.err = nil
 	m.result = nil
 	m.lastInput = text
 
 	seq := m.seq
+	ne := m.active()
 	req := engine.Request{
 		Text:   text,
 		Source: m.source,
 		Target: m.target,
-		Mode:   engine.ModeTranslate,
-		Stream: true,
+		Mode:   ne.Mode,
+		Stream: true, // ignored by non-streaming engines (google/dict)
 	}
-	ch, err := m.p.Engine.Translate(ctx, req)
+	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
 		e := err
 		return m, func() tea.Msg {

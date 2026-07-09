@@ -225,16 +225,11 @@ func saveLastPair(source, target, engineName string) {
 // runTUI launches the interactive Bubble Tea front-end and persists the last
 // pair on exit.
 func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st store.Store, source, target string) error {
-	providerName := res.Engine
-	if res.Engine != "auto" && res.Provider != nil {
-		providerName = res.Provider.Name
-	}
 	p := tui.Params{
-		Engine:     eng,
+		Engines:    buildEngineSet(res, eng),
 		Store:      st,
 		Source:     source,
 		Target:     target,
-		Provider:   providerName,
 		Model:      res.Model,
 		Live:       res.Cfg.General.LiveTranslate,
 		DebounceMs: res.Cfg.General.DebounceMs,

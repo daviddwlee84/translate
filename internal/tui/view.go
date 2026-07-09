@@ -27,7 +27,14 @@ func (m Model) View() tea.View {
 		inStyle = m.st.inputHi
 	}
 	input := inStyle.Width(m.width - 2).Render(m.ta.View())
-	result := m.st.result.Width(m.width - 2).Render(m.vp.View())
+
+	// While waiting for the first token, show an animated spinner in the result
+	// pane so inference is clearly perceptible (esp. for non-streaming engines).
+	body := m.vp.View()
+	if m.status == statusTranslating && m.streamBuf == "" {
+		body = m.sp.View() + " " + m.st.dim.Render("translating…")
+	}
+	result := m.st.result.Width(m.width - 2).Render(body)
 	footer := m.st.footer.Width(m.width).Render(m.statusLine())
 
 	return altView(lg.JoinVertical(lg.Left, input, result, footer))
@@ -44,13 +51,14 @@ func altView(content string) tea.View {
 func (m Model) statusLine() string {
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
 
-	provider, model := m.p.Provider, m.p.Model
-	if m.curEngine != "" {
-		provider, model = m.curEngine, m.curModel
+	// Engine segment: the selected engine name, plus the model that actually
+	// served the last result (once known).
+	engineSeg := m.active().Name
+	if m.curEngine != "" && m.curEngine != m.active().Name {
+		engineSeg = m.curEngine // chain fell back to a specific engine
 	}
-	engineSeg := provider
-	if model != "" {
-		engineSeg = fmt.Sprintf("%s (%s)", model, provider)
+	if m.curModel != "" {
+		engineSeg = fmt.Sprintf("%s (%s)", engineSeg, m.curModel)
 	}
 
 	live := m.st.liveOff.Render("live○")
@@ -61,7 +69,7 @@ func (m Model) statusLine() string {
 	var state string
 	switch m.status {
 	case statusTranslating:
-		state = m.st.dim.Render("…translating")
+		state = m.sp.View() + " " + m.st.dim.Render("translating")
 	case statusError:
 		state = m.st.errText.Render("error")
 	}
@@ -75,13 +83,16 @@ func (m Model) statusLine() string {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^l live  ^u clear  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^l live  ^e engine  ^r history  ^u clear  ^c quit")
 	return left + "  " + help
 }
 
-// renderResult formats a completed translation. In this slice the result is the
-// plain translation; alternatives/notes render when a later slice populates them.
+// renderResult formats a completed translation, or a dictionary entry when the
+// active engine returned one.
 func (m Model) renderResult(res engine.TranslateResult) string {
+	if res.Dictionary != nil {
+		return m.renderDictionary(res)
+	}
 	var b strings.Builder
 	b.WriteString(m.st.trans.Render(res.Translation))
 
@@ -93,6 +104,30 @@ func (m Model) renderResult(res engine.TranslateResult) string {
 	}
 	if res.Notes != "" {
 		b.WriteString("\n" + m.st.notes.Render("ⓘ "+res.Notes))
+	}
+	return b.String()
+}
+
+// renderDictionary formats a dictionary lookup for the result pane.
+func (m Model) renderDictionary(res engine.TranslateResult) string {
+	d := res.Dictionary
+	var b strings.Builder
+	if res.Fuzzy && res.FuzzyMatched != "" {
+		b.WriteString(m.st.dim.Render("nearest: "+res.FuzzyMatched) + "\n")
+	}
+	head := d.Word
+	if d.Phonetic != "" {
+		head += "  " + d.Phonetic
+	}
+	b.WriteString(m.st.trans.Render(head))
+	for _, mn := range d.Meanings {
+		b.WriteString("\n" + m.st.notes.Render(mn.PartOfSpeech))
+		for i, def := range mn.Definitions {
+			if i >= 3 {
+				break
+			}
+			b.WriteString("\n" + m.st.alt.Render("• "+def.Text))
+		}
 	}
 	return b.String()
 }

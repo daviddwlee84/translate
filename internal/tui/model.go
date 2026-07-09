@@ -4,11 +4,11 @@ package tui
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -17,14 +17,20 @@ import (
 	"translate/internal/store"
 )
 
+// NamedEngine is one selectable engine in the TUI's ^e cycle.
+type NamedEngine struct {
+	Name   string // "auto", "google", "dictionary", …
+	Engine engine.Engine
+	Mode   engine.Mode
+}
+
 // Params configures a TUI session.
 type Params struct {
-	Engine     engine.Engine
-	Store      store.Store // nil when history is disabled
+	Engines    []NamedEngine // selectable engines; index 0 is the default
+	Store      store.Store   // nil when history is disabled
 	Source     string
 	Target     string
-	Provider   string // display name for the footer
-	Model      string // display model id for the footer
+	Model      string // display model id for the footer (initial)
 	Live       bool   // live-debounce default state
 	DebounceMs int
 }
@@ -48,6 +54,7 @@ type Model struct {
 	ta   textarea.Model
 	vp   viewport.Model
 	hist list.Model
+	sp   spinner.Model
 	keys keyMap
 	st   styles
 
@@ -58,9 +65,10 @@ type Model struct {
 	source string
 	target string
 	live   bool
+	engIdx int // index into p.Engines (the active engine)
 
 	// curEngine/curModel reflect the engine that actually served the last
-	// result (may differ from p.Provider when the auto chain falls back).
+	// result (may differ from the selected engine when the auto chain falls back).
 	curEngine string
 	curModel  string
 
@@ -70,13 +78,23 @@ type Model struct {
 
 	// request lifecycle: one monotonic seq drives debounce-collapse, cancel, and
 	// stale-stream-drop. cancel/stream/streamBuf belong to the in-flight request.
+	// streamBuf is a plain string (NOT strings.Builder): the model is copied by
+	// value on every Update, and copying a used Builder panics.
 	seq       int
 	inflight  int
 	cancel    context.CancelFunc
 	stream    <-chan engine.Chunk
-	streamBuf strings.Builder
+	streamBuf string
 	debounce  time.Duration
 	lastInput string // input text that produced the in-flight/last request
+}
+
+// active returns the currently selected engine.
+func (m Model) active() NamedEngine {
+	if len(m.p.Engines) == 0 {
+		return NamedEngine{}
+	}
+	return m.p.Engines[m.engIdx%len(m.p.Engines)]
 }
 
 // New builds a TUI model.
@@ -98,12 +116,16 @@ func New(ctx context.Context, p Params) Model {
 	hist.Title = "History (↵ recall · esc close)"
 	hist.SetShowHelp(false)
 
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+
 	return Model{
 		p:        p,
 		base:     ctx,
 		ta:       ta,
 		vp:       viewport.New(),
 		hist:     hist,
+		sp:       sp,
 		keys:     defaultKeys(),
 		st:       newStyles(),
 		source:   p.Source,
@@ -118,7 +140,7 @@ func New(ctx context.Context, p Params) Model {
 // after the program exits to persist the last pair).
 func (m Model) Pair() (source, target string) { return m.source, m.target }
 
-// Init requests the initial window size and starts the cursor blink.
+// Init requests the initial window size and starts the cursor blink + spinner.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, tea.RequestWindowSize)
+	return tea.Batch(textarea.Blink, m.sp.Tick, tea.RequestWindowSize)
 }

@@ -78,6 +78,15 @@ type History struct {
 	Path    string `toml:"path,omitempty"`
 }
 
+// Recommended copilot-proxy model ids per tier. These are verified to work for
+// chat completions through the proxy (its /v1/models lists more ids than it
+// will actually serve — e.g. claude-haiku-4-5 and claude-opus-4-8 are rejected).
+const (
+	ModelDefault = "claude-sonnet-5"  // balanced
+	ModelFast    = "gemini-3.5-flash" // snappy — the out-of-box default tier
+	ModelMax     = "gpt-5.4"          // highest quality
+)
+
 // Default returns a config with sensible defaults, written on first run.
 func Default() *Config {
 	return &Config{
@@ -88,7 +97,7 @@ func Default() *Config {
 			LiveTranslate:     true,
 			DebounceMs:        400,
 			Engine:            "auto",
-			Tier:              "default",
+			Tier:              "fast", // haiku by default — snappy for short, quick translations
 			AlternativesCount: 3,
 			Stream:            true,
 			Color:             "auto",
@@ -99,9 +108,9 @@ func Default() *Config {
 				Name:      "copilot",
 				Type:      "openai",
 				BaseURL:   "http://localhost:4141/v1",
-				Model:     "claude-sonnet-5",
-				ModelFast: "claude-haiku-4-5",
-				ModelMax:  "claude-opus-4-8",
+				Model:     ModelDefault,
+				ModelFast: ModelFast,
+				ModelMax:  ModelMax,
 			},
 			{
 				Name:    "ollama",
