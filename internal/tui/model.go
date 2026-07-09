@@ -34,6 +34,7 @@ type Params struct {
 	Target        string
 	Model         string // display model id for the footer (initial)
 	Preset        string // LLM prompt style
+	Instructions  string // extra system-prompt guidance
 	Live          bool   // live-debounce default state
 	DebounceMs    int
 }

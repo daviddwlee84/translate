@@ -90,5 +90,9 @@ func buildTranslatePrompt(req Request) (system, user string) {
 		src = fmt.Sprintf("%s (%s)", lang.Name(src), src)
 	}
 	tgt := fmt.Sprintf("%s (%s)", lang.Name(req.Target), req.Target)
-	return systemPromptFor(req.Preset), fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
+	system = systemPromptFor(req.Preset)
+	if extra := strings.TrimSpace(req.Extra); extra != "" {
+		system += "\n\nUser preferences (apply where relevant, e.g. domain terminology):\n" + extra
+	}
+	return system, fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
 }

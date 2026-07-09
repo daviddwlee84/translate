@@ -32,6 +32,7 @@ type Request struct {
 	// the override (so a copilot model id never leaks to an Ollama fallback).
 	ModelProvider string
 	Preset        string // LLM prompt style: "" => concise (LLM translate only)
+	Extra         string // extra user instructions appended to the system prompt
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it

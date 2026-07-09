@@ -26,15 +26,16 @@ import (
 )
 
 var (
-	flagTo        string
-	flagFrom      string
-	flagModel     string
-	flagProvider  string
-	flagEngine    string
-	flagTier      string
-	flagPreset    string
-	flagJSON      bool
-	flagNoHistory bool
+	flagTo           string
+	flagFrom         string
+	flagModel        string
+	flagProvider     string
+	flagEngine       string
+	flagTier         string
+	flagPreset       string
+	flagInstructions string
+	flagJSON         bool
+	flagNoHistory    bool
 )
 
 // NewRootCmd builds the root command and its subcommands.
@@ -62,6 +63,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagEngine, "engine", "", "engine: auto|<provider>|google|dict")
 	f.StringVar(&flagTier, "tier", "", "model tier: default|fast|max")
 	f.StringVar(&flagPreset, "preset", "", "LLM prompt style: concise|contextual|dictionary")
+	f.StringVar(&flagInstructions, "instructions", "", "extra system-prompt guidance (domain focus, etc.)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 
@@ -78,13 +80,14 @@ func Execute(ctx context.Context) error {
 // overrides collects the explicitly-set flag values.
 func overrides() config.Overrides {
 	return config.Overrides{
-		Source:   flagFrom,
-		Target:   flagTo,
-		Engine:   flagEngine,
-		Provider: flagProvider,
-		Model:    flagModel,
-		Tier:     flagTier,
-		Preset:   flagPreset,
+		Source:       flagFrom,
+		Target:       flagTo,
+		Engine:       flagEngine,
+		Provider:     flagProvider,
+		Model:        flagModel,
+		Tier:         flagTier,
+		Preset:       flagPreset,
+		Instructions: flagInstructions,
 	}
 }
 
@@ -119,7 +122,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	switch {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
-		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset)
+		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset, res.Instructions)
 		if err != nil {
 			return err
 		}
@@ -135,7 +138,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if text == "" {
 			return fmt.Errorf("no input on stdin")
 		}
-		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset)
+		r, err := oneShot(ctx, eng, text, src, tgt, res.Stream, res.Preset, res.Instructions)
 		if err != nil {
 			return err
 		}
@@ -244,6 +247,7 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		Target:        target,
 		Model:         res.Model,
 		Preset:        res.Preset,
+		Instructions:  res.Instructions,
 		Live:          res.Cfg.General.LiveTranslate,
 		DebounceMs:    res.Cfg.General.DebounceMs,
 	}
@@ -279,7 +283,7 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // Tokens stream live to stdout only when stdout is a TTY (so `translate x | pbcopy`
 // stays clean) and --json was not requested. Piped output is the plain translation
 // with no ANSI; --json emits the full structured result.
-func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset string) (*engine.TranslateResult, error) {
+func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stream := streamPref && stdoutTTY && !flagJSON
 
@@ -290,6 +294,7 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		Mode:   engine.ModeTranslate,
 		Stream: stream,
 		Preset: preset,
+		Extra:  instructions,
 	}
 	ch, err := eng.Translate(ctx, req)
 	if err != nil {

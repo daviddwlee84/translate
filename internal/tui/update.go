@@ -95,6 +95,7 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 			if msg.chunk.Result.Model != "" {
 				m.curModel = msg.chunk.Result.Model
 			}
+			m.relayout() // engine/model segment width may have changed
 			m.vp.SetContent(m.renderResult(*msg.chunk.Result))
 			// Don't persist a suggestions-only result (empty translation, no entry).
 			if r := *msg.chunk.Result; r.Dictionary != nil || r.Translation != "" {
@@ -166,6 +167,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if n := len(m.p.Engines); n > 1 {
 			m.engIdx = (m.engIdx + 1) % n
 			m.curEngine, m.curModel = "", ""
+			m.relayout() // footer content (engine/mode) changed
 			// Only re-translate automatically in live mode; otherwise just switch
 			// the engine and let the user press Enter.
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
@@ -282,6 +284,7 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		Model:         m.modelOverride,
 		ModelProvider: m.p.ModelProvider,
 		Preset:        m.preset,
+		Extra:         m.p.Instructions,
 	}
 	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
@@ -355,6 +358,7 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 		if it, ok := m.langList.SelectedItem().(langItem); ok {
 			m.target = it.code
 			m.overlay = overlayNone
+			m.relayout() // pair segment width changed
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(true)
 			}
@@ -381,6 +385,7 @@ func (m Model) overlaySelect() (tea.Model, tea.Cmd) {
 		if it, ok := m.presetList.SelectedItem().(presetItem); ok {
 			m.preset = it.id
 			m.overlay = overlayNone
+			m.relayout() // style segment width changed
 			if m.live && strings.TrimSpace(m.ta.Value()) != "" {
 				return m.launch(false)
 			}
@@ -441,10 +446,8 @@ func (m *Model) relayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	const (
-		footerH = 1
-		inputH  = 4
-	)
+	const inputH = 4
+	footerH := m.footerHeight() // wraps to width; may be >1 on narrow terminals
 	compW := m.width - 4
 	if compW < 1 {
 		compW = 1
@@ -458,7 +461,10 @@ func (m *Model) relayout() {
 	m.vp.SetWidth(compW)
 	m.vp.SetHeight(resultH)
 	m.resultH = resultH
-	overlayH := m.height - footerH - 1
+	overlayH := m.height - 2 // overlays use a single-line footer
+	if overlayH < 1 {
+		overlayH = 1
+	}
 	m.hist.SetSize(m.width-2, overlayH)
 	m.langList.SetSize(m.width-2, overlayH)
 	m.modelList.SetSize(m.width-2, overlayH)

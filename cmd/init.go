@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"translate/internal/config"
+	"translate/internal/engine"
 	"translate/internal/lang"
 )
 
@@ -37,6 +38,11 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	engineChoice := cfg.General.Engine
 	target := cfg.General.DefaultTarget
 	live := cfg.General.LiveTranslate
+	preset := cfg.General.Preset
+	if preset == "" {
+		preset = engine.PresetContextual
+	}
+	instructions := cfg.General.Instructions
 
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -59,6 +65,21 @@ func runInit(cmd *cobra.Command, _ []string) error {
 				Filtering(true).
 				Value(&target),
 
+			huh.NewSelect[string]().
+				Title("Translation style").
+				Description("How the LLM formats translations.").
+				Options(
+					huh.NewOption("contextual — translations across common senses", engine.PresetContextual),
+					huh.NewOption("concise — terse direct translation", engine.PresetConcise),
+					huh.NewOption("dictionary — translation + example sentences", engine.PresetDictionary),
+				).
+				Value(&preset),
+
+			huh.NewText().
+				Title("Custom instructions (optional)").
+				Description("Extra guidance for the LLM, e.g. domain focus: quantitative finance + computer science.").
+				Value(&instructions),
+
 			huh.NewConfirm().
 				Title("Live translate?").
 				Description("Auto-translate as you type. Off by default to avoid spamming the API.").
@@ -72,6 +93,8 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	cfg.General.Engine = engineChoice
 	cfg.General.DefaultTarget = target
 	cfg.General.LiveTranslate = live
+	cfg.General.Preset = preset
+	cfg.General.Instructions = strings.TrimSpace(instructions)
 	// Refresh copilot model ids to the verified-working recommendations (repairs
 	// configs written before a model id changed / was un-served by the proxy).
 	if p := cfg.ProviderByName("copilot"); p != nil {

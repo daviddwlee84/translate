@@ -30,9 +30,10 @@ type General struct {
 	RememberLastPair  bool   `toml:"remember_last_pair"`
 	LiveTranslate     bool   `toml:"live_translate"`
 	DebounceMs        int    `toml:"debounce_ms"`
-	Engine            string `toml:"engine"` // auto | llm | google | dict
-	Tier              string `toml:"tier"`   // default | fast | max
-	Preset            string `toml:"preset"` // concise | contextual | dictionary
+	Engine            string `toml:"engine"`                 // auto | llm | google | dict
+	Tier              string `toml:"tier"`                   // default | fast | max
+	Preset            string `toml:"preset"`                 // concise | contextual | dictionary
+	Instructions      string `toml:"instructions,omitempty"` // extra system-prompt guidance (domain focus, etc.)
 	AlternativesCount int    `toml:"alternatives_count"`
 	Stream            bool   `toml:"stream"`
 	Color             string `toml:"color"` // auto | always | never
@@ -107,7 +108,7 @@ func Default() *Config {
 			DebounceMs:        700,   // when live is on, wait longer before firing
 			Engine:            "auto",
 			Tier:              "fast", // haiku by default — snappy for short, quick translations
-			Preset:            "concise",
+			Preset:            "contextual",
 			AlternativesCount: 3,
 			Stream:            true,
 			Color:             "auto",

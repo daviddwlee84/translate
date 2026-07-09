@@ -80,23 +80,41 @@ func altView(content string) tea.View {
 	return v
 }
 
-// statusLine renders the state segment and the key hints.
-func (m Model) statusLine() string {
+// statusLine renders the footer with the current transient state.
+func (m Model) statusLine() string { return m.footerContent(false) }
+
+// footerHeight measures how many rows the footer occupies at the current width.
+// It reserves the widest transient state ("translating") so the layout never
+// jumps when that segment appears mid-flight.
+func (m Model) footerHeight() int {
+	if m.width <= 0 {
+		return 1
+	}
+	return lg.Height(m.st.footer.Width(m.width).Render(m.footerContent(true)))
+}
+
+// footerContent builds the footer string. forceState reserves the transient
+// "translating" segment (for height measurement); otherwise the actual state is
+// shown. lipgloss word-wraps it to the width, so narrow terminals get 2+ rows.
+func (m Model) footerContent(forceState bool) string {
 	live := m.st.liveOff.Render("live○")
 	if m.live {
 		live = m.st.liveOn.Render("live●")
 	}
 
 	var state string
-	switch m.status {
-	case statusTranslating:
-		state = m.sp.View() + " " + m.st.dim.Render("translating")
-	case statusError:
-		state = m.st.errText.Render("error")
+	if forceState {
+		state = m.st.dim.Render("⠿ translating")
+	} else {
+		switch m.status {
+		case statusTranslating:
+			state = m.sp.View() + " " + m.st.dim.Render("translating")
+		case statusError:
+			state = m.st.errText.Render("error")
+		}
 	}
 
-	// Dictionary mode: no source→target pair (the API is English-only), and no
-	// ^t lang / ^p model (neither applies).
+	// Dictionary mode: no source→target pair (English-only lookups per script).
 	if m.active().Mode == engine.ModeDict {
 		left := strings.Join([]string{
 			m.st.label.Render("dictionary (zh↔en)"),
