@@ -25,7 +25,7 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate` (no args, TTY) | Interactive TUI |
 | `translate --to <lang> --from <lang>` | Language override; both are fuzzy (`chinees` → `zh`) |
 | `translate --json` | Emit the full structured result |
-| `translate define <word>` | Dictionary lookup (exact → fuzzy on typo) |
+| `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API) |
 | `translate history` / `history search <q>` | Recent history / fuzzy search (`--tsv`, `--json`) |
 | `translate init` | Interactive config wizard (probes providers) |
 | `translate config path\|show` · `lang resolve <q>` | Introspection helpers |
@@ -61,6 +61,23 @@ than restarting):
 Config lives at `~/.config/translate/config.toml`, history at
 `~/.local/share/translate/history.jsonl`, last-pair state at
 `~/.local/state/translate/state.json` (XDG-honored on macOS and Linux).
+
+## Dictionary mode
+
+`^e` cycles to the dictionary engine (or use `translate define <word>`). It is an
+**offline bilingual** dictionary that routes by script — Chinese → CC-CEDICT
+(zh→en), English → ECDICT (en→zh):
+
+```sh
+translate dict update all      # one-time ~67 MB download/build into ~/.local/share/translate/dict
+```
+
+Until then, English lookups fall back to dictionaryapi.dev (`[dict] api_fallback`),
+and Chinese lookups prompt you to run the update. Misses show a ranked "did you
+mean" list. Set `[dict] source = "api"` to use only dictionaryapi.dev.
+
+Data: **CC-CEDICT** (CC BY-SA 4.0, © Paul Andrew Denisowski / MDBG) and
+**ECDICT** (MIT, © skywind3000).
 
 ## Developer note — Charm v2 (`charm.land/*`)
 

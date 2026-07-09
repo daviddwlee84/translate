@@ -66,10 +66,18 @@ type Google struct {
 // Dict configures the dictionary lookup engine.
 type Dict struct {
 	Enabled  bool   `toml:"enabled"`
+	Source   string `toml:"source"` // local (CC-CEDICT + ECDICT) | api (dictionaryapi.dev)
 	Endpoint string `toml:"endpoint,omitempty"`
 	Lang     string `toml:"lang,omitempty"`
 	Fuzzy    bool   `toml:"fuzzy"`
 	Wordlist string `toml:"wordlist,omitempty"` // "" => /usr/share/dict/words if present
+
+	// Local bilingual dictionary (source=local).
+	Dir          string `toml:"dir,omitempty"` // "" => <XDG data>/dict
+	CedictURL    string `toml:"cedict_url,omitempty"`
+	EcdictURL    string `toml:"ecdict_url,omitempty"`
+	AutoDownload bool   `toml:"auto_download"` // auto-fetch CC-CEDICT (small) on first zh lookup
+	APIFallback  bool   `toml:"api_fallback"`  // fall back to dictionaryapi.dev on an English miss
 }
 
 // History configures translation history storage.
@@ -136,10 +144,15 @@ func Default() *Config {
 			TimeoutMs: 4000,
 		},
 		Dict: Dict{
-			Enabled:  true,
-			Endpoint: "https://api.dictionaryapi.dev/api/v2/entries",
-			Lang:     "en",
-			Fuzzy:    true,
+			Enabled:      true,
+			Source:       "local", // CC-CEDICT (zh→en) + ECDICT (en→zh); run `translate dict update`
+			Endpoint:     "https://api.dictionaryapi.dev/api/v2/entries",
+			Lang:         "en",
+			Fuzzy:        true,
+			CedictURL:    "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz",
+			EcdictURL:    "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv",
+			AutoDownload: false, // explicit `dict update` is the blessed path
+			APIFallback:  true,  // English lookups still work before ECDICT is installed
 		},
 		History: History{
 			Enabled: true,

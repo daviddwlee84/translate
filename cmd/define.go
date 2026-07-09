@@ -14,11 +14,10 @@ import (
 
 func newDefineCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "define <word>",
-		Aliases: []string{"dict"},
-		Short:   "Look up a word in the dictionary (exact → fuzzy)",
-		Args:    cobra.MinimumNArgs(1),
-		RunE:    runDefine,
+		Use:   "define <word>",
+		Short: "Look up a word in the dictionary (exact → fuzzy)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  runDefine,
 	}
 }
 

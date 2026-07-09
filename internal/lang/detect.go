@@ -1,6 +1,10 @@
 package lang
 
-import "github.com/abadojack/whatlanggo"
+import (
+	"unicode"
+
+	"github.com/abadojack/whatlanggo"
+)
 
 // Detect returns a best-effort ISO-639-1 source-language code for text, or "" if
 // the guess is not confident. Used to fill DetectedSource on the LLM path (where
@@ -11,4 +15,15 @@ func Detect(text string) string {
 		return ""
 	}
 	return info.Lang.Iso6391()
+}
+
+// IsChinese reports whether text contains any Han characters — used to route
+// dictionary lookups (Chinese → CC-CEDICT, else → ECDICT).
+func IsChinese(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }

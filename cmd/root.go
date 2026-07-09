@@ -66,7 +66,7 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 
 	root.SuggestionsMinimumDistance = 2
-	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd())
+	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd())
 	return root
 }
 

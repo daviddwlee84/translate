@@ -99,7 +99,7 @@ func (m Model) statusLine() string {
 	// ^t lang / ^p model (neither applies).
 	if m.active().Mode == engine.ModeDict {
 		left := strings.Join([]string{
-			m.st.label.Render("dictionary (English)"),
+			m.st.label.Render("dictionary (zh↔en)"),
 			live,
 		}, m.st.dim.Render(" · "))
 		if state != "" {

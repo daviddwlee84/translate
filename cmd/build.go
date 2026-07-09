@@ -72,13 +72,33 @@ func googleFromConfig(cfg *config.Config) *engine.GoogleEngine {
 	})
 }
 
-// dictFromConfig builds the dictionary engine from config.
-func dictFromConfig(cfg *config.Config) *engine.DictEngine {
-	return engine.NewDict(engine.DictConfig{
-		Endpoint: cfg.Dict.Endpoint,
-		Lang:     cfg.Dict.Lang,
-		Fuzzy:    cfg.Dict.Fuzzy,
-		Wordlist: cfg.Dict.Wordlist,
+// dictFromConfig builds the dictionary engine from config: the offline bilingual
+// engine (source=local, default) or the dictionaryapi.dev engine (source=api).
+func dictFromConfig(cfg *config.Config) engine.Engine {
+	if cfg.Dict.Source == "api" {
+		return engine.NewDict(engine.DictConfig{
+			Endpoint: cfg.Dict.Endpoint,
+			Lang:     cfg.Dict.Lang,
+			Fuzzy:    cfg.Dict.Fuzzy,
+			Wordlist: cfg.Dict.Wordlist,
+		})
+	}
+	var apiFb *engine.DictEngine
+	if cfg.Dict.APIFallback {
+		apiFb = engine.NewDict(engine.DictConfig{
+			Endpoint: cfg.Dict.Endpoint,
+			Lang:     cfg.Dict.Lang,
+			Fuzzy:    cfg.Dict.Fuzzy,
+			Wordlist: cfg.Dict.Wordlist,
+		})
+	}
+	return engine.NewLocalDict(engine.LocalDictConfig{
+		Dir:          cfg.Dict.Dir,
+		CedictURL:    cfg.Dict.CedictURL,
+		EcdictURL:    cfg.Dict.EcdictURL,
+		AutoDownload: cfg.Dict.AutoDownload,
+		Fuzzy:        cfg.Dict.Fuzzy,
+		APIFallback:  apiFb,
 	})
 }
 
