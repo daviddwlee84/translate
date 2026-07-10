@@ -111,6 +111,13 @@ type Model struct {
 	lastDoneKey cacheKey   // key of the last COMPLETED result (skip identical re-runs)
 	pendingKey  cacheKey   // cache key of the in-flight request
 	cache       cacheStore // session result cache (live cache-hit = instant, no API call)
+
+	// Truncation auto-retry: a truncated stream (rare copilot-proxy drop) is
+	// re-fired once automatically, since a fresh request almost always completes.
+	// autoRetryKey is the pendingKey we've already retried once (so we retry at
+	// most once per input); retrying drives the "retrying" placeholder label.
+	autoRetryKey cacheKey
+	retrying     bool
 }
 
 // active returns the currently selected engine.
@@ -163,11 +170,16 @@ func New(ctx context.Context, p Params) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 
+	// Soft-wrap long paragraph lines to the viewport width; without this a single
+	// long (unwrapped) translation line is clipped and its tail is lost on screen.
+	vp := viewport.New()
+	vp.SoftWrap = true
+
 	return Model{
 		p:           p,
 		base:        ctx,
 		ta:          ta,
-		vp:          viewport.New(),
+		vp:          vp,
 		hist:        hist,
 		langList:    langList,
 		modelList:   modelList,

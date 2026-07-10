@@ -49,6 +49,7 @@ func NewRootCmd() *cobra.Command {
 			"  translate \"hola mundo\" --to en    one-shot\n" +
 			"  echo hola | translate --to en       pipe\n" +
 			"  translate                           interactive TUI",
+		Version:       buildVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// ArbitraryArgs lets bare text fall through to translation while exact

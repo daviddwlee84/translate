@@ -92,6 +92,8 @@ Pitfalls owned by this folder. Keep alphabetical.
 | `duplicate-translate-on-path-dotfiles-bin-shadows-local-bin` | two `translate` on PATH, `command -v -a`, reinstall has no effect, `~/.dotfiles/bin` shadows `~/.local/bin` | workaround; fix in TODO P2 |
 | `go-install-module-path-mismatch` | `module declares its path as: translate`, `but was required as`, `parsing go.mod` | fixed (module renamed) |
 | `gobin-points-at-mise-toolchain-dir` | binary vanishes after Go upgrade, `go env GOBIN` = `.../mise/installs/go/<ver>/bin` | workaround (pin GOBIN) |
+| `llm-stream-truncation-silently-rendered-as-complete` | translation cut mid-word / half output, no error, `detected:` line still shown, streamed result truncated, copilot-proxy SSE dropped | fixed (assert stream completeness) |
+| `tui-viewport-clips-long-translation-no-softwrap` | TUI translation cut mid-sentence but CLI/curl shows full text, no `⚠`, long/multi-line results clipped, viewport SoftWrap | fixed (SoftWrap=true) |
 
 ## Cross-referenced pitfalls (still in their original homes)
 

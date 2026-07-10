@@ -49,6 +49,12 @@ type TranslateResult struct {
 	// this (fallback) engine served the result — so a downgrade is never silent.
 	Warnings []string `json:"warnings,omitempty"`
 
+	// Truncated is set when a streamed result ended before the model finished
+	// (no terminal marker, or stop_reason=="max_tokens"). The partial text is
+	// still returned so the caller can show it, but it must not be cached or
+	// persisted as if complete. Transient: not serialized.
+	Truncated bool `json:"-"`
+
 	// Provenance — stamped by the producing engine / chain.
 	Engine string `json:"engine,omitempty"`
 	Model  string `json:"model,omitempty"`

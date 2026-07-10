@@ -104,19 +104,22 @@ type chatRequest struct {
 
 type chatResponse struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message      chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// streamDelta is one OpenAI SSE chunk (stream:true).
+// streamDelta is one OpenAI SSE chunk (stream:true). FinishReason is non-nil
+// only on the terminal chunk ("stop" on a clean finish, "length" on a cap hit).
 type streamDelta struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
 		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -142,7 +145,8 @@ type anthropicResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Error *struct {
+	StopReason string `json:"stop_reason"`
+	Error      *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
@@ -152,6 +156,10 @@ type anthropicStreamEvent struct {
 	Delta struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
+		// StopReason is carried on the terminal "message_delta" event
+		// ("end_turn"/"stop_sequence" on a clean finish, "max_tokens" on a cap
+		// hit); empty on "text_delta" events.
+		StopReason string `json:"stop_reason"`
 	} `json:"delta"`
 	Error *struct {
 		Message string `json:"message"`
@@ -260,6 +268,14 @@ func (e *LLMEngine) finalize(full, model string, req Request) *TranslateResult {
 	return res
 }
 
+// markTruncated flags a result whose stream ended before the model finished, so
+// the caller keeps the partial text but never treats it as a complete answer.
+func markTruncated(res *TranslateResult) {
+	res.Truncated = true
+	res.Warnings = append(res.Warnings,
+		"output was cut off before completion (stream truncated) — press Enter to retry")
+}
+
 // translateOpenAI uses the OpenAI /chat/completions endpoint.
 func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
 	system, user := buildTranslatePrompt(req)
@@ -300,8 +316,11 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 		}
 
 		var full strings.Builder
+		complete := true
 		if req.Stream {
-			if err := e.readSSE(ctx, resp.Body, ch, &full); err != nil {
+			var err error
+			complete, err = e.readSSE(ctx, resp.Body, ch, &full)
+			if err != nil {
 				ch <- Chunk{Kind: ChunkError, Err: err}
 				return
 			}
@@ -320,8 +339,13 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 				return
 			}
 			full.WriteString(cr.Choices[0].Message.Content)
+			complete = cr.Choices[0].FinishReason != "length" // "length" => hit the cap
 		}
-		ch <- Chunk{Kind: ChunkDone, Result: e.finalize(full.String(), model, req)}
+		res := e.finalize(full.String(), model, req)
+		if !complete {
+			markTruncated(res)
+		}
+		ch <- Chunk{Kind: ChunkDone, Result: res}
 	}()
 	return ch, nil
 }
@@ -366,8 +390,11 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 		}
 
 		var full strings.Builder
+		complete := true
 		if req.Stream {
-			if err := e.readAnthropicSSE(ctx, resp.Body, ch, &full); err != nil {
+			var err error
+			complete, err = e.readAnthropicSSE(ctx, resp.Body, ch, &full)
+			if err != nil {
 				ch <- Chunk{Kind: ChunkError, Err: err}
 				return
 			}
@@ -386,8 +413,13 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 					full.WriteString(c.Text)
 				}
 			}
+			complete = ar.StopReason != "max_tokens" // "max_tokens" => hit the cap
 		}
-		ch <- Chunk{Kind: ChunkDone, Result: e.finalize(full.String(), model, req)}
+		res := e.finalize(full.String(), model, req)
+		if !complete {
+			markTruncated(res)
+		}
+		ch <- Chunk{Kind: ChunkDone, Result: res}
 	}()
 	return ch, nil
 }
@@ -401,10 +433,15 @@ func (e *LLMEngine) anthropicAuth(r *http.Request) {
 }
 
 // readSSE parses an OpenAI-style event stream, emitting a ChunkToken per content
-// delta and accumulating the full text into full.
-func (e *LLMEngine) readSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, full *strings.Builder) error {
+// delta and accumulating the full text into full. It reports complete=true only
+// when the stream ended on a terminal marker ([DONE] or finish_reason=="stop");
+// a stream that closes with no marker, or on finish_reason=="length", is treated
+// as truncated so the caller can flag it rather than silently accept partial text.
+func (e *LLMEngine) readSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, full *strings.Builder) (bool, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20) // tolerate long SSE lines
+	sawDone := false
+	finish := ""
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -412,11 +449,15 @@ func (e *LLMEngine) readSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, f
 		}
 		payload := strings.TrimSpace(line[len("data:"):])
 		if payload == "[DONE]" {
+			sawDone = true
 			break
 		}
 		var d streamDelta
 		if json.Unmarshal([]byte(payload), &d) != nil || len(d.Choices) == 0 {
 			continue
+		}
+		if fr := d.Choices[0].FinishReason; fr != nil && *fr != "" {
+			finish = *fr
 		}
 		tok := d.Choices[0].Delta.Content
 		if tok == "" {
@@ -426,17 +467,26 @@ func (e *LLMEngine) readSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, f
 		select {
 		case ch <- Chunk{Kind: ChunkToken, Text: tok}:
 		case <-ctx.Done():
-			return fmt.Errorf("%s: %w", e.cfg.Name, ctx.Err())
+			return false, fmt.Errorf("%s: %w", e.cfg.Name, ctx.Err())
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return false, fmt.Errorf("%s: %w", e.cfg.Name, err)
+	}
+	complete := finish != "length" && (sawDone || finish == "stop")
+	return complete, nil
 }
 
 // readAnthropicSSE parses an Anthropic Messages event stream, emitting a
-// ChunkToken per text_delta and accumulating the full text into full.
-func (e *LLMEngine) readAnthropicSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, full *strings.Builder) error {
+// ChunkToken per text_delta and accumulating the full text into full. It reports
+// complete=true only when a terminal marker arrived (a message_stop event, or a
+// message_delta with a natural stop_reason); a stream that closes with neither,
+// or on stop_reason=="max_tokens", is treated as truncated.
+func (e *LLMEngine) readAnthropicSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, full *strings.Builder) (bool, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	sawStop := false
+	stopReason := ""
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -451,7 +501,17 @@ func (e *LLMEngine) readAnthropicSSE(ctx context.Context, r io.Reader, ch chan<-
 			continue
 		}
 		if ev.Error != nil {
-			return fmt.Errorf("%s: %s", e.cfg.Name, ev.Error.Message)
+			return false, fmt.Errorf("%s: %s", e.cfg.Name, ev.Error.Message)
+		}
+		switch ev.Type {
+		case "message_stop":
+			sawStop = true
+			continue
+		case "message_delta":
+			if ev.Delta.StopReason != "" {
+				stopReason = ev.Delta.StopReason
+			}
+			continue
 		}
 		if ev.Type != "content_block_delta" || ev.Delta.Type != "text_delta" || ev.Delta.Text == "" {
 			continue
@@ -460,10 +520,15 @@ func (e *LLMEngine) readAnthropicSSE(ctx context.Context, r io.Reader, ch chan<-
 		select {
 		case ch <- Chunk{Kind: ChunkToken, Text: ev.Delta.Text}:
 		case <-ctx.Done():
-			return fmt.Errorf("%s: %w", e.cfg.Name, ctx.Err())
+			return false, fmt.Errorf("%s: %w", e.cfg.Name, ctx.Err())
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return false, fmt.Errorf("%s: %w", e.cfg.Name, err)
+	}
+	complete := stopReason != "max_tokens" &&
+		(sawStop || stopReason == "end_turn" || stopReason == "stop_sequence")
+	return complete, nil
 }
 
 // httpError reads an error body (best effort) into a descriptive error.

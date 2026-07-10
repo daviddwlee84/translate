@@ -56,7 +56,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Animate the placeholder inside the (fixed-height) viewport so the
 		// layout never jumps while waiting for the first token.
 		if m.status == statusTranslating && m.streamBuf == "" {
-			m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…"))
+			m.vp.SetContent(m.translatingPlaceholder())
 		}
 		return m, cmd
 
@@ -82,6 +82,7 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.chunk.Kind {
 	case engine.ChunkToken:
+		m.retrying = false // real tokens are flowing; drop the "retrying" label
 		m.streamBuf += msg.chunk.Text
 		m.vp.SetContent(m.st.trans.Render(m.streamBuf))
 		m.vp.GotoBottom()
@@ -93,18 +94,39 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.lastDoneKey = m.pendingKey // remember what was translated (skip re-runs)
 		if msg.chunk.Result != nil {
-			m.result = msg.chunk.Result
-			m.cache[m.pendingKey] = msg.chunk.Result // write-through (force overwrites)
-			if msg.chunk.Result.Engine != "" {
-				m.curEngine = msg.chunk.Result.Engine
+			r := *msg.chunk.Result
+			// A truncated stream (rare copilot-proxy drop) is re-fired once
+			// automatically — a fresh request almost always completes. Only after a
+			// second truncation do we settle on the partial text + ⚠.
+			if r.Truncated && m.autoRetryKey != m.pendingKey {
+				m.autoRetryKey = m.pendingKey
+				nm, cmd := m.launch(true) // force a fresh fetch of the same input
+				mm := nm.(Model)
+				mm.retrying = true
+				mm.vp.SetContent(mm.translatingPlaceholder())
+				return mm, cmd
 			}
-			if msg.chunk.Result.Model != "" {
-				m.curModel = msg.chunk.Result.Model
+			m.autoRetryKey = cacheKey{} // settled (complete, or gave up after the retry)
+			m.retrying = false
+			m.result = msg.chunk.Result
+			// A truncated result keeps its partial text on screen (with a ⚠), but
+			// must not be cached or persisted as if it were the real answer — so a
+			// manual retry (Enter) actually re-fetches instead of replaying it.
+			if !r.Truncated {
+				m.cache[m.pendingKey] = msg.chunk.Result // write-through (force overwrites)
+			}
+			if r.Engine != "" {
+				m.curEngine = r.Engine
+			}
+			if r.Model != "" {
+				m.curModel = r.Model
 			}
 			m.relayout() // engine/model segment width may have changed
-			m.vp.SetContent(m.renderResult(*msg.chunk.Result))
-			// Don't persist a suggestions-only result (empty translation, no entry).
-			if r := *msg.chunk.Result; r.Dictionary != nil || r.Translation != "" {
+			m.vp.SetContent(m.renderResult(r))
+			m.vp.GotoTop() // show a completed result from its start, not scrolled
+			// Don't persist a truncated result, or a suggestions-only result
+			// (empty translation, no entry).
+			if !r.Truncated && (r.Dictionary != nil || r.Translation != "") {
 				return m, saveHistoryCmd(m.p.Store, m.recordFor(r))
 			}
 			return m, nil
@@ -113,6 +135,8 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 
 	case engine.ChunkError:
 		m.inflight = 0
+		m.retrying = false
+		m.autoRetryKey = cacheKey{}
 		m.status = statusError
 		m.err = msg.chunk.Err
 		m.vp.SetContent(m.st.errText.Render("✗ " + msg.chunk.Err.Error()))
@@ -253,6 +277,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// translatingPlaceholder renders the fixed-height "translating…" placeholder,
+// upgraded to a "retrying" label while an auto-retry after a truncation is
+// in flight so the user sees why a second request fired.
+func (m Model) translatingPlaceholder() string {
+	label := "translating…"
+	if m.retrying {
+		label = "translating… · retrying (stream truncated)"
+	}
+	return m.sp.View() + " " + m.st.dim.Render(label)
+}
+
 // launch starts a streaming translation for the current input, cancelling any
 // in-flight request first. It is the single place a translation begins.
 // When force is false (the live/debounce path) it skips re-translating text that
@@ -297,11 +332,12 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 	m.inflight = m.seq
 	m.status = statusTranslating
 	m.streamBuf = ""
+	m.retrying = false // a fresh launch clears any stale "retrying" label
 	m.err = nil
 	m.result = nil
 	m.lastInput = text
 	m.pendingKey = key
-	m.vp.SetContent(m.sp.View() + " " + m.st.dim.Render("translating…")) // fixed-height placeholder
+	m.vp.SetContent(m.translatingPlaceholder()) // fixed-height placeholder
 
 	seq := m.seq
 	ne := m.active()

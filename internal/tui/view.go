@@ -181,7 +181,9 @@ func (m Model) renderResult(res engine.TranslateResult) string {
 	for _, w := range res.Warnings {
 		b.WriteString("\n" + m.st.warn.Render("⚠ "+w))
 	}
-	if len(res.Warnings) > 0 {
+	// A truncation warning already tells the user to press Enter to retry; the
+	// engine-switch hint only fits chain-fallback warnings, so skip it there.
+	if len(res.Warnings) > 0 && !res.Truncated {
 		b.WriteString("\n" + m.st.dim.Render("(^e switch engine · check the model/provider)"))
 	}
 	return b.String()
