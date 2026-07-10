@@ -10012,3 +10012,539 @@ GOBIN=/Users/david/.local/bin GOPATH=/Users/david/go
 translate version v0.1.1-0.20260710080742-2d702fab6d71+dirty (2d702fab6d71+dirty) commit 2026-07-10T08:07:42Z
 ```
 </details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:41:46Z)**_
+
+<think><details><summary>Thought Process</summary>
+The git status has actually improved since the initial snapshot—those truncation-related files that were showing as modified are no longer appearing, which suggests they've been committed already. The current uncommitted changes seem to be something different, though the thought cuts off before revealing what they are. That commit predates my changes, so I'll need to reinstall the binary after committing. Given this is a personal scratch repo with an established main-based workflow and the user's terse request, I'll commit directly to main. Before I do, I should check the specstory transcripts and plan file for any secrets — the config only references the env var name, not actual keys, and I need to verify my bash outputs didn't leak anything sensitive. Now I need to stage and commit everything with a conventional commit message. The feature adds per-frontend defaults and smart dictionary LLM fallback, so I'll use `feat(config,engine)` as the prefix. I'm wondering whether to include the massive specstory transcript rewrite since that's an auto-managed file. Writing commit message... I'm deciding on the order of operations here—committing first since that's the explicit ask, then handling the environment cleanup separately with state deletion and reinstall. The git add will capture everything including the specstory transcript rewrite, which is a large diff but consistent with their tracked workflow. Let me go ahead and commit.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:41:46Z)**_
+
+The working tree now contains exactly my feature work plus this session's SpecStory transcript and plan file — the pre-existing truncation WIP was already committed separately. No secrets in the diff (the config only references `OPENROUTER_API_KEY` by name, never a value). You're on `main`, which matches this repo's all-main history, so I'll commit there.
+
+Let me stage and commit (feature + transcript + plan together, per your history-hygiene pattern):
+
+_**Agent (claude-opus-4-8 2026-07-10 08:41:47Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage and commit the feature work
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add -A
+git status --short
+echo "=== committing ==="
+git commit -q -F - <<'EOF'
+feat(config,engine): per-front-end [cli]/[tui] defaults + smart-dict LLM fallback
+
+Add optional [cli] and [tui] config overlays so the one-shot CLI and the
+interactive TUI can diverge from [general] (e.g. concise/fast CLI, contextual/max
+TUI). Resolve() now takes an invocation Mode and applies the overlay; precedence
+is flag > env > [cli]/[tui] > [general] > default. LiveTranslate/DebounceMs move
+into Resolved so the TUI stops reading cfg.General directly.
+
+Add a distinct `smart-dict` engine: an offline dictionary lookup that falls back
+to the LLM (dictionary preset: gloss + examples) on a miss or a fuzzy match too
+far off, while keeping close typos as "did you mean". The previously-dropped
+Levenshtein distance is surfaced via TranslateResult.SuggestDistance so the
+threshold ([smartdict] close_distance) is enforceable. Reachable via the TUI ^e
+cycle and `translate define` (--plain/--smart, [smartdict] define_default). The
+fallback stamps a warning so the downgrade is never silent.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+EOF
+echo "exit: $?"
+git log --oneline -1
+```
+
+```text
+A  .claude/plans/cli-tui-eager-alpaca.md
+M  .specstory/history/2026-07-09_11-04-39Z-cli-tui-typo-framework.md
+AM .specstory/history/2026-07-10_07-32-12Z-cli-llm-dictionary-model.md
+M  README.md
+M  cmd/build.go
+M  cmd/define.go
+M  cmd/root.go
+M  internal/config/config.go
+M  internal/config/resolve.go
+A  internal/config/resolve_test.go
+M  internal/engine/dict.go
+M  internal/engine/engine.go
+M  internal/engine/localdict.go
+A  internal/engine/smartdict.go
+A  internal/engine/smartdict_test.go
+=== committing ===
+exit: 0
+b183aa1 feat(config,engine): per-front-end [cli]/[tui] defaults + smart-dict LLM fallback
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:41:57Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've committed the changes, now I need to clean up the polluted state.json file and reinstall the binary so the user's PATH has the current version. Let me delete state.json to reseed from config, then reinstall and verify everything works.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:41:57Z)**_
+
+Committed as `b183aa1`. Now let me fix your environment — remove my state pollution and reinstall the current binary so your PATH `translate` has the new features.
+
+_**Agent (claude-opus-4-8 2026-07-10 08:42:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Clean state, reinstall, verify installed binary
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== remove polluted last-pair state (re-seeds from config on next run) ==="
+rm -f ~/.local/state/translate/state.json && echo "removed state.json"
+echo "=== reinstall to /Users/david/.local/bin/translate ==="
+go install . 2>&1 | head && echo "installed"
+echo "=== verify installed binary is current (has smart-dict + version) ==="
+hash -r 2>/dev/null; translate version 2>/dev/null | head -1
+translate define zzzznotaword 2>&1 | head -4
+echo "=== verify default target now honors config (no --to), no pollution ==="
+translate hello --json --no-history 2>&1 | head -6
+```
+
+```text
+=== remove polluted last-pair state (re-seeds from config on next run) ===
+removed state.json
+=== reinstall to /Users/david/.local/bin/translate ===
+installed
+=== verify installed binary is current (has smart-dict + version) ===
+version
+translate: warning: no dictionary entry for "zzzznotaword" — defined via copilot (LLM)
+zzzz……这不是个词
+
+那只是我随手打的,zzzz……这不是个词。
+=== verify default target now honors config (no --to), no pollution ===
+{
+  "translation": "你好",
+  "target": "zh-TW",
+  "engine": "copilot",
+  "model": "claude-sonnet-5"
+}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:42:53Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've cleared out the state.json file so it re-seeds from the config, and after reinstalling, the `translate version` command is working now—though the output is just printing "version" which is a bit odd. The version subcommand seems to be echoing something, but the key checks are passing so I'm not going to worry about it too much. The `translate version` output printing literally "version" is probably because the version subcommand exists but just echoes that word, or it's falling through to translation—either way, it's not a problem I introduced. I should move on and give the user a summary since all the tasks are complete. There's also that lingering config quirk with `pair = true` and `pair_with = 'zh-TW'` matching the default target, making pair mode effectively a no-op, but it's harmless.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:42:54Z)**_
+
+Done. Everything's committed and your environment is fixed and verified.
+
+## Committed
+`b183aa1` — `feat(config,engine): per-front-end [cli]/[tui] defaults + smart-dict LLM fallback` (feature code + tests + README + this session's SpecStory transcript + plan file, on `main`).
+
+## The "weirdness" — root cause & fix
+It was **not** your config. Two things stacked up:
+- **I polluted your global `state.json`** during verification (ran translations with `--to es`; that file isn't scoped by `TRANSLATE_CONFIG`, and `remember_last_pair=true` reads it back to override `default_target`). → removed it; it now re-seeds from your config.
+- **Your PATH `translate` was the old build** (no `[smartdict]` written by `init`). → reinstalled to `~/.local/bin/translate` via `go install .`.
+
+Verified on the freshly-installed binary:
+- `translate hello` → `你好`, target `zh-TW`, engine `copilot` ✓ (default target honored again)
+- `translate define zzzznotaword` → LLM definition + `⚠ … defined via copilot (LLM)` ✓
+
+**Default engine** = `auto` → chain `copilot → ollama → google → dict`; copilot is up so it used `claude-sonnet-5`. That was never the problem.
+
+## One heads-up on your config
+Your `init` set `pair_with = 'zh-TW'` **equal to** `default_target = 'zh-TW'`, which makes `pair = true` **inert** — `PairTarget` returns `home` whenever `away == home` (`internal/lang/detect.go:36`). So pair mode currently does nothing.
+
+If you wanted bidirectional (type Chinese → translate to English, otherwise → Chinese), set:
+```toml
+[general]
+default_target = "zh-TW"
+pair = true
+pair_with = "en"
+```
+Or if you didn't want pair mode at all, set `pair = false`. Want me to patch your `config.toml` either way?
+
+---
+
+_**User (2026-07-10 08:48:27Z)**_
+
+[Image #2]
+
+```
+2026-07-09-translate-cli-tui on  main [!⇡6] via  v1.26.4 took 34s
+❯ ./translate hello
+你好
+
+2026-07-09-translate-cli-tui on  main [!⇡6] via  v1.26.4 took 2s
+❯ ./translate 你好
+你好
+```
+
+我應該有設了bidirection pair才對？
+
+_**User (2026-07-10 08:48:27Z)**_
+
+[Image: source: /Users/david/.claude/image-cache/39a11814-fd3b-425b-91f2-b84516c1a3ba/2.png]
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-10 08:48:59Z)**_
+
+<think><details><summary>Thought Process</summary>
+The user configured bidirectional translation with Chinese Traditional as the target language, expecting Chinese input to translate to English but English input to translate to Chinese Traditional. However, Chinese input is returning unchanged instead of translating to English—it's treating it as if the target language applies in both directions rather than respecting the bidirectional rule.
+
+Looking at the init form, there's a separate "pair with" selection that comes after confirming bidirectional mode, and the description suggests it should be set to English for the expected behavior. The previous config had `pair_with = 'zh-TW'`, which would explain why Chinese input isn't being routed to English—the pairing language might not have been updated correctly during this re-initialization.
+
+Now I need to trace through what happens when running `./translate 你好`. The state file was deleted, but since `remember_last_pair=true`, the previous run of `./translate hello` would have saved the last pair state with target=zh-TW. When the Chinese input runs, it applies that saved state, setting the target back to zh-TW instead of routing to English as intended.
+
+The issue is either that `pairWith` is still set to zh-TW instead of en, or the language detection in `inLang` isn't correctly identifying Chinese text as being in the zh-TW language, so the pairing logic fails to swap to the away language.
+
+There's also a deeper problem I'm noticing: when `applyLastPair` saves the target language from the last translation, it can corrupt the pair mode logic on the next run. If the last input was Chinese and resolved to English, it would save target=en, making that the new "home" language for the next request, which breaks the intended pairing behavior.
+
+Let me check the actual configuration and how the language detection and inLang assignment work.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:48:59Z)**_
+
+你設了 bidirectional pair,`hello → 你好` 對(others → zh-TW),但 `你好` 應該要 → 英文卻沒有。讓我查兩件事:現在的 `pair_with` 實際值,以及 `inLang` 有沒有正確判定「你好」屬於 zh-TW。
+
+_**Agent (claude-opus-4-8 2026-07-10 08:49:00Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect pair config, state, and inLang logic
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== current pair settings in config ==="
+grep -nE "pair|default_target|remember_last_pair" ~/.config/translate/config.toml
+echo "=== current state (remember_last_pair) ==="
+cat ~/.local/state/translate/state.json 2>/dev/null; echo
+echo "=== inLang + IsChinese impl ==="
+sed -n '/func inLang/,/^}/p; /func IsChinese/,/^}/p; /func Detect/,/^}/p' internal/lang/detect.go
+```
+
+```text
+=== current pair settings in config ===
+2:default_target = 'zh-TW'
+4:pair = true
+5:pair_with = 'zh'
+6:remember_last_pair = true
+=== current state (remember_last_pair) ===
+{
+  "source": "auto",
+  "target": "zh-TW",
+  "source_mode": "auto",
+  "engine": "copilot",
+  "updated_at": "2026-07-10T16:45:36.329304+08:00"
+}
+=== inLang + IsChinese impl ===
+func Detect(text string) string {
+	info := whatlanggo.Detect(text)
+	if info.Confidence < 0.5 {
+		return ""
+	}
+	return info.Lang.Iso6391()
+}
+func IsChinese(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+func inLang(text, code string) bool {
+	base := baseCode(code)
+	switch base {
+	case "", "auto":
+		return false
+	case "zh":
+		return IsChinese(text)
+	default:
+		d := Detect(text)
+		return d != "" && d == base
+	}
+}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:32Z)**_
+
+<think><details><summary>Thought Process</summary>
+I see the issue now—the user selected `zh` as their pair_with language instead of `en`, which is why the pairing isn't working as expected. The configuration has `default_target = 'zh-TW'` with `pair = true`, but since pair_with points to Chinese Simplified rather than English, the logic that should map `zh-TW` to `en` isn't being applied correctly. The real issue is that the user set `pair_with = 'zh'` when it should be `'en'` — the init form's wording about "pair with" is confusing, making it unclear that this field controls what language to translate *to* when typing in your home language. The fix is straightforward: change the config to `pair_with = 'en'`, or clarify the init step so users understand they're specifying the target language for home-language input.
+
+There's also a potential bug where `remember_last_pair` overwrites the home language — when Chinese translates to 'zh', it saves that as the state target, so the next English input treats 'zh' as home instead of 'zh-TW'.  The immediate fix is setting `pair_with=en`, though this reveals a deeper design issue with how pair mode interacts with state persistence.
+
+Looking at the code flow, when `recordAndRemember` is called, it saves the resolved effective target rather than the original configured home target. This means in pair mode, the home language drifts to whatever the last effective target resolved to—a genuine bug that `remember_last_pair` should preserve the configured home target instead.
+
+But the user's immediate issue is simpler: they did set up bidirectional pair mode correctly, but `pair_with='zh'` is wrong—it should be `'en'`. That's why 你好 stays as Chinese instead of translating to English. The primary fix is changing that configuration value. There's also the underlying pair mode drift bug worth addressing since they're actively relying on pair mode, though I should confirm it's actually affecting their setup. the home target so the pair mode doesn't shift unexpectedly. The issue is that recordAndRemember currently uses the same target value for both history logging and last-pair persistence, but they need different values — history should capture what actually ran (effTgt), while last-pair should remember the original home target (tgt) to keep the mode stable. I'm wondering if remember_last_pair is even meant to track the effective target or just the user's original selection.
+
+Actually, the solution is simpler: when pair mode is active, saveLastPair should persist the home target instead of the effective one. Since effectiveTarget returns the home target when pair mode is off anyway, the fix is just to pass the home target (tgt) to saveLastPair rather than effTgt. Refactoring the function signature... ct), away=zh. So hello stays in zh (correct). But if I fix pair_with to en, then saveLastPair corrupts home to en, and the next hello gets stuck in en instead of flipping back. So I need to fix both the pair_with configuration AND the remember_last_pair drift simultaneously, otherwise pair mode breaks as soon as the user corrects the initial setting. The screenshot timing got muddled by my own test runs, but the code analysis confirms the drift is real. The fix needs two parts: first, set `pair_with` to 'en' to match the user's actual intent of translating between Chinese and English, and second, fix the `remember_last_pair` function to preserve the home language target instead of the resolved effective target.
+
+Looking at the TUI path, `runTUI` already does this correctly — it saves the home target through `fm.Pair()`. The CLI is inconsistent because it persists the effective target instead. Aligning the CLI with the TUI's behavior is the right fix. Now I need to update the code in root.go to make this change at both call sites. Refactoring the function signature to accept both the effective target for history recording and the original target for the remember pair, so the history captures what was actually translated while the saved pair uses the stable anchor point. discovered it, I should fix it since it directly undermines their pair mode setup. I'll explain both issues clearly, apply the code fix, correct their config to use `pair_with=en`, then walk through rebuilding and testing to confirm bidirectional translation works reliably. I could re-run init to have them pick "english" at the pair-with step, but patching their config directly is faster and clearer since they've already expressed that intent. I'll make the fix to the code first, then update their config.toml to set pair_with to 'en', rebuild, and verify it works. Let me trace through the exact call sites in root.go around recordAndRemember to make sure I'm fixing this precisely.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:32Z)**_
+
+Found it — two issues, one config and one real bug:
+
+1. **Your `pair_with = 'zh'`** (should be `'en'`). So for Chinese input, pair mode translates `你好 → zh` (Traditional/Simplified Chinese ≈ unchanged), not English. The init "…pair with" step wants the *away* language (where your Chinese input goes = English), but `zh` got selected.
+
+2. **A latent bug that would break pair mode even after you fix `pair_with`:** `remember_last_pair` persists the *pair-resolved* target, not your home target. So the moment `你好 → en` works, it saves `target=en`, and your next run's "home" drifts to `en` — pair mode collapses. The TUI already persists the home target; the CLI path doesn't. Let me confirm the code:
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:32Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./cmd/root.go`
+
+```text
+145		}
+146	
+147		switch {
+148		case len(args) > 0:
+149			text := strings.Join(args, " ")
+150			effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+151			r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
+152			if err != nil {
+153				return err
+154			}
+155			recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
+156			return nil
+157	
+158		case !term.IsTerminal(int(os.Stdin.Fd())):
+159			b, err := io.ReadAll(os.Stdin)
+160			if err != nil {
+161				return err
+162			}
+163			text := strings.TrimSpace(string(b))
+164			if text == "" {
+165				return fmt.Errorf("no input on stdin")
+166			}
+167			effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+168			r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
+169			if err != nil {
+170				return err
+171			}
+172			recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
+173			return nil
+174	
+175		default:
+176			return runTUI(ctx, eng, res, st, src, tgt, pairWith)
+177		}
+178	}
+179	
+180	// effectiveTarget applies pair mode: home-language input → away, else → home.
+181	func effectiveTarget(pair bool, home, away, text string) string {
+182		if pair && away != "" {
+183			return lang.PairTarget(home, away, text)
+184		}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:39Z)**_
+
+<think><details><summary>Thought Process</summary>
+I see the issue now—both call sites are passing `effTgt` when they should be using different targets for the history versus the remember operation. I'll add a `rememberTarget` parameter set to `tgt` (the home target) while keeping `effTgt` for the history tracking, then update both call sites accordingly.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:39Z)**_
+
+Confirmed. Let me fix the bug: history keeps the effective target, but `remember_last_pair` must persist the stable home target (`tgt`).
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:43Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/cmd/root.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:52Z)**_
+
+Now update `recordAndRemember` to take the separate remember target:
+
+_**Agent (claude-opus-4-8 2026-07-10 08:50:54Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/cmd/root.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:05Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to fix the configuration by changing the pair_with setting from 'zh' to 'en', then rebuild and reinstall the package. After clearing any drifted state, I'll verify the translation behavior works correctly in both directions—testing that "hello" translates to Chinese and "你好" translates to English—and run these repeatedly to ensure there's no drift occurring. I'm going to use sed to patch the config file.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:05Z)**_
+
+Now let me fix your config (`pair_with` → `en`), rebuild/reinstall, clear the drifted state, and verify. First I'll read your config to patch it safely.
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:05Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/Users/david/.config/translate/config.toml`
+
+```text
+1	[general]
+2	default_target = 'zh-TW'
+3	default_source = 'auto'
+4	pair = true
+5	pair_with = 'zh'
+6	remember_last_pair = true
+7	live_translate = false
+8	debounce_ms = 400
+9	engine = 'auto'
+10	tier = 'default'
+11	preset = 'concise'
+12	instructions = 'domain focus: quantitative finance + computer science'
+13	alternatives_count = 3
+14	stream = true
+15	color = 'auto'
+16
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:11Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/.config/translate/config.toml has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:19Z)**_
+
+Now build, test, reinstall, clear the drifted state, and verify pair mode both directions plus stability across repeated runs:
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Build, reinstall, verify pair mode both ways and stability
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== build/vet/test ==="; go build ./... && go vet ./... && go test ./... 2>&1 | tail -4
+echo "=== reinstall + clear drifted state ==="; go install . && rm -f ~/.local/state/translate/state.json && hash -r; echo ok
+echo
+echo "=== pair mode: English input → zh-TW ==="; translate hello
+echo "=== pair mode: Chinese input → en ==="; translate 你好
+echo "=== repeat to prove home no longer drifts (was the bug) ==="
+echo -n "hello again: "; translate hello
+echo -n "你好 again:  "; translate 你好
+echo "=== state persisted = home (zh-TW), not the away language ==="; grep target ~/.local/state/translate/state.json
+```
+
+```text
+=== build/vet/test ===
+?   	github.com/daviddwlee84/translate/internal/state	[no test files]
+?   	github.com/daviddwlee84/translate/internal/store	[no test files]
+?   	github.com/daviddwlee84/translate/internal/tui	[no test files]
+?   	github.com/daviddwlee84/translate/internal/xdgpath	[no test files]
+=== reinstall + clear drifted state ===
+ok
+
+=== pair mode: English input → zh-TW ===
+你好
+=== pair mode: Chinese input → en ===
+Hello
+=== repeat to prove home no longer drifts (was the bug) ===
+hello again: 你好
+你好 again:  Hello
+=== state persisted = home (zh-TW), not the away language ===
+  "target": "zh-TW",
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:51Z)**_
+
+<think><details><summary>Thought Process</summary>
+Pair mode is now working bidirectionally without drift—English translates to Chinese and back to English consistently, with the target language staying anchored to the home setting. The fix is solid, so I'm committing just the root.go change as its own logical commit.
+
+I can see the working tree has the modified root.go file and the user's config file (which shouldn't be committed). Let me check git status and stage only the fix, then commit it with a clear message. I could also document this as a pitfall in the project's knowledge base since it's a subtle trap worth remembering, but that's beyond what's been asked for—I'll stick to committing the code fix.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:51Z)**_
+
+Pair mode now works both ways and is stable across repeats:
+- `hello → 你好` (English → zh-TW, "others → zh-TW")
+- `你好 → Hello` (Chinese → en, "zh → en")
+- No drift on repeat, and `state.json` persists the home target `zh-TW`.
+
+Let me commit the bug fix.
+
+_**Agent (claude-opus-4-8 2026-07-10 08:51:52Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit the pair-mode remember bug fix
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add cmd/root.go
+git status --short
+git commit -q -F - <<'EOF'
+fix(cli): persist home target for remember_last_pair in pair mode
+
+In pair mode the CLI saved the pair-resolved effective target as the "last
+pair", so one away-language input (e.g. Chinese → en) drifted the remembered
+home to the away language, collapsing pair mode on the next run. Persist the
+stable home target instead (history still records the effective target). This
+matches the TUI path, which already saves the home target.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+EOF
+git log --oneline -2
+```
+
+```text
+ M .specstory/history/2026-07-10_07-32-12Z-cli-llm-dictionary-model.md
+M  cmd/root.go
+8a243b9 fix(cli): persist home target for remember_last_pair in pair mode
+b183aa1 feat(config,engine): per-front-end [cli]/[tui] defaults + smart-dict LLM fallback
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:52:02Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've committed the changes with the transcript update staged separately since it's auto-generated. Both directions of pair mode are working correctly, the config is patched, and the binary is reinstalled.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-10 08:52:07Z)**_
+
+Both fixes done and verified.
+
+## What was wrong
+1. **Config:** you *did* enable pair mode, but `pair_with` was `'zh'` — so Chinese input translated to `zh` (≈ unchanged) instead of English. I patched `~/.config/translate/config.toml` → `pair_with = 'en'`, matching the intent shown in init ("others → zh-TW, but zh → en").
+
+2. **A real bug** (would have broken pair mode even with `pair_with='en'`): the CLI's `remember_last_pair` saved the *pair-resolved* target, so one Chinese input drifted your remembered "home" from `zh-TW` to `en`, collapsing pair mode on the next run. Fixed so it persists the stable home target (history still records the actual effective target) — aligning the CLI with what the TUI already did.
+
+## Verified (freshly reinstalled binary)
+```
+hello → 你好      (others → zh-TW)
+你好  → Hello     (zh → en)
+```
+Repeated runs stay stable; `state.json` keeps `target=zh-TW`.
+
+## Commits (on `main`)
+- `b183aa1` — `[cli]`/`[tui]` overlays + smart-dict engine (the earlier work)
+- `8a243b9` — `fix(cli): persist home target for remember_last_pair in pair mode`
+
+Two notes:
+- I edited your personal `config.toml` (`pair_with` only) since the intent was clear — say the word if you'd rather I revert and you re-run `init`.
+- This drift bug is a good candidate for your `pitfalls/` knowledge base. Want me to add a short `pitfalls/pair-mode-remember-last-pair-home-drift.md` entry?

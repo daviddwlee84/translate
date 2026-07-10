@@ -152,7 +152,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
+		recordAndRemember(ctx, st, cfg, r, text, src, effTgt, tgt)
 		return nil
 
 	case !term.IsTerminal(int(os.Stdin.Fd())):
@@ -169,7 +169,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		recordAndRemember(ctx, st, cfg, r, text, src, effTgt)
+		recordAndRemember(ctx, st, cfg, r, text, src, effTgt, tgt)
 		return nil
 
 	default:
@@ -222,12 +222,16 @@ func openStore(cfg *config.Config) store.Store {
 }
 
 // recordAndRemember writes the translation to history and persists the last pair.
-func recordAndRemember(ctx context.Context, st store.Store, cfg *config.Config, res *engine.TranslateResult, input, source, target string) {
+//
+// target is the effective target actually used (for history); rememberTarget is
+// the stable home target (== target unless pair mode redirected this one input),
+// so persisting it keeps pair mode from drifting its home to the away language.
+func recordAndRemember(ctx context.Context, st store.Store, cfg *config.Config, res *engine.TranslateResult, input, source, target, rememberTarget string) {
 	if st != nil {
 		_, _ = st.Add(ctx, toRecord(res, input, source, target))
 	}
 	if cfg.General.RememberLastPair {
-		saveLastPair(source, target, res.Engine)
+		saveLastPair(source, rememberTarget, res.Engine)
 	}
 }
 
