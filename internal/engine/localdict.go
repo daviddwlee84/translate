@@ -86,7 +86,8 @@ func (e *LocalDictEngine) lookupZh(ctx context.Context, word string, req Request
 	}
 	if e.cfg.Fuzzy {
 		if sugg := e.ce.prefixSuggest(word, suggestLimit); len(sugg) > 0 {
-			return single(suggestResult(sugg, req), nil)
+			// CC-CEDICT prefix matches carry no edit distance → 0 (unknown).
+			return single(suggestResult(sugg, req, 0), nil)
 		}
 	}
 	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word))
@@ -111,8 +112,8 @@ func (e *LocalDictEngine) lookupEn(ctx context.Context, word string, req Request
 		return single(ecdictResult(en, req), nil)
 	}
 	if e.cfg.Fuzzy {
-		if sugg := e.wl.nearestN(strings.ToLower(word), 2, suggestLimit); len(sugg) > 0 {
-			return single(suggestResult(sugg, req), nil)
+		if sugg, best := e.wl.nearestN(strings.ToLower(word), 2, suggestLimit); len(sugg) > 0 {
+			return single(suggestResult(sugg, req, best), nil)
 		}
 	}
 	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word))
@@ -162,8 +163,8 @@ func ecdictResult(en *ecdictEntry, req Request) *TranslateResult {
 	return &TranslateResult{Translation: gloss, Target: req.Target, Engine: "dictionary", Dictionary: d}
 }
 
-func suggestResult(sugg []string, req Request) *TranslateResult {
-	return &TranslateResult{Target: req.Target, Engine: "dictionary", Suggestions: sugg}
+func suggestResult(sugg []string, req Request, bestDist int) *TranslateResult {
+	return &TranslateResult{Target: req.Target, Engine: "dictionary", Suggestions: sugg, SuggestDistance: bestDist}
 }
 
 func notInstalled(req Request, note string) *TranslateResult {

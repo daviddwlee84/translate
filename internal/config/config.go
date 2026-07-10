@@ -16,11 +16,32 @@ import (
 // Config is the top-level config.toml schema.
 type Config struct {
 	General   General    `toml:"general"`
+	CLI       *Overlay   `toml:"cli,omitempty"` // per-front-end overrides on [general]
+	TUI       *Overlay   `toml:"tui,omitempty"` // (nil unless the user adds the table)
 	Chain     Chain      `toml:"chain"`
 	Providers []Provider `toml:"provider"` // array-of-tables: [[provider]]
 	Google    Google     `toml:"google"`
 	Dict      Dict       `toml:"dict"`
+	SmartDict SmartDict  `toml:"smartdict"`
 	History   History    `toml:"history"`
+}
+
+// Overlay is a partial [general] applied for one front-end ([cli] or [tui]). Every
+// field is a pointer so a nil means "inherit from [general]"; only keys the user
+// actually wrote override. Precedence: flag > env > [cli]/[tui] > [general] > default.
+type Overlay struct {
+	Engine        *string `toml:"engine,omitempty"`
+	Tier          *string `toml:"tier,omitempty"`
+	Preset        *string `toml:"preset,omitempty"`
+	Instructions  *string `toml:"instructions,omitempty"`
+	Model         *string `toml:"model,omitempty"`
+	DefaultTarget *string `toml:"default_target,omitempty"`
+	DefaultSource *string `toml:"default_source,omitempty"`
+	Pair          *bool   `toml:"pair,omitempty"`
+	PairWith      *string `toml:"pair_with,omitempty"`
+	Stream        *bool   `toml:"stream,omitempty"`
+	LiveTranslate *bool   `toml:"live_translate,omitempty"`
+	DebounceMs    *int    `toml:"debounce_ms,omitempty"`
 }
 
 // General holds behavior settings.
@@ -88,6 +109,17 @@ type History struct {
 	Enabled bool   `toml:"enabled"`
 	Backend string `toml:"backend"` // jsonl | sqlite
 	Path    string `toml:"path,omitempty"`
+}
+
+// SmartDict configures the smart-dict engine: a dictionary lookup that falls back
+// to the LLM when it misses or the fuzzy match is too far off (see engine.SmartDict).
+type SmartDict struct {
+	// CloseDistance is the English edit-distance at/below which a fuzzy "did you
+	// mean" is treated as a likely typo and kept as-is; beyond it (and any hard
+	// miss) the lookup falls back to the LLM.
+	CloseDistance int    `toml:"close_distance"`
+	Preset        string `toml:"preset,omitempty"` // LLM prompt style for the fallback
+	DefineDefault bool   `toml:"define_default"`   // `translate define` uses smart-dict when a provider is available
 }
 
 // Recommended copilot-proxy model ids per tier. Claude models are served via the
@@ -158,6 +190,11 @@ func Default() *Config {
 			EcdictURL:    "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv",
 			AutoDownload: false, // explicit `dict update` is the blessed path
 			APIFallback:  true,  // English lookups still work before ECDICT is installed
+		},
+		SmartDict: SmartDict{
+			CloseDistance: 1,            // distance-1 typos stay "did you mean"; farther → LLM
+			Preset:        "dictionary", // gloss + example sentences
+			DefineDefault: true,         // `translate define` prefers smart-dict when a provider is up
 		},
 		History: History{
 			Enabled: true,

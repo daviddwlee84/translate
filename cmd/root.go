@@ -98,6 +98,19 @@ func overrides() config.Overrides {
 	}
 }
 
+// invocationMode reports whether this run is the one-shot CLI (arguments or piped
+// stdin) or the interactive TUI (a TTY with no arguments). It mirrors the dispatch
+// switch in runRoot and is computed before Resolve so the [cli]/[tui] overlay applies.
+func invocationMode(args []string) config.Mode {
+	if len(args) > 0 {
+		return config.ModeCLI
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return config.ModeCLI
+	}
+	return config.ModeTUI
+}
+
 func runRoot(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -109,7 +122,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "translate: wrote default config to %s (run `translate init` to customize)\n", config.Path())
 	}
 
-	res := cfg.Resolve(overrides())
+	res := cfg.Resolve(overrides(), invocationMode(args))
 	applyLastPair(cfg, &res) // remember_last_pair: seed source/target from state
 	src, tgt := resolvePair(res.Source, res.Target)
 	pairWith := ""
@@ -272,8 +285,8 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		Model:         res.Model,
 		Preset:        res.Preset,
 		Instructions:  res.Instructions,
-		Live:          res.Cfg.General.LiveTranslate,
-		DebounceMs:    res.Cfg.General.DebounceMs,
+		Live:          res.LiveTranslate,
+		DebounceMs:    res.DebounceMs,
 	}
 	final, err := tea.NewProgram(tui.New(ctx, p), tea.WithContext(ctx)).Run()
 	if err != nil {

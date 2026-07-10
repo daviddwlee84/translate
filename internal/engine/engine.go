@@ -65,6 +65,12 @@ type TranslateResult struct {
 	// when no exact entry was found (Dictionary and Translation stay empty). The
 	// frontend decides how to present/select — the engine no longer auto-picks.
 	Suggestions []string `json:"suggestions,omitempty"`
+
+	// SuggestDistance is the edit distance of the best entry in Suggestions (English
+	// fuzzy lookups only; 0 when unknown/not applicable, e.g. Chinese prefix matches).
+	// The smart-dict engine reads it to tell a likely typo from a match too far off.
+	// Transient: not serialized.
+	SuggestDistance int `json:"-"`
 }
 
 // DictEntry is a dictionary lookup payload (populated by the dictionary engine).

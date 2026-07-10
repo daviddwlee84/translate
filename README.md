@@ -38,7 +38,29 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 
 Flags: `--engine auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--no-history`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`.
-Precedence: **flag > env > config > default**.
+Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
+
+### Per-front-end defaults (`[cli]` / `[tui]`)
+
+The CLI (arguments or piped stdin) and the interactive TUI share `[general]`, but
+either can override any subset of it via an optional `[cli]` or `[tui]` table — e.g.
+a snappy concise CLI and a richer, higher-tier TUI:
+
+```toml
+[general]
+preset = "contextual"
+tier   = "fast"
+
+[cli]                 # one-shot / piped translation
+preset = "concise"
+
+[tui]                 # interactive front-end
+tier          = "max"
+live_translate = true
+```
+
+Only keys you list are overridden; the rest inherit `[general]`. Flags and env vars
+still win over both.
 
 ## TUI keys
 
@@ -82,6 +104,32 @@ translate dict update all      # one-time ~67 MB download/build into ~/.local/sh
 Until then, English lookups fall back to dictionaryapi.dev (`[dict] api_fallback`),
 and Chinese lookups prompt you to run the update. Misses show a ranked "did you
 mean" list. Set `[dict] source = "api"` to use only dictionaryapi.dev.
+
+### Smart dictionary (`smart-dict`)
+
+A distinct engine that keeps the offline dictionary fast and deterministic, but on
+a miss — no entry, or a fuzzy match too far off — falls back to the LLM for a gloss
+plus example sentences (never silently: the result carries a `⚠ … defined via <provider> (LLM)`
+warning). Close typos (edit distance ≤ `[smartdict] close_distance`, default 1) still
+show "did you mean" without calling the LLM.
+
+```sh
+translate define serendipity        # exact ECDICT entry
+translate define zzzznotaword       # miss → LLM definition (⚠ warning on stderr)
+translate define helllo             # distance-1 typo → "did you mean: hello, …"
+translate define --plain <word>     # force the offline dictionary, no LLM fallback
+```
+
+`translate define` uses smart-dict whenever an LLM provider is reachable
+(`[smartdict] define_default`, `--smart`/`--plain` to force); in the TUI, `^e`
+cycles to a `smart-dict` engine alongside the plain `dictionary`.
+
+```toml
+[smartdict]
+close_distance = 1            # en edit-distance ≤ this stays "did you mean"; beyond → LLM
+preset         = "dictionary" # LLM output style for the fallback
+define_default = true         # `translate define` prefers smart-dict when a provider is up
+```
 
 Data: **CC-CEDICT** (CC BY-SA 4.0, © Paul Andrew Denisowski / MDBG) and
 **ECDICT** (MIT, © skywind3000).

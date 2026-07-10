@@ -102,9 +102,21 @@ func dictFromConfig(cfg *config.Config) engine.Engine {
 	})
 }
 
+// smartDictFromConfig builds the smart-dict engine: the plain dictionary plus an
+// LLM fallback (resolved provider/model) for misses and too-weak fuzzy matches.
+// The caller must ensure res.Provider != nil.
+func smartDictFromConfig(res config.Resolved) engine.Engine {
+	cfg := res.Cfg
+	return engine.NewSmartDict(dictFromConfig(cfg), llmFromProvider(res.Provider, res.Model), engine.SmartDictConfig{
+		CloseDistance: cfg.SmartDict.CloseDistance,
+		Preset:        cfg.SmartDict.Preset,
+	})
+}
+
 // buildEngineSet builds the list of engines the TUI can cycle through with ^e:
-// the resolved primary (translate), plus Google (fast, keyless) and the
-// dictionary (word lookup), so the user can switch on the fly.
+// the resolved primary (translate), plus Google (fast, keyless), the dictionary
+// (word lookup), and — when an LLM provider is available — the smart dictionary
+// (dictionary with an LLM fallback), so the user can switch on the fly.
 func buildEngineSet(res config.Resolved, primary engine.Engine) []tui.NamedEngine {
 	cfg := res.Cfg
 	primaryName := res.Engine
@@ -117,6 +129,9 @@ func buildEngineSet(res config.Resolved, primary engine.Engine) []tui.NamedEngin
 	}
 	if cfg.Dict.Enabled {
 		set = append(set, tui.NamedEngine{Name: "dictionary", Engine: dictFromConfig(cfg), Mode: engine.ModeDict})
+		if res.Provider != nil {
+			set = append(set, tui.NamedEngine{Name: "smart-dict", Engine: smartDictFromConfig(res), Mode: engine.ModeDict})
+		}
 	}
 	return set
 }

@@ -88,8 +88,8 @@ func (e *DictEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, 
 	// 404: return a ranked "did you mean" list (the frontend chooses one). Gated
 	// to English because the bundled wordlist (/usr/share/dict/words) is English.
 	if status == http.StatusNotFound && e.cfg.Fuzzy && strings.HasPrefix(strings.ToLower(e.cfg.Lang), "en") {
-		if cands := e.wl.nearestN(word, 2, suggestLimit); len(cands) > 0 {
-			return single(&TranslateResult{Target: req.Target, Engine: e.Name(), Suggestions: cands}, nil), nil
+		if cands, best := e.wl.nearestN(word, 2, suggestLimit); len(cands) > 0 {
+			return single(&TranslateResult{Target: req.Target, Engine: e.Name(), Suggestions: cands, SuggestDistance: best}, nil), nil
 		}
 	}
 	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word)), nil
@@ -225,8 +225,9 @@ func (wi *wordIndex) load() {
 }
 
 // nearestN returns up to n headwords within maxDist edits of word, closest first
-// (ties broken alphabetically), excluding word itself.
-func (wi *wordIndex) nearestN(word string, maxDist, n int) []string {
+// (ties broken alphabetically), excluding word itself. The second return is the
+// best (smallest) edit distance among the results, or 0 when there are none.
+func (wi *wordIndex) nearestN(word string, maxDist, n int) ([]string, int) {
 	wi.load()
 	type cand struct {
 		w string
@@ -254,7 +255,11 @@ func (wi *wordIndex) nearestN(word string, maxDist, n int) []string {
 	for i, c := range cs {
 		out[i] = c.w
 	}
-	return out
+	best := 0
+	if len(cs) > 0 {
+		best = cs[0].d // slice is sorted by distance ascending
+	}
+	return out, best
 }
 
 func abs(n int) int {
