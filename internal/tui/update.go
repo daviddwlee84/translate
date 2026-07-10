@@ -537,15 +537,18 @@ func (m Model) recordFor(res engine.TranslateResult) store.Record {
 	}
 }
 
-// relayout recomputes component sizes for the current window. Widths account for
-// each box's border (2) and horizontal padding (2).
+// relayout recomputes component sizes for the current window. The input/result
+// boxes are rendered at .Width(m.width-2); lipgloss treats that as the TOTAL
+// width, so the inner content area is that minus the box frame (border 2 +
+// padding 2 = 4) = m.width-6. Wrapping content to anything wider makes each line
+// overflow the box and get re-wrapped, orphaning a character per line.
 func (m *Model) relayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	const inputH = 4
 	footerH := m.footerHeight() // wraps to width; may be >1 on narrow terminals
-	compW := m.width - 4
+	compW := m.width - 6
 	if compW < 1 {
 		compW = 1
 	}
