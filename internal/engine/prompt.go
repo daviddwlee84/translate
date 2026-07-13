@@ -27,7 +27,9 @@ Rules:
   INTENDED meaning and translate that; do not translate a typo literally, and never refuse.
 - Output ONLY the translated text. No quotes, no explanations, no language labels,
   no commentary before or after.
-- If the source language equals the target language, return the text unchanged (lightly
+- ALWAYS translate into the target language. A single word, name, technical term, or
+  loanword written in a DIFFERENT language must still be translated — never echo it back.
+  Only when the text is ALREADY in the target language should you return it (lightly
   corrected if it was misspelled).`
 
 // translateSystemPromptContextual lists translations across common senses.
@@ -72,6 +74,12 @@ func systemPromptFor(preset string) string {
 	}
 }
 
+// pairDirective is appended to the system prompt in bidirectional pair mode. It
+// makes the model own language detection (more robust than a pre-computed target
+// for short/ambiguous input) and forbids echoing the input — the exact failure
+// this fixes ("test" → "test" instead of "測試").
+const pairDirective = `Bidirectional mode: the text is written in ONE of %s or %s. Detect which of the two it is, and translate it into the OTHER one. ALWAYS translate — never return the text unchanged, even for a single word, a proper name, a technical term, or a loanword.`
+
 // translateUserPrompt frames the concrete request.
 const translateUserPrompt = `Source language: %s
 Target language: %s
@@ -91,6 +99,12 @@ func buildTranslatePrompt(req Request) (system, user string) {
 	}
 	tgt := fmt.Sprintf("%s (%s)", lang.Name(req.Target), req.Target)
 	system = systemPromptFor(req.Preset)
+	// In pair mode, let the model detect the input language and route to the other
+	// side, and never echo — this is appended to (not a replacement of) the preset
+	// so the chosen output format (concise/contextual/dictionary) is preserved.
+	if req.Pair && req.PairHome != "" && req.PairAway != "" {
+		system += "\n\n" + fmt.Sprintf(pairDirective, lang.Name(req.PairHome), lang.Name(req.PairAway))
+	}
 	if extra := strings.TrimSpace(req.Extra); extra != "" {
 		system += "\n\nUser preferences (apply where relevant, e.g. domain terminology):\n" + extra
 	}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daviddwlee84/translate/internal/config"
+	"github.com/daviddwlee84/translate/internal/debug"
 	"github.com/daviddwlee84/translate/internal/engine"
 	"github.com/daviddwlee84/translate/internal/lang"
 	"github.com/daviddwlee84/translate/internal/state"
@@ -38,6 +40,7 @@ var (
 	flagPairWith     string
 	flagJSON         bool
 	flagNoHistory    bool
+	flagDebug        bool
 )
 
 // NewRootCmd builds the root command and its subcommands.
@@ -71,6 +74,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
+	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
 
 	root.SuggestionsMinimumDistance = 2
 	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd())
@@ -95,6 +99,7 @@ func overrides() config.Overrides {
 		Instructions: flagInstructions,
 		Pair:         flagPair,
 		PairWith:     flagPairWith,
+		Debug:        flagDebug,
 	}
 }
 
@@ -123,12 +128,26 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	res := cfg.Resolve(overrides(), invocationMode(args))
+	if res.Debug {
+		// The one-shot CLI logs to stderr; the TUI logs to a file, since its
+		// alt-screen would be corrupted by stderr writes.
+		if invocationMode(args) == config.ModeCLI {
+			debug.Enable(os.Stderr)
+		} else if w := openDebugLog(); w != nil {
+			debug.Enable(w)
+		}
+	}
 	applyLastPair(cfg, &res) // remember_last_pair: seed source/target from state
 	src, tgt := resolvePair(res.Source, res.Target)
 	pairWith := ""
 	if res.Pair {
 		pwm, _ := lang.Resolve(res.PairWith)
 		pairWith = pwm.Code
+	}
+	debug.Logf("resolved: engine=%s tier=%s preset=%s source=%s target=%s pair=%v pair_with=%s",
+		res.Engine, res.Tier, res.Preset, src, tgt, res.Pair, pairWith)
+	if res.Pair && (pairWith == "" || strings.EqualFold(pairWith, tgt)) {
+		fmt.Fprintf(os.Stderr, "translate: warning: pair mode is on but pair-with (%q) equals the target (%q) — pair mode is a no-op; set a different pair_with (run `translate init`)\n", pairWith, tgt)
 	}
 
 	if res.Provider == nil && res.Engine != "auto" {
@@ -148,7 +167,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
+		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith)
 		if err != nil {
 			return err
 		}
@@ -165,7 +184,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no input on stdin")
 		}
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions)
+		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith)
 		if err != nil {
 			return err
 		}
@@ -180,9 +199,35 @@ func runRoot(cmd *cobra.Command, args []string) error {
 // effectiveTarget applies pair mode: home-language input → away, else → home.
 func effectiveTarget(pair bool, home, away, text string) string {
 	if pair && away != "" {
-		return lang.PairTarget(home, away, text)
+		t := lang.PairTarget(home, away, text)
+		debug.Logf("pair route: home=%s away=%s text=%q → target=%s", home, away, clip(text, 30), t)
+		return t
 	}
 	return home
+}
+
+// clip shortens a string for a single-line debug label.
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// openDebugLog opens (append) the TUI debug log file, creating the state dir.
+// Returns nil on failure (debug simply stays off).
+func openDebugLog() io.Writer {
+	if err := xdgpath.EnsureDirs(); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(filepath.Join(xdgpath.StateDir(), "debug.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil
+	}
+	return f
 }
 
 // applyLastPair overrides the resolved source/target with the persisted last
@@ -197,9 +242,11 @@ func applyLastPair(cfg *config.Config, res *config.Resolved) {
 	}
 	if flagFrom == "" && os.Getenv("TRANSLATE_SOURCE") == "" && stt.Source != "" {
 		res.Source = stt.Source
+		debug.Logf("remember_last_pair: source ← %s (from state)", stt.Source)
 	}
 	if flagTo == "" && os.Getenv("TRANSLATE_TARGET") == "" && stt.Target != "" {
 		res.Target = stt.Target
+		debug.Logf("remember_last_pair: target ← %s (from state)", stt.Target)
 	}
 }
 
@@ -324,18 +371,21 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // Tokens stream live to stdout only when stdout is a TTY (so `translate x | pbcopy`
 // stays clean) and --json was not requested. Piped output is the plain translation
 // with no ANSI; --json emits the full structured result.
-func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string) (*engine.TranslateResult, error) {
+func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stream := streamPref && stdoutTTY && !flagJSON
 
 	req := engine.Request{
-		Text:   text,
-		Source: source,
-		Target: target,
-		Mode:   engine.ModeTranslate,
-		Stream: stream,
-		Preset: preset,
-		Extra:  instructions,
+		Text:     text,
+		Source:   source,
+		Target:   target,
+		Mode:     engine.ModeTranslate,
+		Stream:   stream,
+		Preset:   preset,
+		Extra:    instructions,
+		Pair:     pair,
+		PairHome: pairHome,
+		PairAway: pairAway,
 	}
 	ch, err := eng.Translate(ctx, req)
 	if err != nil {

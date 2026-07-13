@@ -16,6 +16,7 @@ type keyMap struct {
 	Copy        key.Binding
 	History     key.Binding
 	Clear       key.Binding
+	SwitchFocus key.Binding
 	Quit        key.Binding
 }
 
@@ -32,6 +33,7 @@ func defaultKeys() keyMap {
 		Copy:        key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "copy")),
 		History:     key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("^r", "history")),
 		Clear:       key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("^u", "clear")),
+		SwitchFocus: key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("⇥", "focus")),
 		Quit:        key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("^c", "quit")),
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/daviddwlee84/translate/internal/debug"
 )
 
 // Chain is the AUTO fallback router. It tries engines in configured order and
@@ -94,13 +96,16 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 			if c.recentlyDown(e) {
 				lastErr = fmt.Errorf("%s: recently unavailable", e.Name())
 				warns = append(warns, e.Name()+" skipped (recently unavailable)")
+				debug.Logf("chain: skip %s (recently unavailable)", e.Name())
 				continue
 			}
+			debug.Logf("chain: try %s", e.Name())
 			sub, err := e.Translate(ctx, req)
 			if err != nil {
 				lastErr = err
 				warns = append(warns, err.Error()) // engine errors are already name-prefixed
 				c.mark(e, false)
+				debug.Logf("chain: %s failed at connect: %v", e.Name(), err)
 				continue
 			}
 
@@ -112,6 +117,7 @@ func (c *Chain) Translate(ctx context.Context, req Request) (<-chan Chunk, error
 					out <- ch
 				case ChunkDone:
 					c.mark(e, true)
+					debug.Logf("chain: %s served the result", e.Name())
 					if ch.Result != nil && len(warns) > 0 {
 						ch.Result.Warnings = append(ch.Result.Warnings, warns...)
 					}

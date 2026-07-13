@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 
+	"github.com/daviddwlee84/translate/internal/debug"
 	"github.com/daviddwlee84/translate/internal/engine"
 	"github.com/daviddwlee84/translate/internal/lang"
 	"github.com/daviddwlee84/translate/internal/store"
@@ -145,6 +146,13 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// isTextInput reports whether a key press produced a printable, non-whitespace
+// character (Key.Text is set only for printable characters). Space/tab are
+// treated as navigation so they can page the viewport instead of typing.
+func isTextInput(msg tea.KeyPressMsg) bool {
+	return msg.Text != "" && strings.TrimSpace(msg.Text) != ""
+}
+
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// An open overlay (history / language / model picker) captures keys.
 	if m.overlay != overlayNone {
@@ -191,8 +199,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.TogglePair):
 		m.pair = !m.pair
-		if m.pair && m.pairWith == "" {
-			m.pairWith = "en"
+		// Pair mode is a no-op when "away" equals the target; pick a distinct away.
+		if m.pair && (m.pairWith == "" || strings.EqualFold(m.pairWith, m.target)) {
+			if strings.HasPrefix(strings.ToLower(m.target), "en") {
+				m.pairWith = "zh-TW"
+			} else {
+				m.pairWith = "en"
+			}
 		}
 		m.relayout() // footer pair segment changed
 		if m.live && strings.TrimSpace(m.ta.Value()) != "" {
@@ -234,12 +247,25 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cancelInflight()
 		m.seq++
 		m.ta.Reset()
+		m.focus = focusInput
+		m.ta.Focus()
 		m.result = nil
 		m.err = nil
 		m.streamBuf = ""
 		m.status = statusIdle
 		m.vp.SetContent("")
 		return m, nil
+
+	case key.Matches(msg, m.keys.SwitchFocus):
+		// Toggle which pane the keyboard drives. Blurring the textarea also dims its
+		// border (View keys off ta.Focused()); the result box highlights via m.focus.
+		if m.focus == focusInput {
+			m.focus = focusOutput
+			m.ta.Blur()
+			return m, nil
+		}
+		m.focus = focusInput
+		return m, m.ta.Focus()
 
 	case key.Matches(msg, m.keys.Translate):
 		// After a dictionary miss the input still equals the missed word, so a
@@ -251,6 +277,22 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.launch(true)
+	}
+
+	// Output pane focused: the keyboard scrolls the result viewport. A printable
+	// character (not whitespace) snaps focus back to the input and is typed there,
+	// so the user can just start typing without pressing Tab first.
+	if m.focus == focusOutput {
+		if isTextInput(msg) {
+			m.focus = focusInput
+			cmd := m.ta.Focus()
+			var tcmd tea.Cmd
+			m.ta, tcmd = m.ta.Update(msg)
+			return m, tea.Batch(cmd, tcmd)
+		}
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
 	}
 
 	// Ordinary keystroke: update the textarea, then (re)arm the debounce.
@@ -342,9 +384,12 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 	seq := m.seq
 	ne := m.active()
 	target := m.target
-	if m.pair && m.pairWith != "" && ne.Mode == engine.ModeTranslate {
+	pairOn := m.pair && m.pairWith != "" && ne.Mode == engine.ModeTranslate
+	if pairOn {
 		target = lang.PairTarget(m.target, m.pairWith, text) // home-lang input → away, else home
+		debug.Logf("tui pair route: home=%s away=%s → target=%s", m.target, m.pairWith, target)
 	}
+	debug.Logf("tui launch: engine=%s mode=%d target=%s preset=%s", ne.Name, ne.Mode, target, m.preset)
 	req := engine.Request{
 		Text:          text,
 		Source:        m.source,
@@ -355,6 +400,9 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		ModelProvider: m.p.ModelProvider,
 		Preset:        m.preset,
 		Extra:         m.p.Instructions,
+		Pair:          pairOn,
+		PairHome:      m.target,
+		PairAway:      m.pairWith,
 	}
 	ch, err := ne.Engine.Translate(ctx, req)
 	if err != nil {
@@ -501,8 +549,8 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleMouseClick routes clicks. In an overlay it forwards to the list; in
-// normal mode a click on the footer row opens the language picker (like clicking
-// the language selector in a translator UI).
+// normal mode a click focuses the pane it lands in (so the keyboard scrolls it),
+// except a click on the footer row opens the language picker.
 func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if m.overlay != overlayNone {
 		cmd := m.overlayListUpdate(msg)
@@ -511,6 +559,19 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if m.height > 0 && msg.Y == m.height-1 {
 		m.overlay = overlayLang
 		return m, nil
+	}
+	// The input box occupies the first inputH+2 rows (border + inputH + border);
+	// everything below it (down to the footer) is the result box.
+	if msg.Y < inputH+2 {
+		if m.focus != focusInput {
+			m.focus = focusInput
+			return m, m.ta.Focus()
+		}
+		return m, nil
+	}
+	if m.focus != focusOutput {
+		m.focus = focusOutput
+		m.ta.Blur()
 	}
 	return m, nil
 }
@@ -546,7 +607,6 @@ func (m *Model) relayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	const inputH = 4
 	footerH := m.footerHeight() // wraps to width; may be >1 on narrow terminals
 	compW := m.width - 6
 	if compW < 1 {

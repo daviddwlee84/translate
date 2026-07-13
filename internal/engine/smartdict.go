@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/daviddwlee84/translate/internal/debug"
 	"github.com/daviddwlee84/translate/internal/lang"
 )
 
@@ -72,9 +73,11 @@ func (e *SmartDictEngine) Translate(ctx context.Context, req Request) (<-chan Ch
 		// before deciding whether the answer is good enough.
 		res, derr := Drain(dictCh, nil)
 		if e.dictAnswered(res, derr) {
+			debug.Logf("smart-dict: %q answered from dictionary", strings.TrimSpace(req.Text))
 			out <- Chunk{Kind: ChunkDone, Result: res}
 			return
 		}
+		debug.Logf("smart-dict: %q → LLM fallback (no usable dictionary entry)", strings.TrimSpace(req.Text))
 		e.fallback(ctx, req, derr, out)
 	}()
 	return out, nil

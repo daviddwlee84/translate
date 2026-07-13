@@ -42,6 +42,7 @@ type Overlay struct {
 	Stream        *bool   `toml:"stream,omitempty"`
 	LiveTranslate *bool   `toml:"live_translate,omitempty"`
 	DebounceMs    *int    `toml:"debounce_ms,omitempty"`
+	Debug         *bool   `toml:"debug,omitempty"`
 }
 
 // General holds behavior settings.
@@ -53,13 +54,14 @@ type General struct {
 	RememberLastPair  bool   `toml:"remember_last_pair"`
 	LiveTranslate     bool   `toml:"live_translate"`
 	DebounceMs        int    `toml:"debounce_ms"`
-	Engine            string `toml:"engine"`                 // auto | llm | google | dict
+	Engine            string `toml:"engine"`                 // auto | smartauto | llm | google | <provider>
 	Tier              string `toml:"tier"`                   // default | fast | max
 	Preset            string `toml:"preset"`                 // concise | contextual | dictionary
 	Instructions      string `toml:"instructions,omitempty"` // extra system-prompt guidance (domain focus, etc.)
 	AlternativesCount int    `toml:"alternatives_count"`
 	Stream            bool   `toml:"stream"`
 	Color             string `toml:"color"` // auto | always | never
+	Debug             bool   `toml:"debug"` // verbose decision logging (also --debug / TRANSLATE_DEBUG)
 }
 
 // Chain is the ordered fallback list of provider/engine names.

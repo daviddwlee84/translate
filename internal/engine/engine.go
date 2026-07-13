@@ -33,6 +33,15 @@ type Request struct {
 	ModelProvider string
 	Preset        string // LLM prompt style: "" => concise (LLM translate only)
 	Extra         string // extra user instructions appended to the system prompt
+
+	// Pair marks a bidirectional "pair" request: the text is written in one of
+	// two languages (PairHome/PairAway) and must be translated into the OTHER.
+	// The LLM translate prompt uses this to detect-and-route and, critically, to
+	// never echo the input unchanged. Target still carries the caller's routed
+	// best guess (for history/display and non-LLM engines).
+	Pair     bool
+	PairHome string // one pair language (e.g. the home target, "zh-TW")
+	PairAway string // the other pair language (e.g. "en")
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it

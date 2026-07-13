@@ -36,8 +36,8 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate init` | Interactive config wizard (probes providers) |
 | `translate config path\|show` · `lang resolve <q>` | Introspection helpers |
 
-Flags: `--engine auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--no-history`.
-Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`.
+Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--no-history`, `--debug`.
+Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
 Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
 
 ### Per-front-end defaults (`[cli]` / `[tui]`)
@@ -66,7 +66,12 @@ still win over both.
 
 `↵` translate · live-debounce auto-translates ~700ms after you stop typing (off by default) ·
 `^y` copy · `^l` toggle live · `^e` cycle engine · `^t` target language · `^p` model ·
-`^o` style · `^g` toggle pair mode · `^r` history · `^u` clear · `⌥↵` newline · `^c`/`esc` quit.
+`^o` style · `^g` toggle pair mode · `^u` clear · `⇥` switch input/output focus · `^r` history · `⌥↵` newline · `^c`/`esc` quit.
+
+`⇥` (Tab) moves keyboard focus between the input box and the result box; the focused
+box gets an accent border. With the result focused, `↑/↓ j/k PgUp/PgDn g/G space` scroll
+it; typing any character snaps focus back to the input. A mouse click focuses the box
+it lands in.
 
 ## Engines & fallback
 
@@ -90,6 +95,30 @@ than restarting):
 Config lives at `~/.config/translate/config.toml`, history at
 `~/.local/share/translate/history.jsonl`, last-pair state at
 `~/.local/state/translate/state.json` (XDG-honored on macOS and Linux).
+
+### Smart auto (`smartauto`)
+
+The recommended default (choose it in `translate init`). It routes by input shape:
+a **single word/term** is looked up in the dictionary (with the same LLM fallback as
+`smart-dict` on a miss), while a **phrase or sentence** is translated by the LLM. Set
+`engine = "smartauto"` in `[general]` (or `--engine smartauto`). It composes with
+pair mode, so a single word and a full sentence both translate in the right direction.
+
+### Pair mode (bidirectional)
+
+With `pair = true` + `pair_with`, the tool detects which of the two languages your
+input is in and translates it into the **other** — one box, both directions
+(`你好 → hi`, `test → 測試`). For a CJK/non-CJK pair (e.g. `zh-TW`⇄`en`) direction is
+decided by script, so even short input routes correctly; the LLM translate prompt is
+also told to detect-and-route and to **never echo** the input. `pair_with` must differ
+from the target (`translate init` enforces this; a degenerate config warns).
+
+### Debugging
+
+`--debug` (or `TRANSLATE_DEBUG=1`, or `[general] debug = true`) logs the intermediate
+decisions — resolved settings, pair routing, word-vs-phrase classification, dictionary
+hit/miss, and chain fallback. The one-shot CLI logs to **stderr**; the TUI logs to
+`~/.local/state/translate/debug.log` (its alt-screen hides stderr).
 
 ## Dictionary mode
 

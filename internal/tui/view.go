@@ -29,7 +29,11 @@ func (m Model) View() tea.View {
 
 	// The result box is kept at a fixed height (viewport height) so the layout
 	// never jumps between the "translating…" placeholder and streamed output.
-	result := m.st.result.Width(m.width - 2).Height(m.resultH).Render(m.vp.View())
+	resStyle := m.st.result
+	if m.focus == focusOutput {
+		resStyle = m.st.resultHi
+	}
+	result := resStyle.Width(m.width - 2).Height(m.resultH).Render(m.vp.View())
 	footer := m.st.footer.Width(m.width).Render(m.statusLine())
 
 	return altView(lg.JoinVertical(lg.Left, input, result, footer))
@@ -125,7 +129,7 @@ func (m Model) footerContent(forceState bool) string {
 		if state != "" {
 			left += "  " + state
 		}
-		return left + "  " + m.st.dim.Render("↵ define  ^y copy  ^l live  ^e engine  ^r history  ^c quit")
+		return left + "  " + m.st.dim.Render("↵ define  ^y copy  ^l live  ^e engine  ^u clear  ⇥ focus  ^r history  ^c quit")
 	}
 
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
@@ -153,7 +157,7 @@ func (m Model) footerContent(forceState bool) string {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^y copy  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^r history  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^y copy  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^u clear  ⇥ focus  ^r history  ^c quit")
 	return left + "  " + help
 }
 

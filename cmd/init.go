@@ -53,9 +53,10 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Default engine").
-				Description("Auto tries each provider in order and falls back.").
+				Description("Smart auto looks single words up in the dictionary and translates phrases with the LLM.").
 				Options(
-					huh.NewOption("Auto fallback chain (recommended)", "auto"),
+					huh.NewOption("Smart auto — dictionary for words, LLM for phrases (recommended)", "smartauto"),
+					huh.NewOption("Auto fallback chain (LLM providers → Google)", "auto"),
 					huh.NewOption(probeLabel("copilot-proxy", copilotUp), "copilot"),
 					huh.NewOption(probeLabel("Ollama (offline)", ollamaUp), "ollama"),
 					huh.NewOption("Google (free, translate only)", "google"),
@@ -106,6 +107,19 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	)
 	if err := form.Run(); err != nil {
 		return err
+	}
+
+	// Pair mode is a no-op when the "away" language equals the target (the default
+	// config ships target=en, pair_with=en). Force a distinct away so pair mode
+	// actually flips direction.
+	if pair && (pairWith == "" || strings.EqualFold(pairWith, target)) {
+		old := pairWith
+		if strings.HasPrefix(strings.ToLower(target), "en") {
+			pairWith = "zh-TW"
+		} else {
+			pairWith = "en"
+		}
+		fmt.Fprintf(os.Stderr, "note: pair-with (%q) must differ from the target (%q); set pair-with=%s\n", old, target, pairWith)
 	}
 
 	cfg.General.Engine = engineChoice

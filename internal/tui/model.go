@@ -51,6 +51,19 @@ const (
 	statusError
 )
 
+// focusPane selects which pane keyboard navigation drives. Global bindings
+// (Enter, ^y, ^e, …) work regardless; only ordinary/scroll keys are routed.
+type focusPane int
+
+const (
+	focusInput  focusPane = iota // typing + cursor navigation in the textarea (default)
+	focusOutput                  // keyboard scrolling of the result viewport
+)
+
+// inputH is the fixed height (rows) of the input textarea box; shared by the
+// layout and the click-to-focus hit test.
+const inputH = 4
+
 // Model is the Bubble Tea model. All methods use value receivers and return the
 // modified copy (the v2 convention) to avoid "state didn't stick" bugs.
 type Model struct {
@@ -71,7 +84,8 @@ type Model struct {
 	width, height int
 	ready         bool
 	overlay       overlayKind
-	resultH       int // result viewport height (kept fixed to avoid layout jumps)
+	focus         focusPane // input (default) vs output; drives scroll/typing routing
+	resultH       int       // result viewport height (kept fixed to avoid layout jumps)
 
 	source   string
 	target   string

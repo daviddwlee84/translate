@@ -17,6 +17,7 @@ type Overrides struct {
 	Instructions string
 	Pair         bool // --pair forces pair mode on
 	PairWith     string
+	Debug        bool // --debug forces verbose logging on
 }
 
 // Mode identifies which front-end an invocation resolves for, selecting the
@@ -42,6 +43,7 @@ type Resolved struct {
 	PairWith     string
 	Stream       bool
 	Color        string
+	Debug        bool
 
 	// LiveTranslate/DebounceMs are TUI-only knobs, resolved here (through the
 	// per-mode overlay) so the front-end never reads c.General directly.
@@ -106,6 +108,9 @@ func applyOverlay(g *General, ov *Overlay) {
 	if ov.DebounceMs != nil {
 		g.DebounceMs = *ov.DebounceMs
 	}
+	if ov.Debug != nil {
+		g.Debug = *ov.Debug
+	}
 }
 
 // Resolve merges flag overrides, environment variables, the per-mode overlay, and
@@ -141,6 +146,7 @@ func (c *Config) Resolve(o Overrides, mode Mode) Resolved {
 		Stream:        g.Stream,
 		LiveTranslate: g.LiveTranslate,
 		DebounceMs:    g.DebounceMs,
+		Debug:         o.Debug || g.Debug || envVal("TRANSLATE_DEBUG") != "",
 	}
 
 	// Resolve which provider backs an LLM request.

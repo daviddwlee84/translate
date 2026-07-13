@@ -29,18 +29,62 @@ func IsChinese(text string) bool {
 	return false
 }
 
-// PairTarget implements bidirectional "pair" mode: if the input is written in
-// the home language, translate it to away; otherwise translate it to home. This
-// makes "foreign → my language, my language → foreign" work from one input box
-// (e.g. home=zh-TW, away=en: Chinese → en, everything else → zh-TW).
+// containsCJK reports whether text contains any CJK-script rune (Han, Hiragana,
+// Katakana, or Hangul). This is a reliable, offline signal for routing a
+// CJK/non-CJK language pair — unlike trigram detection, it is confident even on
+// very short input.
+func containsCJK(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
+			unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCJKLang reports whether a language code is Chinese, Japanese, or Korean.
+func isCJKLang(code string) bool {
+	switch baseCode(code) {
+	case "zh", "ja", "ko":
+		return true
+	}
+	return false
+}
+
+// PairTarget implements bidirectional "pair" mode: detect which of the two pair
+// languages the text is written in and return the OTHER one (so "foreign → my
+// language, my language → foreign" both work from one input box).
+//
+// When exactly one side of the pair is a CJK language, routing is decided purely
+// by script presence — reliable and offline, and symmetric regardless of which
+// side is "home". This is what makes short Latin input like "test" route to the
+// CJK side instead of falling through to the wrong language. Same-script pairs
+// (e.g. en⇄es) fall back to best-effort trigram detection.
 func PairTarget(home, away, text string) string {
 	if away == "" || away == home {
 		return home
 	}
-	if inLang(text, home) {
+	homeCJK, awayCJK := isCJKLang(home), isCJKLang(away)
+	if homeCJK != awayCJK {
+		cjk, latin := home, away
+		if awayCJK {
+			cjk, latin = away, home
+		}
+		if containsCJK(text) {
+			return latin // CJK text → the non-CJK language
+		}
+		return cjk // non-CJK text → the CJK language
+	}
+	// Same-script pair (both or neither CJK): best-effort, symmetric detection.
+	inHome, inAway := inLang(text, home), inLang(text, away)
+	if inHome && !inAway {
 		return away
 	}
-	return home
+	if inAway && !inHome {
+		return home
+	}
+	return home // inconclusive → default to home
 }
 
 // inLang reports whether text is (best-effort) in the language of code. Chinese

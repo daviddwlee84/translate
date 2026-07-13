@@ -11,24 +11,43 @@ import (
 
 // buildEngine constructs the Engine for an invocation from resolved settings.
 // engine="auto" builds a fallback Chain over the providers named in chain.order;
-// a named provider builds a single LLM engine. (google/dict engines join the
-// chain in later slices.)
+// engine="smartauto" builds the smart default (dictionary for words, LLM for
+// phrases, bidirectional); a named provider builds a single LLM engine.
 func buildEngine(res config.Resolved) (engine.Engine, error) {
 	cfg := res.Cfg
 
-	if res.Engine != "auto" {
-		switch res.Engine {
-		case "google":
-			return googleFromConfig(cfg), nil
-		case "llm":
-			// "llm" means "the resolved provider" (already chosen by Resolve).
+	switch res.Engine {
+	case "auto":
+		return buildAutoChain(res)
+	case "smartauto":
+		// Needs an LLM provider for the word-miss fallback and phrase translation;
+		// without one, behave like the plain auto chain (google/dict).
+		if res.Provider == nil {
+			return buildAutoChain(res)
 		}
+		return smartAutoFromConfig(res), nil
+	case "google":
+		return googleFromConfig(cfg), nil
+	case "llm":
+		// "llm" means "the resolved provider" (already chosen by Resolve).
+		if res.Provider != nil {
+			return llmFromProvider(res.Provider, res.Model), nil
+		}
+		return nil, fmt.Errorf("unknown engine/provider %q (check %s)", res.Engine, config.Path())
+	default:
+		// A named provider (e.g. "copilot", "ollama").
 		if res.Provider != nil {
 			return llmFromProvider(res.Provider, res.Model), nil
 		}
 		return nil, fmt.Errorf("unknown engine/provider %q (check %s)", res.Engine, config.Path())
 	}
+}
 
+// buildAutoChain builds the "auto" fallback Chain over the providers/google named
+// in chain.order. (google/dict engines otherwise join only via smart-auto or the
+// TUI ^e cycle.)
+func buildAutoChain(res config.Resolved) (engine.Engine, error) {
+	cfg := res.Cfg
 	var engines []engine.Engine
 	for _, name := range cfg.Chain.Order {
 		switch {
@@ -38,7 +57,7 @@ func buildEngine(res config.Resolved) (engine.Engine, error) {
 		case name == "google" && cfg.Google.Enabled:
 			engines = append(engines, googleFromConfig(cfg))
 		}
-		// "dict" is wired in a later slice.
+		// "dict" is wired in via smart-auto / the TUI engine cycle.
 	}
 	if len(engines) == 0 {
 		return nil, fmt.Errorf("no engines available in chain.order (check %s)", config.Path())
@@ -113,13 +132,27 @@ func smartDictFromConfig(res config.Resolved) engine.Engine {
 	})
 }
 
+// smartAutoFromConfig builds the smart-auto default: a single word/term is a
+// dictionary lookup (smart-dict, with an LLM fallback), and a phrase is an LLM
+// translation via the auto chain (so phrases keep provider→google resilience).
+// The caller must ensure res.Provider != nil.
+func smartAutoFromConfig(res config.Resolved) engine.Engine {
+	llm, err := buildAutoChain(res)
+	if err != nil {
+		// No chain engines (unlikely once a provider exists): fall back to the bare
+		// resolved provider so phrases can still translate.
+		llm = llmFromProvider(res.Provider, res.Model)
+	}
+	return engine.NewSmartAuto(smartDictFromConfig(res), llm)
+}
+
 // buildEngineSet builds the list of engines the TUI can cycle through with ^e:
 // the resolved primary (translate), plus Google (fast, keyless), the dictionary
 // (word lookup), and — when an LLM provider is available — the smart dictionary
 // (dictionary with an LLM fallback), so the user can switch on the fly.
 func buildEngineSet(res config.Resolved, primary engine.Engine) []tui.NamedEngine {
 	cfg := res.Cfg
-	primaryName := res.Engine
+	primaryName := primary.Name() // "auto", "smart-auto", "copilot", "google", …
 	if primaryName == "" {
 		primaryName = "auto"
 	}
