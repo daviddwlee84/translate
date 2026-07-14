@@ -20,8 +20,12 @@ To ship the current `main` to this machine via chezmoi:
 2. `git push origin main`
 3. `git tag -a vX.Y.Z -m "<highlights>"` && `git push origin vX.Y.Z`
 4. verify: `go install github.com/daviddwlee84/translate@vX.Y.Z && translate --version` → `vX.Y.Z`
-5. bump the pin in the **dotfiles repo** — `dot_ansible/roles/go_tools/defaults/main.yml`
-   (`github.com/daviddwlee84/translate@vX.Y.Z`) — then `chezmoi apply` / re-run the `go_tools` role.
+5. install on this machine (dotfiles repo): run `just upgrade-go` — it installs each go
+   tool at `@latest` (= the new tag) into `~/.local/bin`. The `go_tools` pin in
+   `dot_ansible/roles/go_tools/defaults/main.yml` is only the *fresh-install floor*
+   (its header says **don't** bump it for upgrades); `chezmoi apply`/ansible is
+   install-only and won't move an already-installed binary. Make sure no stale copy
+   shadows `~/.local/bin` earlier on `PATH` (e.g. a hand-built one in `~/.dotfiles/bin`).
 
 There is no CHANGELOG; the annotated tag message is the release note. Keep commit
 subjects in `feat(scope): …` / `fix(scope): …` form so `git log <prev-tag>..<tag>`
