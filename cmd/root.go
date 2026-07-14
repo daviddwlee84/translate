@@ -41,6 +41,8 @@ var (
 	flagJSON         bool
 	flagNoHistory    bool
 	flagDebug        bool
+	flagSpeak        bool
+	flagSpeakLang    string
 )
 
 // NewRootCmd builds the root command and its subcommands.
@@ -75,9 +77,11 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
+	f.BoolVarP(&flagSpeak, "speak", "s", false, "speak the foreign side of the result aloud (free TTS)")
+	f.StringVar(&flagSpeakLang, "speak-lang", "", "force the spoken language (e.g. en, zh-TW)")
 
 	root.SuggestionsMinimumDistance = 2
-	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd())
+	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd())
 	return root
 }
 
@@ -172,6 +176,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		recordAndRemember(ctx, st, cfg, r, text, src, effTgt, tgt)
+		if shouldSpeak(cfg) {
+			speakResult(ctx, cfg, r, text, src, effTgt, speakForeign(cfg, pairWith))
+		}
 		return nil
 
 	case !term.IsTerminal(int(os.Stdin.Fd())):
@@ -189,6 +196,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		recordAndRemember(ctx, st, cfg, r, text, src, effTgt, tgt)
+		if shouldSpeak(cfg) {
+			speakResult(ctx, cfg, r, text, src, effTgt, speakForeign(cfg, pairWith))
+		}
 		return nil
 
 	default:
@@ -338,6 +348,8 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		Instructions:  res.Instructions,
 		Live:          res.LiveTranslate,
 		DebounceMs:    res.DebounceMs,
+		Speaker:       tuiSpeaker(res.Cfg),
+		Foreign:       speakForeign(res.Cfg, pairWith),
 	}
 	final, err := tea.NewProgram(tui.New(ctx, p), tea.WithContext(ctx)).Run()
 	if err != nil {

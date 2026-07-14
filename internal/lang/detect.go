@@ -45,7 +45,7 @@ func containsCJK(text string) bool {
 
 // isCJKLang reports whether a language code is Chinese, Japanese, or Korean.
 func isCJKLang(code string) bool {
-	switch baseCode(code) {
+	switch Base(code) {
 	case "zh", "ja", "ko":
 		return true
 	}
@@ -90,7 +90,7 @@ func PairTarget(home, away, text string) string {
 // inLang reports whether text is (best-effort) in the language of code. Chinese
 // uses a reliable Han-script check; others fall back to offline detection.
 func inLang(text, code string) bool {
-	base := baseCode(code)
+	base := Base(code)
 	switch base {
 	case "", "auto":
 		return false
@@ -102,8 +102,10 @@ func inLang(text, code string) bool {
 	}
 }
 
-// baseCode strips a region suffix: "zh-TW" → "zh".
-func baseCode(code string) string {
+// Base strips a region suffix and normalizes case: "zh-TW" → "zh". It is the
+// shared building block for region-insensitive language routing (used by the
+// pair router here and by the tts voice/side selection).
+func Base(code string) string {
 	code = strings.ToLower(strings.TrimSpace(code))
 	if i := strings.IndexByte(code, '-'); i > 0 {
 		return code[:i]

@@ -60,6 +60,9 @@ func runDefine(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "translate: warning: %s\n", w)
 	}
 	fmt.Print(renderDict(res2))
+	if flagSpeak && cfg.TTS.Enabled {
+		speakDefine(cmd.Context(), cfg, res2)
+	}
 	return nil
 }
 

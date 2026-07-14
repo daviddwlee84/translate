@@ -13,6 +13,7 @@ import (
 	"github.com/daviddwlee84/translate/internal/engine"
 	"github.com/daviddwlee84/translate/internal/lang"
 	"github.com/daviddwlee84/translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/tts"
 )
 
 // Update handles messages. Value receiver returning the modified copy is the
@@ -62,6 +63,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case flashClearMsg:
+		m.flash = ""
+		return m, nil
+
+	case speakDoneMsg:
+		m.stopSpeak() // release the cancel; playback has ended
+		if msg.err != nil && m.base.Err() == nil {
+			m.flash = "speak failed"
+			return m, flashCmd()
+		}
 		m.flash = ""
 		return m, nil
 
@@ -173,6 +183,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		m.cancelInflight()
+		m.stopSpeak()
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.History):
@@ -225,6 +236,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, m.keys.Speak):
+		return m.speak()
+
 	case key.Matches(msg, m.keys.ToggleLive):
 		m.live = !m.live
 		return m, nil
@@ -245,6 +259,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Clear):
 		m.cancelInflight()
+		m.stopSpeak()
 		m.seq++
 		m.ta.Reset()
 		m.focus = focusInput
@@ -443,6 +458,67 @@ func (m Model) copyText() string {
 		return ""
 	}
 	return strings.TrimSpace(m.result.Translation)
+}
+
+// speak plays the foreign side of the current lookup/translation. When the output
+// pane is focused it speaks the result explicitly; otherwise it uses the
+// foreign-language ("副") preference. Playback runs off the UI thread.
+func (m Model) speak() (tea.Model, tea.Cmd) {
+	if m.p.Speaker == nil {
+		m.flash = "tts disabled"
+		return m, flashCmd()
+	}
+	forced := tts.SideAuto
+	if m.focus == focusOutput {
+		forced = tts.SideResult // explicit output focus → speak the result pane
+	}
+	resText, resLang := "", m.target
+	if m.result != nil {
+		resText = strings.TrimSpace(m.result.Translation)
+		if resText == "" && m.result.Dictionary != nil {
+			resText = m.result.Dictionary.Word
+		}
+		if m.result.Target != "" {
+			resLang = m.result.Target
+		}
+	}
+	ch, ok := tts.Select(tts.SelectInput{
+		SourceText: m.ta.Value(),
+		SourceLang: m.source,
+		ResultText: resText,
+		ResultLang: resLang,
+		Foreign:    m.foreignPref(),
+		Forced:     forced,
+	})
+	if !ok {
+		m.flash = "nothing to speak"
+		return m, flashCmd()
+	}
+	m.stopSpeak() // debounce: cancel any playback still in flight
+	ctx, cancel := context.WithCancel(m.base)
+	m.speakCancel = cancel
+	m.flash = "speaking…"
+	return m, tea.Batch(flashCmd(), speakCmd(m.p.Speaker, ctx, ch))
+}
+
+// foreignPref is the preferred foreign/副 language: the configured value, else
+// the pair-mode away language ("" => Select derives it).
+func (m Model) foreignPref() string {
+	if m.p.Foreign != "" {
+		return m.p.Foreign
+	}
+	if m.pair && m.pairWith != "" {
+		return m.pairWith
+	}
+	return ""
+}
+
+// stopSpeak cancels any in-flight TTS playback.
+func (m *Model) stopSpeak() {
+	if m.speakCancel != nil {
+		m.speakCancel()
+		m.speakCancel = nil
+	}
 }
 
 // currentModelID is the model id currently in effect (for the ✓ marker).

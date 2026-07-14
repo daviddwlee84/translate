@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/tts"
 )
 
 // debounceMsg fires debounce after the last keystroke. It carries the seq it was
@@ -21,6 +23,17 @@ type streamMsg struct {
 
 // flashClearMsg clears a transient footer notice.
 type flashClearMsg struct{}
+
+// speakDoneMsg reports the outcome of a TTS playback started by ^s.
+type speakDoneMsg struct{ err error }
+
+// speakCmd plays ch on sp in the command goroutine so the UI never blocks; the
+// result surfaces as a speakDoneMsg.
+func speakCmd(sp tts.Speaker, ctx context.Context, ch tts.Choice) tea.Cmd {
+	return func() tea.Msg {
+		return speakDoneMsg{err: sp.Speak(ctx, ch.Text, ch.Lang)}
+	}
+}
 
 // flashCmd shows a transient footer notice for ~1.5s.
 func flashCmd() tea.Cmd {

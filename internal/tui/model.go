@@ -15,6 +15,7 @@ import (
 
 	"github.com/daviddwlee84/translate/internal/engine"
 	"github.com/daviddwlee84/translate/internal/store"
+	"github.com/daviddwlee84/translate/internal/tts"
 )
 
 // NamedEngine is one selectable engine in the TUI's ^e cycle.
@@ -39,6 +40,8 @@ type Params struct {
 	Instructions  string // extra system-prompt guidance
 	Live          bool   // live-debounce default state
 	DebounceMs    int
+	Speaker       tts.Speaker // TTS backend for ^s (nil when disabled)
+	Foreign       string      // preferred "副"/foreign language to speak ("" => derive)
 }
 
 type status int
@@ -110,6 +113,10 @@ type Model struct {
 	result *engine.TranslateResult
 	err    error
 	flash  string // transient footer notice (e.g. "copied ✓")
+
+	// speakCancel cancels in-flight TTS playback (^s); a new ^s or Clear/Quit
+	// cancels the previous one so playback never overlaps.
+	speakCancel context.CancelFunc
 
 	// request lifecycle: one monotonic seq drives debounce-collapse, cancel, and
 	// stale-stream-drop. cancel/stream/streamBuf belong to the in-flight request.

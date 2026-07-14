@@ -36,6 +36,11 @@ func DataDir() string { return filepath.Join(base("XDG_DATA_HOME", ".local/share
 // StateDir returns the translate state directory (e.g. ~/.local/state/translate).
 func StateDir() string { return filepath.Join(base("XDG_STATE_HOME", ".local/state"), app) }
 
+// CacheDir returns the translate cache directory (e.g. ~/.cache/translate). Used
+// for regenerable artifacts like TTS audio; it is intentionally NOT created by
+// EnsureDirs (cache is optional and created lazily on first write).
+func CacheDir() string { return filepath.Join(base("XDG_CACHE_HOME", ".cache"), app) }
+
 // ConfigFile returns the full path to config.toml.
 func ConfigFile() string { return filepath.Join(ConfigDir(), "config.toml") }
 

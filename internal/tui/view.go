@@ -129,7 +129,7 @@ func (m Model) footerContent(forceState bool) string {
 		if state != "" {
 			left += "  " + state
 		}
-		return left + "  " + m.st.dim.Render("↵ define  ^y copy  ^l live  ^e engine  ^u clear  ⇥ focus  ^r history  ^c quit")
+		return left + "  " + m.st.dim.Render("↵ define  ^y copy  ^s speak  ^l live  ^e engine  ^u clear  ⇥ focus  ^r history  ^c quit")
 	}
 
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
@@ -157,7 +157,7 @@ func (m Model) footerContent(forceState bool) string {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^y copy  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^u clear  ⇥ focus  ^r history  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^y copy  ^s speak  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^u clear  ⇥ focus  ^r history  ^c quit")
 	return left + "  " + help
 }
 

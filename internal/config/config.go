@@ -23,6 +23,7 @@ type Config struct {
 	Google    Google     `toml:"google"`
 	Dict      Dict       `toml:"dict"`
 	SmartDict SmartDict  `toml:"smartdict"`
+	TTS       TTS        `toml:"tts"`
 	History   History    `toml:"history"`
 }
 
@@ -104,6 +105,24 @@ type Dict struct {
 	EcdictURL    string `toml:"ecdict_url,omitempty"`
 	AutoDownload bool   `toml:"auto_download"` // auto-fetch CC-CEDICT (small) on first zh lookup
 	APIFallback  bool   `toml:"api_fallback"`  // fall back to dictionaryapi.dev on an English miss
+}
+
+// TTS configures free, cross-platform text-to-speech (pronunciation playback).
+// Backends are tried in Order: "native" (macOS say / Linux espeak / Windows SAPI,
+// offline) then "google" (translate_tts MP3 + a discovered player).
+type TTS struct {
+	Enabled       bool              `toml:"enabled"`
+	AutoSpeak     bool              `toml:"auto_speak"`        // CLI: speak every result without --speak
+	Order         []string          `toml:"order,omitempty"`   // e.g. ["native","google"]
+	Foreign       string            `toml:"foreign,omitempty"` // the 副/away language to speak; "" => derive
+	PreferForeign bool              `toml:"prefer_foreign"`    // auto-side selection prefers the foreign side
+	Rate          int               `toml:"rate,omitempty"`    // native words/min; 0 => backend default
+	Voices        map[string]string `toml:"voices,omitempty"`  // lang -> native voice override
+	GoogleTTSURL  string            `toml:"google_tts_url,omitempty"`
+	UserAgent     string            `toml:"user_agent,omitempty"`
+	TimeoutMs     int               `toml:"timeout_ms,omitempty"`
+	CacheDir      string            `toml:"cache_dir,omitempty"`
+	Player        string            `toml:"player,omitempty"` // forced audio player binary
 }
 
 // History configures translation history storage.
@@ -197,6 +216,16 @@ func Default() *Config {
 			CloseDistance: 1,            // distance-1 typos stay "did you mean"; farther → LLM
 			Preset:        "dictionary", // gloss + example sentences
 			DefineDefault: true,         // `translate define` prefers smart-dict when a provider is up
+		},
+		TTS: TTS{
+			Enabled:       true,
+			AutoSpeak:     false, // opt-in per call via --speak / TUI ^s
+			Order:         []string{"native", "google"},
+			Foreign:       "", // "" => derive the non-Chinese side to speak
+			PreferForeign: true,
+			GoogleTTSURL:  "https://translate.google.com/translate_tts",
+			UserAgent:     "Mozilla/5.0 translate-cli",
+			TimeoutMs:     5000,
 		},
 		History: History{
 			Enabled: true,
