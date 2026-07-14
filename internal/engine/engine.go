@@ -42,6 +42,14 @@ type Request struct {
 	Pair     bool
 	PairHome string // one pair language (e.g. the home target, "zh-TW")
 	PairAway string // the other pair language (e.g. "en")
+
+	// Learn marks a language-learning request. It is bidirectional (implies Pair,
+	// with PairHome=native and PairAway=foreign) and adaptive: native-language input
+	// is translated-and-taught (glosses + examples), foreign-language input is
+	// grammar-corrected-and-explained. The LLM engine answers with a strict JSON
+	// object (parsed into TranslateResult.Learn) and, because the output is
+	// structured, always runs NON-STREAMING regardless of Stream.
+	Learn bool
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it
@@ -70,6 +78,10 @@ type TranslateResult struct {
 
 	// Dictionary payload (Mode == ModeDict); nil for translate mode.
 	Dictionary *DictEntry `json:"dictionary,omitempty"`
+	// Learn payload (Request.Learn); nil outside learn mode. Translation still holds
+	// the main foreign-language sentence (the corrected sentence, or the translation)
+	// so copy/history/speak keep working unchanged; the structured extras ride here.
+	Learn *LearnResult `json:"learn,omitempty"`
 	// Suggestions is a ranked "did you mean" list, set by the dictionary engine
 	// when no exact entry was found (Dictionary and Translation stay empty). The
 	// frontend decides how to present/select — the engine no longer auto-picks.
@@ -102,6 +114,41 @@ type Meaning struct {
 type Definition struct {
 	Text    string `json:"definition"`
 	Example string `json:"example,omitempty"`
+}
+
+// LearnResult is the structured payload for learn/tutor mode (Request.Learn). The
+// model fills only the fields relevant to the auto-detected direction; all glosses,
+// explanations, and notes are written in the native (home) language.
+type LearnResult struct {
+	Direction   string         `json:"direction"`           // "teach" (native→foreign) | "correct" (foreign→native)
+	Original    string         `json:"original"`            // the user's input as received
+	Corrected   string         `json:"corrected,omitempty"` // correct-direction: the fixed foreign sentence
+	Translation string         `json:"translation"`         // teach: foreign translation; correct: native translation of intent
+	Notes       string         `json:"notes,omitempty"`     // short tip/encouragement, in the NATIVE language
+	Issues      []LearnIssue   `json:"issues,omitempty"`    // correct-direction grammar/usage fixes
+	Vocab       []LearnGloss   `json:"vocab,omitempty"`     // teach-direction glosses
+	Examples    []LearnExample `json:"examples,omitempty"`  // teach-direction usage examples
+}
+
+// LearnIssue is one grammar/usage correction (correct-direction).
+type LearnIssue struct {
+	Span        string `json:"span"`        // the problematic fragment of the input
+	Fix         string `json:"fix"`         // the corrected fragment
+	Explanation string `json:"explanation"` // why — in the NATIVE language
+}
+
+// LearnGloss is one vocabulary explanation (teach-direction).
+type LearnGloss struct {
+	Term     string `json:"term"`               // foreign word/term
+	Pos      string `json:"pos,omitempty"`      // part of speech
+	Phonetic string `json:"phonetic,omitempty"` // KK/IPA for English, pinyin for Chinese
+	Meaning  string `json:"meaning"`            // meaning in the NATIVE language
+}
+
+// LearnExample is one usage example (teach-direction).
+type LearnExample struct {
+	Foreign string `json:"foreign"` // example sentence in the foreign language
+	Native  string `json:"native"`  // its native-language translation
 }
 
 // ChunkKind distinguishes streamed tokens from the terminal result/error.

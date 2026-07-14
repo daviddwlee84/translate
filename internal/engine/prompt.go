@@ -110,3 +110,86 @@ func buildTranslatePrompt(req Request) (system, user string) {
 	}
 	return system, fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
 }
+
+// learnDirection reports the learn-mode direction, decided OFFLINE via the same
+// script-aware router as pair mode (lang.PairTarget): native (home) input → "teach"
+// (translate + glosses); foreign (away) input → "correct" (grammar-correct + explain).
+// Trusting this over the model's own guess keeps the two output shapes deterministic.
+func learnDirection(req Request) string {
+	if lang.PairTarget(req.PairHome, req.PairAway, req.Text) == req.PairAway {
+		return "teach"
+	}
+	return "correct"
+}
+
+// learnTeachPrompt drives native→foreign tutoring. %[1]s = native (home) language,
+// %[2]s = foreign (away) language being learned.
+const learnTeachPrompt = `You are a warm, encouraging language tutor helping a native %[1]s speaker learn %[2]s.
+The user writes in %[1]s. Translate their text into natural, idiomatic %[2]s, then teach it.
+
+Respond with ONE JSON object and NOTHING else — no markdown code fence, no prose before or after it.
+Schema (fill every relevant field; omit a field only when it genuinely has no content):
+{
+  "direction": "teach",
+  "original": "<the user's %[1]s input, verbatim>",
+  "translation": "<the idiomatic %[2]s translation>",
+  "vocab": [
+    {"term": "<key %[2]s word or phrase>", "pos": "<part of speech>", "phonetic": "<KK/IPA for English, pinyin for Chinese>", "meaning": "<concise meaning in %[1]s>"}
+  ],
+  "examples": [
+    {"foreign": "<a short natural %[2]s sentence using the translation>", "native": "<its %[1]s translation>"}
+  ],
+  "notes": "<one short usage or register tip in %[1]s, optional>"
+}
+
+Rules:
+- Write every meaning, note, and explanation in %[1]s (the learner's language).
+- vocab: only the key content words/phrases worth learning (at most 8); skip trivial function words.
+- examples: 1-2, short and idiomatic.
+- Interpret the intended meaning of typos/slang; never refuse. Output ONLY the JSON object.`
+
+// learnCorrectPrompt drives foreign→native correction. %[1]s = foreign (away)
+// language being learned, %[2]s = native (home) language.
+const learnCorrectPrompt = `You are a warm, encouraging language tutor helping a %[2]s speaker who is learning %[1]s.
+The user writes a sentence in %[1]s that may contain mistakes. Correct it and explain, kindly.
+
+Respond with ONE JSON object and NOTHING else — no markdown code fence, no prose before or after it.
+Schema (fill every relevant field; omit a field only when it genuinely has no content):
+{
+  "direction": "correct",
+  "original": "<the user's %[1]s input, verbatim>",
+  "corrected": "<the grammatically correct, idiomatic %[1]s sentence>",
+  "translation": "<a %[2]s translation of the intended meaning>",
+  "issues": [
+    {"span": "<the problematic fragment of the input>", "fix": "<the corrected fragment>", "explanation": "<why, in %[2]s>"}
+  ],
+  "notes": "<one short encouraging tip in %[2]s, optional>"
+}
+
+Rules:
+- Write every explanation and note in %[2]s (the learner's native language).
+- If the sentence is already correct, echo it in "corrected" and return "issues": [].
+- List each distinct mistake as one issue; keep explanations concise and beginner-friendly.
+- Interpret the intended meaning of typos/slang; never refuse. Output ONLY the JSON object.`
+
+// learnUserPrompt frames the concrete learn request. The system prompt already
+// names both languages, so the user turn carries only the text.
+const learnUserPrompt = `Text:
+%s`
+
+// buildLearnPrompt returns the (system, user) messages for a learn-mode request,
+// choosing the teach or correct prompt from the offline-detected direction. Codes
+// are expanded to readable names so regional variants (zh-TW) read naturally.
+func buildLearnPrompt(req Request) (system, user string) {
+	home := lang.Name(req.PairHome) // native
+	away := lang.Name(req.PairAway) // foreign
+	if learnDirection(req) == "teach" {
+		system = fmt.Sprintf(learnTeachPrompt, home, away)
+	} else {
+		system = fmt.Sprintf(learnCorrectPrompt, away, home)
+	}
+	if extra := strings.TrimSpace(req.Extra); extra != "" {
+		system += "\n\nUser preferences (apply where relevant, e.g. domain terminology):\n" + extra
+	}
+	return system, fmt.Sprintf(learnUserPrompt, req.Text)
+}

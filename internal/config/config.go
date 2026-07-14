@@ -40,6 +40,7 @@ type Overlay struct {
 	DefaultSource *string `toml:"default_source,omitempty"`
 	Pair          *bool   `toml:"pair,omitempty"`
 	PairWith      *string `toml:"pair_with,omitempty"`
+	Learn         *bool   `toml:"learn,omitempty"`
 	Stream        *bool   `toml:"stream,omitempty"`
 	LiveTranslate *bool   `toml:"live_translate,omitempty"`
 	DebounceMs    *int    `toml:"debounce_ms,omitempty"`
@@ -52,6 +53,7 @@ type General struct {
 	DefaultSource     string `toml:"default_source"`      // "auto" or a fixed code
 	Pair              bool   `toml:"pair"`                // bidirectional: home-language input → pair_with, else → default_target
 	PairWith          string `toml:"pair_with,omitempty"` // the "away" language for pair mode
+	Learn             bool   `toml:"learn"`               // learning mode: teach (native→foreign) or grammar-correct (foreign→native)
 	RememberLastPair  bool   `toml:"remember_last_pair"`
 	LiveTranslate     bool   `toml:"live_translate"`
 	DebounceMs        int    `toml:"debounce_ms"`

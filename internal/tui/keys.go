@@ -13,6 +13,7 @@ type keyMap struct {
 	PickModel   key.Binding
 	PickPreset  key.Binding
 	TogglePair  key.Binding
+	ToggleLearn key.Binding
 	Copy        key.Binding
 	Speak       key.Binding
 	History     key.Binding
@@ -31,6 +32,7 @@ func defaultKeys() keyMap {
 		PickModel:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "model")),
 		PickPreset:  key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("^o", "style")),
 		TogglePair:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "pair")),
+		ToggleLearn: key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "learn")),
 		Copy:        key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "copy")),
 		// ctrl+s is XOFF flow-control only in cooked-mode terminals; Bubble Tea puts
 		// the TTY in raw mode (IXON disabled), so it arrives as a normal key here.

@@ -120,6 +120,28 @@ func (m Model) footerContent(forceState bool) string {
 		}
 	}
 
+	// Learn mode: bidirectional tutor. No engine cycle or style (it has its own
+	// prompt); shows the direction pair + the LLM that served it.
+	if m.learn {
+		left := m.st.label.Render(fmt.Sprintf("learn %s⇄%s", m.target, m.pairWith))
+		engineSeg := m.curEngine
+		if m.curModel != "" {
+			if engineSeg != "" {
+				engineSeg = fmt.Sprintf("%s (%s)", engineSeg, m.curModel)
+			} else {
+				engineSeg = m.curModel
+			}
+		}
+		if engineSeg != "" {
+			left += m.st.dim.Render(" · ") + m.st.dim.Render(engineSeg)
+		}
+		left += m.st.dim.Render(" · ") + live
+		if state != "" {
+			left += "  " + state
+		}
+		return left + "  " + m.st.dim.Render("↵ learn  ^y copy  ^s speak  ^l live  ^n exit  ^t lang  ^p model  ^u clear  ⇥ focus  ^r history  ^c quit")
+	}
+
 	// Dictionary mode: no source→target pair (English-only lookups per script).
 	if m.active().Mode == engine.ModeDict {
 		left := strings.Join([]string{
@@ -164,6 +186,9 @@ func (m Model) footerContent(forceState bool) string {
 // renderResult formats a completed translation, a dictionary entry, or a ranked
 // "did you mean" list when a dictionary lookup missed.
 func (m Model) renderResult(res engine.TranslateResult) string {
+	if res.Learn != nil {
+		return m.renderLearn(res)
+	}
 	if res.Dictionary != nil {
 		return m.renderDictionary(res)
 	}
@@ -210,6 +235,66 @@ func (m Model) renderDictionary(res engine.TranslateResult) string {
 			}
 			b.WriteString("\n" + m.st.alt.Render("• "+def.Text))
 		}
+	}
+	return b.String()
+}
+
+// renderLearn formats a learn-mode result (teach or correct) for the result pane.
+func (m Model) renderLearn(res engine.TranslateResult) string {
+	l := res.Learn
+	var b strings.Builder
+	if l.Direction == "correct" {
+		corrected := strings.TrimSpace(l.Corrected)
+		if corrected == "" {
+			corrected = res.Translation
+		}
+		b.WriteString(m.st.trans.Render("✔ " + corrected))
+		if s := strings.TrimSpace(l.Translation); s != "" {
+			b.WriteString("\n" + m.st.dim.Render(s))
+		}
+		for _, is := range l.Issues {
+			frag := strings.TrimSpace(is.Span)
+			if f := strings.TrimSpace(is.Fix); f != "" {
+				frag = strings.TrimSpace(frag + " → " + f)
+			}
+			if frag != "" && frag != "→" {
+				b.WriteString("\n" + m.st.warn.Render("✎ "+frag))
+			}
+			if e := strings.TrimSpace(is.Explanation); e != "" {
+				b.WriteString("\n" + m.st.alt.Render("  "+e))
+			}
+		}
+	} else {
+		tr := strings.TrimSpace(l.Translation)
+		if tr == "" {
+			tr = res.Translation
+		}
+		b.WriteString(m.st.trans.Render(tr))
+		for _, v := range l.Vocab {
+			head := v.Term
+			if v.Pos != "" {
+				head += " (" + v.Pos + ")"
+			}
+			if v.Phonetic != "" {
+				head += " " + v.Phonetic
+			}
+			b.WriteString("\n" + m.st.notes.Render(head))
+			if s := strings.TrimSpace(v.Meaning); s != "" {
+				b.WriteString("  " + m.st.alt.Render(s))
+			}
+		}
+		for _, ex := range l.Examples {
+			b.WriteString("\n" + m.st.alt.Render("✎ "+ex.Foreign))
+			if s := strings.TrimSpace(ex.Native); s != "" {
+				b.WriteString("\n" + m.st.dim.Render("  ↳ "+s))
+			}
+		}
+	}
+	if s := strings.TrimSpace(l.Notes); s != "" {
+		b.WriteString("\n" + m.st.notes.Render("ⓘ "+s))
+	}
+	for _, w := range res.Warnings {
+		b.WriteString("\n" + m.st.warn.Render("⚠ "+w))
 	}
 	return b.String()
 }

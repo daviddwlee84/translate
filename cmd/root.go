@@ -38,6 +38,7 @@ var (
 	flagInstructions string
 	flagPair         bool
 	flagPairWith     string
+	flagLearn        bool
 	flagJSON         bool
 	flagNoHistory    bool
 	flagDebug        bool
@@ -74,6 +75,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagInstructions, "instructions", "", "extra system-prompt guidance (domain focus, etc.)")
 	f.BoolVar(&flagPair, "pair", false, "bidirectional mode: home-language input → --pair-with, else → --to")
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
+	f.BoolVar(&flagLearn, "learn", false, "learning mode: teach (native→foreign) or grammar-correct (foreign→native)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
@@ -103,6 +105,7 @@ func overrides() config.Overrides {
 		Instructions: flagInstructions,
 		Pair:         flagPair,
 		PairWith:     flagPairWith,
+		Learn:        flagLearn,
 		Debug:        flagDebug,
 	}
 }
@@ -148,9 +151,14 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		pwm, _ := lang.Resolve(res.PairWith)
 		pairWith = pwm.Code
 	}
-	debug.Logf("resolved: engine=%s tier=%s preset=%s source=%s target=%s pair=%v pair_with=%s",
-		res.Engine, res.Tier, res.Preset, src, tgt, res.Pair, pairWith)
-	if res.Pair && (pairWith == "" || strings.EqualFold(pairWith, tgt)) {
+	// Learn mode is bidirectional; ensure a distinct "away" (foreign) language so
+	// direction routing has two sides to choose between.
+	if res.Learn && (pairWith == "" || strings.EqualFold(pairWith, tgt)) {
+		pairWith = defaultAway(tgt)
+	}
+	debug.Logf("resolved: engine=%s tier=%s preset=%s source=%s target=%s pair=%v pair_with=%s learn=%v",
+		res.Engine, res.Tier, res.Preset, src, tgt, res.Pair, pairWith, res.Learn)
+	if res.Pair && !res.Learn && (pairWith == "" || strings.EqualFold(pairWith, tgt)) {
 		fmt.Fprintf(os.Stderr, "translate: warning: pair mode is on but pair-with (%q) equals the target (%q) — pair mode is a no-op; set a different pair_with (run `translate init`)\n", pairWith, tgt)
 	}
 
@@ -162,6 +170,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The one-shot CLI path routes a learn request through a bare LLM engine
+	// (bypassing smart-auto/dictionary); the TUI keeps its normal primary engine and
+	// toggles learn at runtime against Params.LearnEngine.
+	learnCLI := res.Learn && invocationMode(args) == config.ModeCLI
+	if learnCLI && res.Provider == nil {
+		return fmt.Errorf("learn mode requires an LLM provider; check %s", config.Path())
+	}
+	oneShotEng := eng
+	if learnCLI {
+		oneShotEng = learnEngineFromConfig(res)
+	}
+
 	st := openStore(cfg)
 	if st != nil {
 		defer st.Close()
@@ -171,7 +191,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
 		if err != nil {
 			return err
 		}
@@ -191,7 +211,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no input on stdin")
 		}
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, eng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
 		if err != nil {
 			return err
 		}
@@ -334,6 +354,12 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		modelSrc = llmFromProvider(res.Provider, res.Model)
 		modelProvider = res.Provider.Name
 	}
+	// Learn mode (^n) runs against a bare LLM engine; nil when no provider is
+	// configured, in which case the toggle refuses.
+	var learnEng engine.Engine
+	if res.Provider != nil {
+		learnEng = learnEngineFromConfig(res)
+	}
 	p := tui.Params{
 		Engines:       buildEngineSet(res, eng),
 		ModelSource:   modelSrc,
@@ -343,6 +369,8 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 		Target:        target,
 		Pair:          res.Pair,
 		PairWith:      pairWith,
+		Learn:         res.Learn,
+		LearnEngine:   learnEng,
 		Model:         res.Model,
 		Preset:        res.Preset,
 		Instructions:  res.Instructions,
@@ -383,9 +411,9 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // Tokens stream live to stdout only when stdout is a TTY (so `translate x | pbcopy`
 // stays clean) and --json was not requested. Piped output is the plain translation
 // with no ANSI; --json emits the full structured result.
-func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string) (*engine.TranslateResult, error) {
+func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
-	stream := streamPref && stdoutTTY && !flagJSON
+	stream := streamPref && stdoutTTY && !flagJSON && !learn // learn output is structured (parsed at done)
 
 	req := engine.Request{
 		Text:     text,
@@ -398,6 +426,7 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		Pair:     pair,
 		PairHome: pairHome,
 		PairAway: pairAway,
+		Learn:    learn,
 	}
 	ch, err := eng.Translate(ctx, req)
 	if err != nil {
@@ -421,7 +450,7 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 	for _, w := range res.Warnings {
 		fmt.Fprintf(os.Stderr, "translate: warning: %s\n", w)
 	}
-	if len(res.Warnings) > 0 {
+	if len(res.Warnings) > 0 && res.Learn == nil {
 		fmt.Fprintf(os.Stderr, "translate: used %q (switch with --engine, or check the model/provider)\n", res.Engine)
 	}
 
@@ -432,10 +461,84 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		if err := enc.Encode(res); err != nil {
 			return nil, err
 		}
+	case res.Learn != nil:
+		fmt.Print(renderLearnCLI(res))
 	case stream:
 		fmt.Println() // newline after the streamed tokens
 	default:
 		fmt.Println(res.Translation)
 	}
 	return res, nil
+}
+
+// defaultAway picks the "away" (foreign) language for learn/pair mode when none is
+// configured: English speakers default to learning zh-TW, everyone else to en. It
+// mirrors the TUI ^g heuristic so the CLI and TUI agree.
+func defaultAway(home string) string {
+	if strings.HasPrefix(strings.ToLower(home), "en") {
+		return "zh-TW"
+	}
+	return "en"
+}
+
+// renderLearnCLI formats a learn-mode result as plain text (no ANSI, pipe-safe).
+func renderLearnCLI(res *engine.TranslateResult) string {
+	l := res.Learn
+	if l == nil {
+		return res.Translation + "\n"
+	}
+	var b strings.Builder
+	if l.Direction == "correct" {
+		corrected := strings.TrimSpace(l.Corrected)
+		if corrected == "" {
+			corrected = res.Translation
+		}
+		b.WriteString("✔ " + corrected + "\n")
+		if s := strings.TrimSpace(l.Translation); s != "" {
+			b.WriteString("  ↳ " + s + "\n")
+		}
+		for _, is := range l.Issues {
+			frag := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(is.Span+" → "+is.Fix, " → "), " → "))
+			expl := strings.TrimSpace(is.Explanation)
+			line := expl
+			switch {
+			case frag != "" && expl != "":
+				line = frag + ": " + expl
+			case frag != "":
+				line = frag
+			}
+			if line != "" {
+				b.WriteString("  ✎ " + line + "\n")
+			}
+		}
+	} else {
+		tr := strings.TrimSpace(l.Translation)
+		if tr == "" {
+			tr = res.Translation
+		}
+		b.WriteString(tr + "\n")
+		for _, v := range l.Vocab {
+			head := "  • " + v.Term
+			if v.Pos != "" {
+				head += " (" + v.Pos + ")"
+			}
+			if v.Phonetic != "" {
+				head += " " + v.Phonetic
+			}
+			if v.Meaning != "" {
+				head += " — " + v.Meaning
+			}
+			b.WriteString(head + "\n")
+		}
+		for _, ex := range l.Examples {
+			b.WriteString("  ✎ " + ex.Foreign + "\n")
+			if s := strings.TrimSpace(ex.Native); s != "" {
+				b.WriteString("    ↳ " + s + "\n")
+			}
+		}
+	}
+	if s := strings.TrimSpace(l.Notes); s != "" {
+		b.WriteString("  ⓘ " + s + "\n")
+	}
+	return b.String()
 }

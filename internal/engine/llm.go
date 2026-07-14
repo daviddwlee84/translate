@@ -127,6 +127,10 @@ type streamDelta struct {
 
 const anthropicMaxTokens = 4096
 
+// learnMaxTokens is a larger cap for learn mode: a gloss-rich structured JSON reply
+// can exceed the terse-translation budget, and a truncated JSON body fails to parse.
+const learnMaxTokens = 8192
+
 type anthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
@@ -268,6 +272,89 @@ func (e *LLMEngine) finalize(full, model string, req Request) *TranslateResult {
 	return res
 }
 
+// promptFor picks the (system, user) prompt pair for a request: the structured
+// tutor prompt for learn mode, else the plain translate prompt.
+func promptFor(req Request) (system, user string) {
+	if req.Learn {
+		return buildLearnPrompt(req)
+	}
+	return buildTranslatePrompt(req)
+}
+
+// finalizeResult builds the terminal result, parsing structured learn output when
+// the request asked for it.
+func (e *LLMEngine) finalizeResult(full, model string, req Request) *TranslateResult {
+	if req.Learn {
+		return e.finalizeLearn(full, model, req)
+	}
+	return e.finalize(full, model, req)
+}
+
+// finalizeLearn parses the model's structured JSON reply into a LearnResult. It is
+// defensive — it strips a markdown fence and slices to the outermost object before
+// unmarshalling — and on any failure falls back to the raw text as the translation
+// (with a warning), so a malformed reply degrades gracefully instead of erroring.
+// res.Target is set to the FOREIGN (away) language because res.Translation always
+// holds the foreign sentence (the corrected sentence, or the translation).
+func (e *LLMEngine) finalizeLearn(full, model string, req Request) *TranslateResult {
+	res := &TranslateResult{
+		Target: req.PairAway,
+		Engine: e.cfg.Name,
+		Model:  model,
+	}
+	if src := strings.TrimSpace(req.Source); src == "" || src == "auto" {
+		res.DetectedSource = lang.Detect(req.Text)
+	}
+	lr, err := parseLearn(full)
+	if err != nil {
+		res.Translation = strings.TrimSpace(full)
+		res.Warnings = append(res.Warnings, "learn: could not parse structured output — showing the raw reply")
+		return res
+	}
+	lr.Direction = learnDirection(req) // trust offline detection over the model's guess
+	if strings.TrimSpace(lr.Original) == "" {
+		lr.Original = req.Text
+	}
+	res.Learn = lr
+	if lr.Direction == "correct" && strings.TrimSpace(lr.Corrected) != "" {
+		res.Translation = strings.TrimSpace(lr.Corrected)
+	} else {
+		res.Translation = strings.TrimSpace(lr.Translation)
+	}
+	return res
+}
+
+// parseLearn extracts and unmarshals a LearnResult from a model reply, returning an
+// error when the JSON is absent/invalid or carries no main sentence.
+func parseLearn(full string) (*LearnResult, error) {
+	var lr LearnResult
+	if err := json.Unmarshal([]byte(extractJSON(full)), &lr); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(lr.Translation) == "" && strings.TrimSpace(lr.Corrected) == "" {
+		return nil, fmt.Errorf("learn: empty structured result")
+	}
+	return &lr, nil
+}
+
+// extractJSON returns the outermost JSON object in s, tolerating a surrounding
+// markdown code fence or stray prose around it.
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") { // strip ```json … ``` fence
+		if i := strings.IndexByte(s, '\n'); i >= 0 {
+			s = s[i+1:]
+		}
+		s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), "```"))
+	}
+	start := strings.IndexByte(s, '{')
+	end := strings.LastIndexByte(s, '}')
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
 // markTruncated flags a result whose stream ended before the model finished, so
 // the caller keeps the partial text but never treats it as a complete answer.
 func markTruncated(res *TranslateResult) {
@@ -278,14 +365,15 @@ func markTruncated(res *TranslateResult) {
 
 // translateOpenAI uses the OpenAI /chat/completions endpoint.
 func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
-	system, user := buildTranslatePrompt(req)
+	system, user := promptFor(req)
+	stream := req.Stream && !req.Learn // learn output is structured JSON: parse at done
 	body := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
-		Stream: req.Stream,
+		Stream: stream,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -296,7 +384,7 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if req.Stream {
+	if stream {
 		httpReq.Header.Set("Accept", "text/event-stream")
 	}
 	e.auth(httpReq)
@@ -317,7 +405,7 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 
 		var full strings.Builder
 		complete := true
-		if req.Stream {
+		if stream {
 			var err error
 			complete, err = e.readSSE(ctx, resp.Body, ch, &full)
 			if err != nil {
@@ -341,7 +429,7 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 			full.WriteString(cr.Choices[0].Message.Content)
 			complete = cr.Choices[0].FinishReason != "length" // "length" => hit the cap
 		}
-		res := e.finalize(full.String(), model, req)
+		res := e.finalizeResult(full.String(), model, req)
 		if !complete {
 			markTruncated(res)
 		}
@@ -352,13 +440,18 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 
 // translateAnthropic uses the Anthropic Messages API (/v1/messages).
 func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
-	system, user := buildTranslatePrompt(req)
+	system, user := promptFor(req)
+	stream := req.Stream && !req.Learn // learn output is structured JSON: parse at done
+	maxTokens := anthropicMaxTokens
+	if req.Learn {
+		maxTokens = learnMaxTokens
+	}
 	body := anthropicRequest{
 		Model:     model,
-		MaxTokens: anthropicMaxTokens,
+		MaxTokens: maxTokens,
 		System:    system,
 		Messages:  []anthropicMessage{{Role: "user", Content: user}},
-		Stream:    req.Stream,
+		Stream:    stream,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -370,7 +463,7 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
-	if req.Stream {
+	if stream {
 		httpReq.Header.Set("Accept", "text/event-stream")
 	}
 	e.anthropicAuth(httpReq)
@@ -391,7 +484,7 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 
 		var full strings.Builder
 		complete := true
-		if req.Stream {
+		if stream {
 			var err error
 			complete, err = e.readAnthropicSSE(ctx, resp.Body, ch, &full)
 			if err != nil {
@@ -415,7 +508,7 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 			}
 			complete = ar.StopReason != "max_tokens" // "max_tokens" => hit the cap
 		}
-		res := e.finalize(full.String(), model, req)
+		res := e.finalizeResult(full.String(), model, req)
 		if !complete {
 			markTruncated(res)
 		}

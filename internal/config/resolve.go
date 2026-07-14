@@ -17,6 +17,7 @@ type Overrides struct {
 	Instructions string
 	Pair         bool // --pair forces pair mode on
 	PairWith     string
+	Learn        bool // --learn forces learning mode on (implies pair)
 	Debug        bool // --debug forces verbose logging on
 }
 
@@ -41,6 +42,7 @@ type Resolved struct {
 	Instructions string
 	Pair         bool
 	PairWith     string
+	Learn        bool
 	Stream       bool
 	Color        string
 	Debug        bool
@@ -99,6 +101,9 @@ func applyOverlay(g *General, ov *Overlay) {
 	if ov.PairWith != nil {
 		g.PairWith = *ov.PairWith
 	}
+	if ov.Learn != nil {
+		g.Learn = *ov.Learn
+	}
 	if ov.Stream != nil {
 		g.Stream = *ov.Stream
 	}
@@ -142,11 +147,18 @@ func (c *Config) Resolve(o Overrides, mode Mode) Resolved {
 		Instructions:  pick(o.Instructions, "TRANSLATE_INSTRUCTIONS", g.Instructions),
 		Pair:          o.Pair || g.Pair || envVal("TRANSLATE_PAIR") != "",
 		PairWith:      pick(o.PairWith, "TRANSLATE_PAIR_WITH", g.PairWith),
+		Learn:         o.Learn || g.Learn || envVal("TRANSLATE_LEARN") != "",
 		Color:         g.Color,
 		Stream:        g.Stream,
 		LiveTranslate: g.LiveTranslate,
 		DebounceMs:    g.DebounceMs,
 		Debug:         o.Debug || g.Debug || envVal("TRANSLATE_DEBUG") != "",
+	}
+
+	// Learning mode is inherently bidirectional; it reuses pair's home/away
+	// direction routing, so enabling learn enables pair.
+	if r.Learn {
+		r.Pair = true
 	}
 
 	// Resolve which provider backs an LLM request.

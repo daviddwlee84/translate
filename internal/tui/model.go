@@ -33,12 +33,14 @@ type Params struct {
 	Store         store.Store        // nil when history is disabled
 	Source        string
 	Target        string
-	Pair          bool   // bidirectional pair mode
-	PairWith      string // the "away" language (resolved code)
-	Model         string // display model id for the footer (initial)
-	Preset        string // LLM prompt style
-	Instructions  string // extra system-prompt guidance
-	Live          bool   // live-debounce default state
+	Pair          bool          // bidirectional pair mode
+	PairWith      string        // the "away" language (resolved code)
+	Learn         bool          // start with learning mode (^n) on
+	LearnEngine   engine.Engine // bare LLM engine for learn requests (nil => learn disabled)
+	Model         string        // display model id for the footer (initial)
+	Preset        string        // LLM prompt style
+	Instructions  string        // extra system-prompt guidance
+	Live          bool          // live-debounce default state
 	DebounceMs    int
 	Speaker       tts.Speaker // TTS backend for ^s (nil when disabled)
 	Foreign       string      // preferred "副"/foreign language to speak ("" => derive)
@@ -94,6 +96,7 @@ type Model struct {
 	target   string
 	pair     bool
 	pairWith string
+	learn    bool // learning mode (^n): structured teach/correct via p.LearnEngine
 	preset   string
 	live     bool
 	engIdx   int // index into p.Engines (the active engine)
@@ -213,6 +216,7 @@ func New(ctx context.Context, p Params) Model {
 		target:      p.Target,
 		pair:        p.Pair,
 		pairWith:    p.PairWith,
+		learn:       p.Learn && p.LearnEngine != nil,
 		preset:      preset,
 		live:        p.Live,
 		status:      statusIdle,

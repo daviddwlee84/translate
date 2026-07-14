@@ -195,17 +195,41 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.PickModel):
-		if m.active().Mode == engine.ModeDict {
-			return m, nil // no model concept in dictionary mode
+		if !m.learn && m.active().Mode == engine.ModeDict {
+			return m, nil // no model concept in dictionary mode (learn always uses an LLM)
 		}
 		return m.openModelPicker()
 
 	case key.Matches(msg, m.keys.PickPreset):
-		if m.active().Mode == engine.ModeDict {
-			return m, nil // presets are LLM translate styles
+		if m.learn || m.active().Mode == engine.ModeDict {
+			return m, nil // presets are LLM translate styles; learn has its own prompt
 		}
 		m.presetList.SetItems(presetItems(m.preset))
 		m.overlay = overlayPreset
+		return m, nil
+
+	case key.Matches(msg, m.keys.ToggleLearn):
+		if m.p.LearnEngine == nil {
+			m.flash = "learn needs an LLM provider"
+			return m, flashCmd()
+		}
+		m.learn = !m.learn
+		if m.learn {
+			// Learn is bidirectional; ensure a distinct "away" (foreign) language.
+			m.pair = true
+			if m.pairWith == "" || strings.EqualFold(m.pairWith, m.target) {
+				if strings.HasPrefix(strings.ToLower(m.target), "en") {
+					m.pairWith = "zh-TW"
+				} else {
+					m.pairWith = "en"
+				}
+			}
+		}
+		m.relayout() // footer content changed
+		if m.live && strings.TrimSpace(m.ta.Value()) != "" {
+			return m.launch(true)
+		}
+		m.clearResult()
 		return m, nil
 
 	case key.Matches(msg, m.keys.TogglePair):
@@ -244,6 +268,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.CycleEngine):
+		if m.learn {
+			m.flash = "learn mode (^n to exit)"
+			return m, flashCmd()
+		}
 		if n := len(m.p.Engines); n > 1 {
 			m.engIdx = (m.engIdx + 1) % n
 			m.curEngine, m.curModel = "", ""
@@ -398,13 +426,13 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 
 	seq := m.seq
 	ne := m.active()
+	eng := ne.Engine
 	target := m.target
 	pairOn := m.pair && m.pairWith != "" && ne.Mode == engine.ModeTranslate
 	if pairOn {
 		target = lang.PairTarget(m.target, m.pairWith, text) // home-lang input → away, else home
 		debug.Logf("tui pair route: home=%s away=%s → target=%s", m.target, m.pairWith, target)
 	}
-	debug.Logf("tui launch: engine=%s mode=%d target=%s preset=%s", ne.Name, ne.Mode, target, m.preset)
 	req := engine.Request{
 		Text:          text,
 		Source:        m.source,
@@ -419,7 +447,21 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		PairHome:      m.target,
 		PairAway:      m.pairWith,
 	}
-	ch, err := ne.Engine.Translate(ctx, req)
+	// Learn mode overrides the selected engine with a bare LLM engine and asks for a
+	// structured, non-streaming tutor reply routed by pair direction.
+	if m.learn && m.p.LearnEngine != nil {
+		eng = m.p.LearnEngine
+		req.Learn = true
+		req.Mode = engine.ModeTranslate
+		req.Stream = false
+		req.Preset = ""
+		req.Pair = true
+		req.PairHome = m.target
+		req.PairAway = m.pairWith
+		req.Target = lang.PairTarget(m.target, m.pairWith, text) // for display/history; engine sets its own
+	}
+	debug.Logf("tui launch: engine=%s mode=%d target=%s preset=%s learn=%v", eng.Name(), req.Mode, req.Target, m.preset, m.learn)
+	ch, err := eng.Translate(ctx, req)
 	if err != nil {
 		e := err
 		return m, func() tea.Msg {

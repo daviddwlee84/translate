@@ -146,6 +146,13 @@ func smartAutoFromConfig(res config.Resolved) engine.Engine {
 	return engine.NewSmartAuto(smartDictFromConfig(res), llm)
 }
 
+// learnEngineFromConfig builds the engine for learning mode: a bare LLM engine
+// (the resolved provider/model), bypassing smart-auto/dictionary routing so a
+// single word still gets the structured tutor treatment. Caller ensures Provider != nil.
+func learnEngineFromConfig(res config.Resolved) engine.Engine {
+	return llmFromProvider(res.Provider, res.Model)
+}
+
 // buildEngineSet builds the list of engines the TUI can cycle through with ^e:
 // the resolved primary (translate), plus Google (fast, keyless), the dictionary
 // (word lookup), and — when an LLM provider is available — the smart dictionary
