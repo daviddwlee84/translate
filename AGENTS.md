@@ -1,4 +1,32 @@
 
+## Releasing & versioning
+
+`translate --version` is derived from Go build info (`cmd/version.go` →
+`debug.ReadBuildInfo`), so **the version *is* the git tag** — there is no version
+constant to edit. `go install …@latest` and the chezmoi/ansible pin both resolve
+to a published **tag**, not to `main`; a commit on `main` does **not** reach an
+installed binary until it is pushed **and** tagged.
+
+SemVer, pre-1.0 (`0.y.z`):
+
+- backward-compatible feature (new mode/flag, e.g. `--learn`) → bump **minor** (`0.1.0 → 0.2.0`)
+- bug fix only → bump **patch** (`0.2.0 → 0.2.1`)
+- breaking CLI/flag/config change → still a minor bump while `0.x`; call it out in the tag message
+- cut **`v1.0.0`** only once the CLI/flags/config surface is considered stable
+
+To ship the current `main` to this machine via chezmoi:
+
+1. `go test ./...` green, working tree clean.
+2. `git push origin main`
+3. `git tag -a vX.Y.Z -m "<highlights>"` && `git push origin vX.Y.Z`
+4. verify: `go install github.com/daviddwlee84/translate@vX.Y.Z && translate --version` → `vX.Y.Z`
+5. bump the pin in the **dotfiles repo** — `dot_ansible/roles/go_tools/defaults/main.yml`
+   (`github.com/daviddwlee84/translate@vX.Y.Z`) — then `chezmoi apply` / re-run the `go_tools` role.
+
+There is no CHANGELOG; the annotated tag message is the release note. Keep commit
+subjects in `feat(scope): …` / `fix(scope): …` form so `git log <prev-tag>..<tag>`
+reads as a coherent changelog.
+
 <!-- project-knowledge-harness:agent-guidance -->
 <!-- Snippet for the project's agent contract file (AGENTS.md / CLAUDE.md /
      similar). The bundled scripts/init.sh appends this between sentinel
