@@ -8,7 +8,8 @@ dictionary, with typo-tolerant language resolution and translation history.
 ## Install
 
 ```sh
-go install github.com/daviddwlee84/translate@latest   # into $GOBIN (or ~/go/bin)
+brew install daviddwlee84/tap/translate               # macOS/Linux via Homebrew (builds from source)
+go install github.com/daviddwlee84/translate@latest   # or with a Go toolchain, into $GOBIN (~/.local/bin)
 ```
 
 ## Build & run

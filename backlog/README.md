@@ -53,5 +53,5 @@ Add new entries here as you create them. Keep alphabetical.
 | `bilingual-immersive-mode` | shipped (2026-07) | Done "Bilingual `--bilingual`/`-2` pipe mode…" |
 | `chezmoi-go-tool-integration` | spike done, paused on scope (2026-07) | P? "Wire `translate` into chezmoi…" |
 | `dict-bundling` | deferred (2026-07) | P? "Bundle or prebuild the dictionary…" |
-| `homebrew-distribution` | researched, not implemented (2026-07) | P3 "Homebrew tap distribution…" |
+| `homebrew-distribution` | shipped (2026-07) | Done "Homebrew tap distribution…" |
 | `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |

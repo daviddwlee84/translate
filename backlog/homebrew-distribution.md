@@ -1,8 +1,8 @@
 # Homebrew distribution — installability via `brew`
 
-**Status**: researched (2026-07-20), not yet implemented — spike done
+**Status**: shipped (2026-07-20) — tap live, prereqs landed in v0.3.1
 **Effort**: M
-**Related**: `TODO.md` P3 · `cmd/version.go` (version prerequisite) · [release-binaries.md](release-binaries.md) (goreleaser/prebuilt path) · dotfiles `go_tools` role + `.chezmoiexternal`
+**Related**: `TODO.md` Done · `cmd/version.go` (version prerequisite) · [release-binaries.md](release-binaries.md) (goreleaser/prebuilt path) · dotfiles `go_tools` role + `.chezmoiexternal`
 
 ## Context
 
@@ -16,9 +16,21 @@ shipping.
 path has a new macOS Gatekeeper trap that makes the *simplest* path also the *best*
 one for a single-maintainer CLI.
 
-## Prerequisites (do these first — they block every option)
+## Shipped (2026-07-20)
 
-### 1. Add a linker-injectable `version` var (REQUIRED)
+Option A is **live**: `brew install daviddwlee84/tap/translate`.
+
+- Tap repo: [github.com/daviddwlee84/homebrew-tap](https://github.com/daviddwlee84/homebrew-tap), `Formula/translate.rb` (build-from-source, v0.3.1 + pinned sha256).
+- Prereqs landed in **v0.3.1**: the injectable `var version` (`cmd/version.go`) and a MIT `LICENSE`.
+- Verified on `macos_intel`: `brew install --build-from-source` compiled in ~52s (brew pulled its own `go` build-dep, 1.26.5 — satisfies go.mod's 1.26.4), `translate --version` → `v0.3.1` (the `-X` injection works), a translate + `--bilingual` run succeeded, `brew test` exit 0.
+- **No "trust"/Gatekeeper prompt** — a source-built formula compiles locally, so macOS sets no quarantine bit (this is exactly the trap Option B's prebuilt cask would hit).
+- **PATH shadowing caveat**: brew installs to `$(brew --prefix)/bin`, but the existing `go install` copy in `~/.local/bin` sits earlier on PATH and wins (`brew` prints this warning). To make brew's copy authoritative, remove the `go install`/`go_tools` copy or reorder PATH — see the chezmoi note below.
+
+Remaining (optional): automate the per-release formula bump (see "A + Action"); decide whether to switch the dotfiles install path to brew.
+
+## Prerequisites (landed in v0.3.1)
+
+### 1. Add a linker-injectable `version` var — ✅ done (v0.3.1)
 
 `cmd/version.go` derives the version **only** from `debug.ReadBuildInfo()`
 (`info.Main.Version`). That value is synthesized by the Go toolchain **only** for
@@ -57,7 +69,7 @@ Note the `-X` path is the **full package path** `github.com/daviddwlee84/transla
 (the var lives in package `cmd`, not `main`); a wrong path fails silently.
 `go install …@vX.Y.Z` keeps working unchanged (var empty → ReadBuildInfo → correct).
 
-### 2. Add a `LICENSE` file (recommended)
+### 2. Add a `LICENSE` file — ✅ done (v0.3.1, MIT)
 
 The repo has **no** `LICENSE` today (README only cites ECDICT's MIT for the bundled
 *dictionary data*). A personal tap will install without one, but `brew audit --strict`
