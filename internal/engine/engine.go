@@ -50,6 +50,21 @@ type Request struct {
 	// object (parsed into TranslateResult.Learn) and, because the output is
 	// structured, always runs NON-STREAMING regardless of Stream.
 	Learn bool
+
+	// Bilingual marks a whole-document bilingual ("doc mode") request: Segments
+	// carries the full ordered document (prose to translate + code shown only as
+	// context) and the LLM returns a JSON map of prose-segment number → translation.
+	// Context-aware and single-call. LLM engines only (google/dict ignore it), and
+	// like Learn it always runs NON-STREAMING.
+	Bilingual bool
+	Segments  []Segment
+}
+
+// Segment is one unit of a Bilingual document request: a prose block to translate,
+// or a command/code block included only as surrounding context (Code == true).
+type Segment struct {
+	Text string
+	Code bool
 }
 
 // TranslateResult is the "Marvin-lite" typed result. Every engine fills what it
@@ -82,6 +97,9 @@ type TranslateResult struct {
 	// the main foreign-language sentence (the corrected sentence, or the translation)
 	// so copy/history/speak keep working unchanged; the structured extras ride here.
 	Learn *LearnResult `json:"learn,omitempty"`
+	// Bilingual is the doc-mode payload: prose-segment number (1-based, as numbered
+	// in the prompt) → translation. nil outside bilingual doc mode. Transient.
+	Bilingual map[int]string `json:"-"`
 	// Suggestions is a ranked "did you mean" list, set by the dictionary engine
 	// when no exact entry was found (Dictionary and Translation stay empty). The
 	// frontend decides how to present/select — the engine no longer auto-picks.

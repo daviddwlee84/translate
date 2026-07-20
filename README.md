@@ -134,6 +134,17 @@ single-output. Best for prose docs (tldr, man, `--help`); tabular output
 `--json`/`--learn` take precedence. Design notes + why per-word recoloring was
 rejected: [`backlog/bilingual-immersive-mode.md`](backlog/bilingual-immersive-mode.md).
 
+Two strategies, via `--bilingual-mode`:
+
+- **`doc`** (default) — one **context-aware** call: the whole document is sent as
+  numbered segments (prose to translate, commands as context), so the model knows a
+  bare `rg` is the command being documented (not an abbreviation), stays in one
+  target variant, and doesn't leak reasoning. Fewer tokens than per-block, and needs
+  an LLM provider.
+- **`blocks`** — the older per-block strategy (each block translated in isolation,
+  concurrent, works with any engine). `doc` automatically falls back to this when no
+  LLM is available or the structured reply can't be parsed.
+
 Separately, ANSI escapes are now **stripped from piped input** before translating,
 so colored input (e.g. `grep --color=always`) no longer pollutes the prompt.
 

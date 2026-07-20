@@ -47,3 +47,34 @@ func TestConcisePromptForbidsEcho(t *testing.T) {
 		t.Errorf("concise prompt still has a bare echo escape hatch:\n%s", translateSystemPromptConcise)
 	}
 }
+
+func TestBuildBilingualPrompt(t *testing.T) {
+	req := Request{
+		Source:    "auto",
+		Target:    "zh-TW",
+		Bilingual: true,
+		Segments: []Segment{
+			{Text: "rg"},
+			{Text: "Ripgrep, a recursive tool."},
+			{Text: "rg pattern", Code: true},
+		},
+	}
+	sys, user := buildBilingualPrompt(req)
+
+	// System: context directive, JSON-only instruction, and the resolved target.
+	for _, want := range []string{"not an abbreviation", "JSON", "zh-TW"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("bilingual system prompt missing %q:\n%s", want, sys)
+		}
+	}
+	// User: prose numbered 1,2; code shown as context, never numbered.
+	if !strings.Contains(user, "1. rg") || !strings.Contains(user, "2. Ripgrep") {
+		t.Errorf("prose segments not numbered as expected:\n%s", user)
+	}
+	if !strings.Contains(user, "[code — context only] rg pattern") {
+		t.Errorf("code segment not marked as context:\n%s", user)
+	}
+	if strings.Contains(user, "3. rg pattern") {
+		t.Errorf("code segment must not be numbered for translation:\n%s", user)
+	}
+}

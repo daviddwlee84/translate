@@ -131,3 +131,20 @@ func TestFinalizeLearnFallback(t *testing.T) {
 		t.Error("fallback should record a warning")
 	}
 }
+
+func TestParseBilingual(t *testing.T) {
+	// Tolerates leading reasoning prose before the JSON — the exact leak doc mode
+	// is meant to survive ("Wait, need Traditional Chinese…").
+	reply := "Wait, need Traditional Chinese, not Simplified.\n\n{\"1\": \"一\", \"2\": \"二\"}"
+	m, err := parseBilingual(reply)
+	if err != nil {
+		t.Fatalf("parseBilingual error: %v", err)
+	}
+	if m[1] != "一" || m[2] != "二" {
+		t.Errorf("parseBilingual = %#v, want {1:一, 2:二}", m)
+	}
+	// A reply with no JSON object is an error (caller falls back to per-block).
+	if _, err := parseBilingual("no json here"); err == nil {
+		t.Error("expected an error for a reply with no JSON")
+	}
+}

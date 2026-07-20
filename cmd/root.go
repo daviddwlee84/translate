@@ -31,23 +31,24 @@ import (
 )
 
 var (
-	flagTo           string
-	flagFrom         string
-	flagModel        string
-	flagProvider     string
-	flagEngine       string
-	flagTier         string
-	flagPreset       string
-	flagInstructions string
-	flagPair         bool
-	flagPairWith     string
-	flagLearn        bool
-	flagBilingual    bool
-	flagJSON         bool
-	flagNoHistory    bool
-	flagDebug        bool
-	flagSpeak        bool
-	flagSpeakLang    string
+	flagTo            string
+	flagFrom          string
+	flagModel         string
+	flagProvider      string
+	flagEngine        string
+	flagTier          string
+	flagPreset        string
+	flagInstructions  string
+	flagPair          bool
+	flagPairWith      string
+	flagLearn         bool
+	flagBilingual     bool
+	flagBilingualMode string
+	flagJSON          bool
+	flagNoHistory     bool
+	flagDebug         bool
+	flagSpeak         bool
+	flagSpeakLang     string
 )
 
 // NewRootCmd builds the root command and its subcommands.
@@ -81,6 +82,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagLearn, "learn", false, "learning mode: teach (native→foreign) or grammar-correct (foreign→native)")
 	f.BoolVarP(&flagBilingual, "bilingual", "2", false, "bilingual pipe mode: keep original (with color) + translation beneath (stdin only)")
+	f.StringVar(&flagBilingualMode, "bilingual-mode", "doc", "bilingual strategy: doc (context-aware, one LLM call) | blocks (per-block)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
@@ -221,7 +223,14 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		// Bilingual is a multi-block reading view; --json/--learn keep their own
 		// structured output and take precedence.
 		if flagBilingual && !flagJSON && !res.Learn {
-			return runBilingual(ctx, oneShotEng, string(b), src, tgt, res.Instructions)
+			// doc mode needs an LLM (structured JSON, empty Text confuses
+			// smartauto/chain routing) — build a bare LLM like learn mode; nil when
+			// no provider, in which case runBilingual falls back to per-block.
+			var docEng engine.Engine
+			if res.Provider != nil {
+				docEng = learnEngineFromConfig(res)
+			}
+			return runBilingual(ctx, oneShotEng, docEng, string(b), src, tgt, res.Instructions, flagBilingualMode)
 		}
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
 		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
@@ -485,16 +494,41 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 }
 
 // runBilingual renders the "immersive" bilingual view for piped input: every
-// original block is printed verbatim (ANSI/color intact) and a translation is
-// shown beneath each prose block. Indented command/code blocks are echoed
-// untranslated. Prose blocks translate concurrently (bounded) into target; pair
-// and learn routing are intentionally out of scope for this reading mode.
-func runBilingual(ctx context.Context, eng engine.Engine, raw, source, target, instructions string) error {
+// original block is printed verbatim (ANSI/color intact) and a translation is shown
+// beneath each prose block; indented command/code blocks are echoed untranslated.
+// mode "doc" (default) translates the whole document in one context-aware call via
+// docEng (a bare LLM); "blocks" (or a doc-mode fallback) translates each prose block
+// in isolation via blockEng. Pair and learn routing are out of scope for this view.
+func runBilingual(ctx context.Context, blockEng, docEng engine.Engine, raw, source, target, instructions, mode string) error {
 	blocks := bitext.Split(raw)
 	if len(blocks) == 0 {
 		return fmt.Errorf("no input on stdin")
 	}
 
+	var translations map[int]string
+	switch mode {
+	case "blocks":
+		translations = bilingualBlocks(ctx, blockEng, blocks, source, target, instructions)
+	default: // "doc"
+		if docEng != nil {
+			if t, ok := bilingualDoc(ctx, docEng, blocks, source, target, instructions); ok {
+				translations = t
+			}
+		}
+		if translations == nil { // no LLM provider, or the doc call failed/was unparseable
+			fmt.Fprintln(os.Stderr, "translate: bilingual: doc mode unavailable, using per-block")
+			translations = bilingualBlocks(ctx, blockEng, blocks, source, target, instructions)
+		}
+	}
+
+	dim := dimFunc(term.IsTerminal(int(os.Stdout.Fd())))
+	fmt.Print(bitext.Render(blocks, translations, dim))
+	return nil
+}
+
+// bilingualBlocks translates each prose block in isolation (concurrent, bounded).
+// The original strategy: works with any engine, but has no cross-block context.
+func bilingualBlocks(ctx context.Context, eng engine.Engine, blocks []bitext.Block, source, target, instructions string) map[int]string {
 	translations := make(map[int]string)
 	errs := make(map[int]error)
 	var mu sync.Mutex
@@ -535,9 +569,6 @@ func runBilingual(ctx context.Context, eng engine.Engine, raw, source, target, i
 	}
 	wg.Wait()
 
-	dim := dimFunc(term.IsTerminal(int(os.Stdout.Fd())))
-	fmt.Print(bitext.Render(blocks, translations, dim))
-
 	// Never fail silently: report untranslated blocks (originals still printed).
 	if len(errs) > 0 {
 		var sample error
@@ -547,7 +578,64 @@ func runBilingual(ctx context.Context, eng engine.Engine, raw, source, target, i
 		}
 		fmt.Fprintf(os.Stderr, "translate: warning: %d block(s) not translated (%v)\n", len(errs), sample)
 	}
-	return nil
+	return translations
+}
+
+// bilingualDoc translates the whole document in ONE context-aware structured call:
+// the model sees every block (prose + code as context) and returns a JSON map of
+// prose-segment number → translation. Returns ok=false when structured output isn't
+// available (no LLM, error, or unparseable/empty reply) so the caller falls back.
+func bilingualDoc(ctx context.Context, eng engine.Engine, blocks []bitext.Block, source, target, instructions string) (map[int]string, bool) {
+	var segs []engine.Segment
+	proseBlock := make(map[int]int) // prose-segment number (1-based) → block index
+	n := 0
+	for i, blk := range blocks {
+		switch blk.Kind {
+		case bitext.Prose:
+			n++
+			proseBlock[n] = i
+			segs = append(segs, engine.Segment{Text: blk.Plain})
+		case bitext.Code:
+			segs = append(segs, engine.Segment{Text: blk.Plain, Code: true})
+		}
+	}
+	if n == 0 {
+		return map[int]string{}, true // nothing to translate
+	}
+
+	r, err := translateOnce(ctx, eng, engine.Request{
+		Bilingual: true,
+		Segments:  segs,
+		Source:    source,
+		Target:    target,
+		Mode:      engine.ModeTranslate,
+		Extra:     instructions,
+	})
+	if err != nil {
+		debug.Logf("bilingual doc: LLM call failed: %v", err)
+		return nil, false
+	}
+	if r == nil || len(r.Bilingual) == 0 {
+		warn := ""
+		if r != nil && len(r.Warnings) > 0 {
+			warn = r.Warnings[0]
+		}
+		debug.Logf("bilingual doc: empty/unparseable structured result (warnings: %q)", warn)
+		return nil, false
+	}
+
+	translations := make(map[int]string)
+	for num, tr := range r.Bilingual {
+		bi, ok := proseBlock[num]
+		if !ok {
+			continue
+		}
+		t := strings.TrimSpace(tr)
+		if t != "" && !strings.EqualFold(t, strings.TrimSpace(blocks[bi].Plain)) {
+			translations[bi] = t
+		}
+	}
+	return translations, true
 }
 
 // translateOnce runs a single non-streaming translation and returns the result,

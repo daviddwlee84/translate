@@ -111,6 +111,65 @@ func buildTranslatePrompt(req Request) (system, user string) {
 	return system, fmt.Sprintf(translateUserPrompt, src, tgt, req.Text)
 }
 
+// translateBilingualSystemPrompt drives context-aware whole-document ("doc mode")
+// translation. The model sees the FULL document (prose + code as context) and
+// returns a JSON object mapping each prose segment's number to its translation, so
+// it can use cross-segment context — e.g. that a bare `rg` is the command being
+// documented, not an abbreviation — and stay in one consistent target variant.
+// %[1]s is the readable target language name (used twice).
+const translateBilingualSystemPrompt = `You translate terminal / CLI documentation into %[1]s.
+
+You are given the whole document as a numbered list of SEGMENTS. Some are prose to
+translate; others are command/code lines marked "[code — context only]" and are
+shown ONLY so you understand the document — never translate or echo them.
+
+Rules:
+- Use the WHOLE document as context. A bare token like "rg" or "ls" on its own is
+  the COMMAND being documented, not an abbreviation — do not expand or gloss it.
+- Keep command names, subcommands, flags, file paths, URLs, and code verbatim.
+- Preserve meaning, tone, and register. Interpret the intended meaning of typos; never refuse.
+- Translate EVERY prose segment into %[1]s only — one consistent variant, never mixed.
+- Respond with ONE JSON object and NOTHING else: keys are the prose segment numbers
+  (as strings), values are the translations. No markdown fence, no reasoning, no
+  commentary before or after the JSON.`
+
+// bilingualUserPrompt frames the numbered document for a doc-mode request.
+const bilingualUserPrompt = `Source language: %s
+Target language: %s
+
+Document segments:
+%s`
+
+// buildBilingualPrompt returns the (system, user) messages for a doc-mode bilingual
+// request. Prose segments are numbered (1-based, matching TranslateResult.Bilingual
+// keys); code segments are shown inline as context and are NOT numbered.
+func buildBilingualPrompt(req Request) (system, user string) {
+	src := strings.TrimSpace(req.Source)
+	if src == "" || src == "auto" {
+		src = "auto"
+	} else {
+		src = fmt.Sprintf("%s (%s)", lang.Name(src), src)
+	}
+	tgt := fmt.Sprintf("%s (%s)", lang.Name(req.Target), req.Target)
+	system = fmt.Sprintf(translateBilingualSystemPrompt, tgt)
+	if extra := strings.TrimSpace(req.Extra); extra != "" {
+		system += "\n\nUser preferences (apply where relevant, e.g. domain terminology):\n" + extra
+	}
+
+	var b strings.Builder
+	n := 0
+	for _, s := range req.Segments {
+		text := strings.TrimSpace(s.Text)
+		if s.Code {
+			b.WriteString("    [code — context only] " + text + "\n")
+			continue
+		}
+		n++
+		fmt.Fprintf(&b, "%d. %s\n", n, text)
+	}
+	return system, fmt.Sprintf(bilingualUserPrompt, src, tgt, b.String())
+}
+
 // learnDirection reports the learn-mode direction, decided OFFLINE via the same
 // script-aware router as pair mode (lang.PairTarget): native (home) input → "teach"
 // (translate + glosses); foreign (away) input → "correct" (grammar-correct + explain).

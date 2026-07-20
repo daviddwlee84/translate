@@ -109,6 +109,20 @@ cosmetic terminal nicety.
 
 → tracked as a `P3 [M]` follow-up in `TODO.md` (table/wrapped-prose-aware bilingual).
 
+## Update — context-aware doc mode (v0.4.0)
+
+Per-block isolation (each block translated in a separate call) produced three
+failures on real `tldr rg`: `rg` mistranslated as an abbreviation (no context),
+Simplified/Traditional drift across blocks, and reasoning leaking into output.
+Added `--bilingual-mode doc` (now the default): the whole document is sent as
+numbered segments (prose to translate + commands as context) in **one** call and the
+model returns a JSON `{n: translation}` map — mirroring the `--learn` structured path
+(`buildBilingualPrompt` + `finalizeBilingual` + `extractJSON`, which tolerates leaked
+reasoning). Context-aware, single-variant, and **fewer** tokens than per-block. The
+old strategy stays as `--bilingual-mode blocks` and is the automatic fallback when no
+LLM is available or the JSON can't be parsed (e.g. `--engine google`). doc mode needs
+an LLM provider and is non-streaming.
+
 ## References
 
 - Immersive Translate (DeepWiki, reverse-engineered): content-script DOM insertion

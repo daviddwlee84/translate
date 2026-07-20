@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -182,7 +183,8 @@ func isAnthropicModel(model string) bool {
 // It always returns a channel that closes after exactly one terminal chunk, and
 // dispatches to the Anthropic Messages API for Claude models.
 func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, error) {
-	if strings.TrimSpace(req.Text) == "" {
+	// A bilingual doc request carries its content in Segments, not Text.
+	if strings.TrimSpace(req.Text) == "" && !(req.Bilingual && len(req.Segments) > 0) {
 		return nil, ErrEmptyInput
 	}
 	model := NormalizeModelID(e.cfg.Model)
@@ -275,19 +277,27 @@ func (e *LLMEngine) finalize(full, model string, req Request) *TranslateResult {
 // promptFor picks the (system, user) prompt pair for a request: the structured
 // tutor prompt for learn mode, else the plain translate prompt.
 func promptFor(req Request) (system, user string) {
-	if req.Learn {
+	switch {
+	case req.Bilingual:
+		return buildBilingualPrompt(req)
+	case req.Learn:
 		return buildLearnPrompt(req)
+	default:
+		return buildTranslatePrompt(req)
 	}
-	return buildTranslatePrompt(req)
 }
 
 // finalizeResult builds the terminal result, parsing structured learn output when
 // the request asked for it.
 func (e *LLMEngine) finalizeResult(full, model string, req Request) *TranslateResult {
-	if req.Learn {
+	switch {
+	case req.Bilingual:
+		return e.finalizeBilingual(full, model, req)
+	case req.Learn:
 		return e.finalizeLearn(full, model, req)
+	default:
+		return e.finalize(full, model, req)
 	}
-	return e.finalize(full, model, req)
 }
 
 // finalizeLearn parses the model's structured JSON reply into a LearnResult. It is
@@ -337,6 +347,46 @@ func parseLearn(full string) (*LearnResult, error) {
 	return &lr, nil
 }
 
+// finalizeBilingual parses the model's JSON reply (prose-segment number → translation)
+// into TranslateResult.Bilingual. Defensive like finalizeLearn: on any parse failure
+// it returns an empty result + a warning so the caller can fall back to per-block mode.
+func (e *LLMEngine) finalizeBilingual(full, model string, req Request) *TranslateResult {
+	res := &TranslateResult{
+		Target: req.Target,
+		Engine: e.cfg.Name,
+		Model:  model,
+	}
+	m, err := parseBilingual(full)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "bilingual: could not parse structured output")
+		return res
+	}
+	res.Bilingual = m
+	return res
+}
+
+// parseBilingual extracts a {"<n>": "<translation>"} JSON object from a model reply
+// and converts it to a map keyed by the integer segment number, ignoring non-numeric
+// keys defensively.
+func parseBilingual(full string) (map[int]string, error) {
+	var raw map[string]string
+	if err := json.Unmarshal([]byte(extractJSON(full)), &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[int]string, len(raw))
+	for k, v := range raw {
+		n, err := strconv.Atoi(strings.TrimSpace(k))
+		if err != nil {
+			continue
+		}
+		out[n] = v
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("bilingual: no numeric segment keys")
+	}
+	return out, nil
+}
+
 // extractJSON returns the outermost JSON object in s, tolerating a surrounding
 // markdown code fence or stray prose around it.
 func extractJSON(s string) string {
@@ -366,7 +416,7 @@ func markTruncated(res *TranslateResult) {
 // translateOpenAI uses the OpenAI /chat/completions endpoint.
 func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
 	system, user := promptFor(req)
-	stream := req.Stream && !req.Learn // learn output is structured JSON: parse at done
+	stream := req.Stream && !req.Learn && !req.Bilingual // structured JSON output: parse at done
 	body := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
@@ -441,9 +491,9 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 // translateAnthropic uses the Anthropic Messages API (/v1/messages).
 func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
 	system, user := promptFor(req)
-	stream := req.Stream && !req.Learn // learn output is structured JSON: parse at done
+	stream := req.Stream && !req.Learn && !req.Bilingual // structured JSON output: parse at done
 	maxTokens := anthropicMaxTokens
-	if req.Learn {
+	if req.Learn || req.Bilingual {
 		maxTokens = learnMaxTokens
 	}
 	body := anthropicRequest{
