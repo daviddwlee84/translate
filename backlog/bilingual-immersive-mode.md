@@ -99,7 +99,10 @@ cosmetic terminal nicety.
 - **Tables/columns** (`ls -l`, `kubectl get`, `git status`): interleaving a
   translation beneath each row breaks alignment. Bilingual targets prose docs
   (tldr, man, `--help`), not tabular output.
-- **Fully-indented man pages** may be misclassified as all-`Code` and skipped.
+- **Uniformly-indented output** (e.g. tldr indents its whole body 2 columns, with
+  examples deeper) is handled: code detection is **relative to the document's base
+  margin** (v0.3.2 fix), not an absolute column. A doc with *no* depth variation
+  (every line at the same indent) is treated as all prose.
 - **Hard-wrapped prose** split by blank lines loses cross-block context.
 - Pair/learn routing and `--speak`/history are intentionally out of scope for this
   reading view.

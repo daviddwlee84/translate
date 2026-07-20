@@ -34,9 +34,10 @@ type Block struct {
 // Strip removes every ANSI/SGR escape sequence from s, returning display text.
 func Strip(s string) string { return ansi.Strip(s) }
 
-// codeIndent is the leading-column threshold at/above which a block counts as a
-// command/code example (matches tldr/man's indented example blocks). A single
-// leading tab also clears it.
+// codeIndent is how many columns DEEPER than the document's base margin a block
+// must be indented to count as a command/code example. Tools like tldr indent the
+// whole body (prose at a base margin, examples deeper), so detection is relative to
+// that base — an absolute threshold would misread the indented prose as code.
 const codeIndent = 2
 
 // Split breaks raw piped input into blocks. Consecutive non-blank lines coalesce
@@ -49,6 +50,24 @@ func Split(raw string) []Block {
 		return nil
 	}
 	lines := strings.Split(raw, "\n")
+
+	// The document's base margin: the minimum leading indentation over all
+	// non-blank lines. tldr/man indent the entire body, so "code" is measured
+	// relative to this, not from column zero.
+	base := -1
+	for _, ln := range lines {
+		p := Strip(ln)
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if c := leadingCols(p); base < 0 || c < base {
+			base = c
+		}
+	}
+	if base < 0 {
+		base = 0
+	}
+
 	var blocks []Block
 	var cur []string // current run of non-blank raw lines
 
@@ -60,7 +79,7 @@ func Split(raw string) []Block {
 		blocks = append(blocks, Block{
 			Raw:   rawBlk,
 			Plain: Strip(rawBlk),
-			Kind:  classify(cur),
+			Kind:  classify(cur, base),
 		})
 		cur = nil
 	}
@@ -78,10 +97,10 @@ func Split(raw string) []Block {
 }
 
 // classify returns Code when every (stripped) line is indented at least codeIndent
-// columns, else Prose.
-func classify(rawLines []string) Kind {
+// columns deeper than the document's base margin, else Prose.
+func classify(rawLines []string, base int) Kind {
 	for _, ln := range rawLines {
-		if leadingCols(Strip(ln)) < codeIndent {
+		if leadingCols(Strip(ln)) < base+codeIndent {
 			return Prose
 		}
 	}

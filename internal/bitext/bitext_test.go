@@ -26,10 +26,11 @@ func TestStrip(t *testing.T) {
 }
 
 func TestSplit(t *testing.T) {
-	// A tldr-shaped fixture: a flush-left command name, a two-line prose block, and
-	// an indented (colored) command example.
-	input := "\x1b[35mrg\x1b[0m\n\n" +
-		"Ripgrep, a \x1b[32mfast\x1b[0m tool.\nMore info.\n\n" +
+	// Real tldr output indents the WHOLE body: prose at 2 columns, command
+	// examples at 4. Classification is relative to the base margin (this fixture
+	// guards the bug where 2-space-indented prose was misread as code).
+	input := "  \x1b[35mrg\x1b[0m\n\n" +
+		"  Ripgrep, a \x1b[32mfast\x1b[0m tool.\n  More info.\n\n" +
 		"    rg \x1b[31mpattern\x1b[0m\n"
 
 	blocks := Split(input)
@@ -37,9 +38,9 @@ func TestSplit(t *testing.T) {
 		kind  Kind
 		plain string
 	}{
-		{Prose, "rg"},
+		{Prose, "  rg"},
 		{Blank, ""},
-		{Prose, "Ripgrep, a fast tool.\nMore info."},
+		{Prose, "  Ripgrep, a fast tool.\n  More info."},
 		{Blank, ""},
 		{Code, "    rg pattern"},
 	}
@@ -63,26 +64,29 @@ func TestSplit(t *testing.T) {
 	}
 }
 
-func TestSplitClassify(t *testing.T) {
+func TestClassifyRelativeToBase(t *testing.T) {
+	// Code is "indented deeper than the document's base margin", not an absolute
+	// column — so the same 4-col example reads as Code whether prose sits at 0 or 2.
 	cases := []struct {
 		name string
 		in   string
-		want Kind
+		want []Kind
 	}{
-		{"flush_left_prose", "just a sentence.", Prose},
-		{"two_space_indent_is_code", "  indented example", Code},
-		{"tab_indent_is_code", "\tcmd --flag", Code},
-		{"one_space_is_prose", " nearly flush", Prose},
-		{"mixed_block_is_prose", "flush line\n    indented continuation", Prose},
+		{"base0_prose_then_code", "Search for a pattern:\n\n    rg pattern", []Kind{Prose, Blank, Code}},
+		{"base2_prose_then_code", "  Search for a pattern:\n\n    rg pattern", []Kind{Prose, Blank, Code}},
+		{"uniform_indent_all_prose", "  line one\n  line two", []Kind{Prose}},
+		{"tab_deeper_is_code", "desc\n\n\tcmd --flag", []Kind{Prose, Blank, Code}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			blocks := Split(c.in)
-			if len(blocks) != 1 {
-				t.Fatalf("expected 1 block, got %d", len(blocks))
+			if len(blocks) != len(c.want) {
+				t.Fatalf("got %d blocks, want %d: %#v", len(blocks), len(c.want), blocks)
 			}
-			if blocks[0].Kind != c.want {
-				t.Errorf("Kind = %d, want %d", blocks[0].Kind, c.want)
+			for i, k := range c.want {
+				if blocks[i].Kind != k {
+					t.Errorf("block %d Kind = %d, want %d", i, blocks[i].Kind, k)
+				}
 			}
 		})
 	}
