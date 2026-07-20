@@ -23461,3 +23461,1226 @@ Summary of what shipped:
 - Tests green (`go build` / `vet` / `test ./...`), and verified end-to-end against the live copilot-proxy in both CLI and a PTY-driven TUI.
 
 Nothing was pushed — it's a local commit only. Let me know if you want it pushed or want to start on multi-turn next.
+
+---
+
+_**User (2026-07-14 21:30:14Z)**_
+
+```
+dot_ansible/roles/go_tools/defaults/main.yml
+19:  - name: github.com/daviddwlee84/translate@v0.1.0
+20:    binary: translate
+```
+
+BTW 我們現在的新feature是否會隨着chezmoi而安裝新版？
+我們的版本號是不是應該要設計一下 然後更新在 @AGENTS.md 做爲引導？
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-14 21:30:54Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm looking at two related questions here: whether the new feature will be installed through chezmoi when a new version is released, given that the ansible configuration pins a specific version of the translate tool, and whether we should establish a versioning strategy and document it in the AGENTS.md file for future reference.
+
+The key insight is that since the ansible defaults pin `@v0.1.0`, chezmoi will always fetch that exact published tag from the remote repository. Our local unpushed commits on main won't be included until we push the code, create a new version tag (like v0.2.0), and update the ansible pin to point to it. For a pre-1.0 Go CLI, semantic versioning with minor bumps for features and patches for fixes makes sense, and we should document this approach in AGENTS.md so the team knows how to handle future releases.
+
+Before settling on the versioning scheme, I need to check how the version string is actually generated — looking at the buildVersion function in cmd/version.go to see if it reads from git tags or uses hardcoded values, and then verify where the ansible defaults file lives and how it's structured.
+
+The user is asking two things: whether the tool auto-installs with a specific version (it won't), and wants a versioning design proposal documented in the project's AGENTS.md file as guidance for future releases. I need to investigate the current version mechanism first, then propose a concrete versioning and release workflow to add to AGENTS.md as guidance documentation. Since the user is asking for a recommendation and seems open to implementation, I'll check how versioning currently works, design a clear policy, and present it for confirmation before writing it into the file. I'll start by running some read-only checks on the version plumbing, git state, and existing documentation to understand the current setup before deciding whether I need to consult the chezmoi-dotfiles skill for the installation details.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:30:54Z)**_
+
+Good questions — let me check the actual version plumbing and release path before answering, so the design is grounded rather than guessed.
+
+_**Agent (claude-opus-4-8 2026-07-14 21:30:57Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect version plumbing, remotes, tags
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== cmd/version.go ==="; cat cmd/version.go 2>/dev/null || echo "(no version.go)"
+echo; echo "=== go.mod head ==="; head -5 go.mod
+echo; echo "=== git remotes ==="; git remote -v
+echo; echo "=== git tags ==="; git tag --sort=-v:refname | head
+echo; echo "=== unpushed? branch vs upstream ==="; git status -sb | head -1
+echo; echo "=== version-ish files ==="; ls CHANGELOG* VERSION* RELEASE* 2>/dev/null || echo "(none)"
+```
+
+```text
+=== cmd/version.go ===
+package cmd
+
+import (
+	"runtime/debug"
+	"strings"
+)
+
+// buildVersion reports a version string derived from the Go build info, so
+// `translate --version` distinguishes a freshly-built dev binary from a stale
+// installed one. For `go install <path>@<ver>` it shows the module version; for
+// a local `go build`/`go install .` off a working tree it shows the VCS revision,
+// a "+dirty" marker when the tree had uncommitted changes, and the build time.
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "(unknown; no build info)"
+	}
+	ver := info.Main.Version // e.g. "v0.1.0" or "(devel)"
+	var rev, when string
+	dirty := false
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.time":
+			when = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	var b strings.Builder
+	b.WriteString(ver)
+	if rev != "" {
+		if len(rev) > 12 {
+			rev = rev[:12]
+		}
+		b.WriteString(" (" + rev)
+		if dirty {
+			b.WriteString("+dirty")
+		}
+		b.WriteString(")")
+	}
+	if when != "" {
+		b.WriteString(" commit " + when)
+	}
+	return b.String()
+}
+
+=== go.mod head ===
+module github.com/daviddwlee84/translate
+
+go 1.26.4
+
+require (
+
+=== git remotes ===
+origin	https://github.com/daviddwlee84/translate.git (fetch)
+origin	https://github.com/daviddwlee84/translate.git (push)
+
+=== git tags ===
+v0.1.0
+
+=== unpushed? branch vs upstream ===
+## main...origin/main [ahead 3]
+
+=== version-ish files ===
+(eval):7: no matches found: CHANGELOG*
+(none)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:31:48Z)**_
+
+<think><details><summary>Thought Process</summary>
+So the version comes directly from git tags through `buildVersion()`, which reads the module version from `debug.ReadBuildInfo()` — there's no hardcoded constant to update. The module is `github.com/daviddwlee84/translate`.
+
+The repository has only one tag (`v0.1.0`), and the current state is 3 commits ahead of origin/main but unpushed. Since ansible pins the dependency to `@v0.1.0`, installing via chezmoi will always fetch that specific tag from the Go module proxy, regardless of any local unpushed work or future commits — the pin is immutable and won't move unless the ansible config itself is updated.
+
+To ship the new feature, I need to push the commits, create a new version tag (like v0.2.0), push that tag, then update the ansible pin to point to the new version and re-run the install.
+
+For versioning, I'll use SemVer with pre-1.0 semantics: minor bumps for backward-compatible features (v0.1.0 → v0.2.0), patch bumps for bug fixes, and minor or major bumps for breaking changes. Since the version comes directly from git tags with no hardcoded constant in the source, cutting a tag is the version bump — no code changes needed for versioning itself.
+
+The release workflow to document is: ensure main is clean and tests pass, push to origin, create and push an annotated tag, optionally verify the proxy picked it up, then update the chezmoi dotfiles repo to pin the new version and re-apply.
+
+Now I'm weighing whether to actually execute the release right now or just document the process — the user asked about auto-installation and versioning design, not explicitly to push and tag. Since tagging a public repo is a hard-to-reverse action, I should confirm before proceeding with the actual release. They're asking whether new features get installed automatically via chezmoi, and want me to design a versioning scheme and document it in AGENTS.md as guidance. Since this is an explicit request for documentation and it's low-risk, I should write that section thoughtfully — probably adding it outside the sentinel block so it doesn't interfere with the knowledge harness.
+
+For the version number, a minor bump to v0.2.0 makes sense since the learn mode is a new backward-compatible feature. I could ask them to choose, but SemVer points clearly to v0.2.0, so I'll recommend that with reasoning and let them override if needed. The actual push and tag operation is outward-facing though, so I need to think through the implications there. Before I write the AGENTS.md guidance, I should check what's already in place — whether there's a Makefile, justfile, or .goreleaser config with release automation, and review the full AGENTS.md to see if there's existing versioning documentation. I also need to find the exact ansible pin line in the dotfiles repo so I can quote it accurately when describing the dotfiles update step. I need to pull those files to understand the current state of the translate repo's versioning setup and the ansible configuration.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:31:48Z)**_
+
+Now I have the key facts. Let me read the full AGENTS.md and check for any existing release tooling before proposing where the guidance goes.
+
+_**Agent (claude-opus-4-8 2026-07-14 21:31:49Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Read AGENTS.md and check for release tooling
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== AGENTS.md (full) ==="; cat -n AGENTS.md 2>/dev/null | sed -n '1,200p' | head -120
+echo; echo "=== build/release tooling present? ==="; ls Makefile justfile .goreleaser* Taskfile* 2>/dev/null || echo "(none)"
+echo; echo "=== README release/version mentions ==="; grep -niE 'version|release|go install|tag' README.md 2>/dev/null | head
+echo; echo "=== scripts/ dir ==="; ls scripts/ 2>/dev/null || echo "(no scripts dir)"
+echo; echo "=== unpushed commits ==="; git log origin/main..main --oneline
+```
+
+```text
+=== AGENTS.md (full) ===
+     1	
+     2	<!-- project-knowledge-harness:agent-guidance -->
+     3	<!-- Snippet for the project's agent contract file (AGENTS.md / CLAUDE.md /
+     4	     similar). The bundled scripts/init.sh appends this between sentinel
+     5	     markers; safe to re-run. -->
+     6	
+     7	### Long-term backlog → `TODO.md` + `backlog/`
+     8	
+     9	When the user surfaces an idea explicitly **not** being implemented this
+    10	session (signals: "maybe later", "nice to have", "if I'm interested",
+    11	"工程量太大需要再評估", "先記下來"), add an entry to [`TODO.md`](TODO.md) using
+    12	the priority + effort tag schema. Do **not** create new `ROADMAP.md` /
+    13	`IDEAS.md` / `BACKLOG.md` files — `TODO.md` is the single index.
+    14	
+    15	The bundled `scripts/todo-kanban.sh` validates the format. Run it
+    16	(`scripts/todo-kanban.sh --validate-only TODO.md`) after editing so syntax
+    17	drift is caught immediately.
+    18	
+    19	#### Three ways to add a TODO entry (preferred order)
+    20	
+    21	1. **Structured CLI — `scripts/add-todo.sh`** (default):
+    22	
+    23	   ```
+    24	   scripts/add-todo.sh --priority P3 --effort M \
+    25	     --title "Title" --description "Description"
+    26	   ```
+    27	
+    28	   Inserts a canonically-formatted line into the right `## P*` lane and
+    29	   re-runs the validator. Add `--backlog` to also scaffold
+    30	   `backlog/<slug>.md` from the bundled template.
+    31	
+    32	2. **Quick capture — `backlog/inbox.md`** (when priority/effort unclear):
+    33	
+    34	   ```
+    35	   echo "- maybe add docs versioning with mike" >> backlog/inbox.md
+    36	   ```
+    37	
+    38	   When the user asks "sweep the inbox", run
+    39	   `scripts/sweep-inbox.sh`. It prompts for the missing fields per loose
+    40	   line and calls `add-todo.sh`. Use `--batch` for non-interactive runs
+    41	   that only formalize lines with parseable `key=value` pairs.
+    42	
+    43	3. **Direct edit of `TODO.md`** — fine if the format is fresh; run
+    44	   `scripts/todo-kanban.sh --validate-only` afterwards.
+    45	
+    46	Add a `backlog/<slug>.md` companion doc when the item meets any of:
+    47	
+    48	- carries a `P?` tag (record what was tried so it doesn't need re-investigation)
+    49	- captures a paused troubleshooting session that you intend to fix later
+    50	  (preserve the error trace + root cause analysis before context evaporates)
+    51	- weighs multiple options (record trade-offs, not only the winner)
+    52	- is `[L]` or `[XL]` (architectural; needs design before code)
+    53	
+    54	`[S]` items rarely need a backlog doc — a file path in the `TODO.md` line is
+    55	usually enough. See [`backlog/README.md`](backlog/README.md) for the full
+    56	template and "when to add a doc" rules.
+    57	
+    58	When implementing a `TODO.md` item, in the same commit:
+    59	
+    60	1. Run `scripts/promote-todo.sh --title "<substring>" --summary "<what shipped>"`
+    61	   to move the entry into `## Done` with the dated syntax and re-validate.
+    62	2. Mark the corresponding `backlog/<slug>.md` (if any) `Status: shipped`
+    63	   and keep it as a historical record (don't delete — future-you may
+    64	   revisit adjacent decisions).
+    65	
+    66	`backlog/` is excluded from N/A (no packaging — these files stay in the repo) (see N/A); it
+    67	is repo metadata for maintainers, not user-facing config to deploy.
+    68	
+    69	### Past pitfalls → `pitfalls/`
+    70	
+    71	When you spend more than ~15 minutes debugging something that wasn't
+    72	googleable and the fix is non-obvious, write a `pitfalls/<slug>.md`
+    73	capturing:
+    74	
+    75	1. **Verbatim symptom** — copy-paste error messages exactly, do not
+    76	   paraphrase (preserves grep-ability for future-you / future agent)
+    77	2. **Root cause** — why this happens (with source / docs / upstream issue link)
+    78	3. **Workaround** — copy-pasteable commands or config diff
+    79	4. **Prevention** — how to avoid stepping on this again
+    80	
+    81	Title the doc by the **symptom**, not the root cause (you'll search by what
+    82	you're seeing, not by what you eventually learned). See
+    83	[`pitfalls/README.md`](pitfalls/README.md) for the full template and
+    84	when-to-add rules.
+    85	
+    86	**Pitfall vs Hard invariant**: a pitfall *graduates* to a Hard invariant in
+    87	this file when it (a) recurs across machines/agents/sessions despite being
+    88	documented, (b) silently corrupts state, or (c) the workaround is non-obvious
+    89	enough that "remember to do X" isn't safe. When graduating, leave the
+    90	`pitfalls/<slug>.md` as historical record and link to it from the new
+    91	invariant.
+    92	
+    93	`pitfalls/` is excluded from N/A (no packaging — these files stay in the repo) (see N/A) and
+    94	**not** auto-redacted; review for secrets before committing.
+    95	<!-- project-knowledge-harness:agent-guidance --> (end)
+
+=== build/release tooling present? ===
+(eval):3: no matches found: .goreleaser*
+(none)
+
+=== README release/version mentions ===
+11:go install github.com/daviddwlee84/translate@latest   # into $GOBIN (or ~/go/bin)
+
+=== scripts/ dir ===
+(no scripts dir)
+
+=== unpushed commits ===
+d127812 feat(learn): bidirectional language-learning mode (--learn / ^n)
+043cf8c feat(tts): free cross-platform text-to-speech for pronunciation
+d30acfe feat: smart-auto default, pair-mode echo fix, TUI focus/scroll, debug mode
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:32:54Z)**_
+
+<think><details><summary>Thought Process</summary>
+I see there are three unpushed commits—learn, tts, and smart-auto—with the learn commit now showing a different hash (d127812 instead of ea351a3), likely from an amendment or rebase. The AGENTS.md file appears to be central to the project structure.
+
+The key insight is that `go install` with `@latest` resolves to the highest semver tag, which is currently v0.1.0, so any unpushed or untagged work won't be accessible. The ansible configuration pins to v0.1.0 specifically, and the version itself is tag-driven through build info rather than a source constant. So the answer hinges on the release chain: the work needs to be pushed, tagged, and then the tag needs to be the highest semver for `@latest` to pick it up.
+
+For versioning, since we're pre-1.0, I'm thinking minor bumps for new features and patches for bug fixes, with breaking changes also treated as minor bumps but documented in the release notes. The version is entirely derived from git tags, so there's no source file to edit—cutting a tag is the only step needed.
+
+For the next release, those three unpushed commits (smart-auto, tts, and learn) are all new features, so that's a v0.2.0 bump. I need to document the release workflow in AGENTS.md outside the sentinel block: run tests, push main, create an annotated tag, verify the install works with the new version, then update the chezmoi pin in the dotfiles repo to match.
+
+The user specifically asked for this guidance to be added to AGENTS.md, so I'll create a new section for it. The tricky part is that the entire file is currently wrapped in sentinel markers for the harness, which means it can be re-run safely — but I need to place the release instructions outside that block so they don't get clobbered. I'll keep the edit to AGENTS.md uncommitted so they can include it in the v0.2.0 release if they want, then offer to handle the actual release steps (push, tag, and pin bump) once they give the go-ahead. Regarding versioning, v0.2.0 is the natural choice for a pre-1.0 feature addition under SemVer, though they could go with v1.0.0 if they feel the surface is stable—I'll mention that inline without making it a blocking decision. I should also double-check the exact path to the ansible pin file so my guidance is precise.
+
+Writing AGENTS.md section... 0.2.1`) — breaking changes to the CLI, flags, or config still warrant a minor bump while in the `0.x` phase, though I should highlight them in the tag message. I'll cut `v1.0.0` once the CLI surface feels stable. To release the current `main` through chezmoi, I need to run tests and push, then create and push a git tag, verify the installation works with that tag, and finally update the version pin in the dotfiles repo's Ansible configuration.
+
+The tag message serves as the release note since there's no separate CHANGELOG, and I'll keep commit subjects in conventional form so the log between versions reads cleanly. Now I'm inserting this release guidance into AGENTS.md right after the initial blank line, before the project-knowledge-harness marker, using a targeted string replacement to prepend the section.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:32:54Z)**_
+
+I've got the full picture now. Key fact: `cmd/version.go` derives the version from `debug.ReadBuildInfo()` → `info.Main.Version`, which is **the git tag** — there's no version constant to edit. And `@latest` / the ansible `@v0.1.0` pin both resolve to a published *tag*, not to `main`.
+
+Let me answer, then add the guidance to AGENTS.md.
+
+## Q1: Will the new feature install via chezmoi? — No, not yet.
+
+Three links in the chain are missing:
+
+1. **Unpushed** — `main` is 3 commits ahead of `origin/main` (smart-auto + tts + learn). `go install` fetches from the remote, so it can't see them.
+2. **Untagged** — even after pushing, both the ansible pin `@v0.1.0` and the README's `@latest` resolve to a *tag*. `@latest` picks the highest semver tag (still `v0.1.0`); your work needs a new tag.
+3. **Immutable pin** — `dot_ansible/roles/go_tools/defaults/main.yml` pins `@v0.1.0` explicitly, so even a new tag won't be picked up until you bump that line and re-apply.
+
+So the release chain is: **push main → tag → push tag → bump the ansible pin → `chezmoi apply`**. Because the version is 100% tag-driven, *cutting the tag is the version bump* — no source edit needed.
+
+## Q2: Version scheme + AGENTS.md guidance — yes. Let me add it.
+
+_**Agent (claude-opus-4-8 2026-07-14 21:33:01Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/AGENTS.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:33:29Z)**_
+
+<think><details><summary>Thought Process</summary>
+I positioned this section before the harness sentinel so that running `scripts/init.sh` again won't overwrite it. Now I'm laying out the design and next steps—I think v0.2.0 makes sense for the next release with those three feature commits, and I should offer to cut it myself, though I'll ask first since the push, tag, and dotfiles pin bump are hard to undo. I also notice the AGENTS.md edit hasn't been committed yet.
+
+I'm thinking through whether to use an AskUserQuestion for the release decision, since there are two key points: the version number (v0.2.0 versus v1.0.0) and whether to proceed with cutting the release now, including the dotfiles pin bump in the separate chezmoi repo. I'll keep it straightforward—recommend v0.2.0, note that AGENTS.md is uncommitted, and ask if they want me to commit it and cut the release. I'll use AskUserQuestion to get their confirmation on the release — it's the right call since pushing and tagging are user-facing actions. I'll frame it as "Release now?" with v0.2.0 as the recommended option, and let them pick whether to go ahead with the full release (commit, push, tag, bump dotfiles pin) or just commit the AGENTS.md doc for now. I'll wrap up by asking a couple of clarifying questions and then draft the response.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:33:33Z)**_
+
+Added a **Releasing & versioning** section to `AGENTS.md`, placed *above* the project-knowledge-harness sentinel block so a harness re-run won't clobber it. It records the tag-is-the-version fact, the pre-1.0 SemVer policy, and the exact 5-step release chain (push → tag → verify → bump the dotfiles pin → `chezmoi apply`).
+
+**Recommendation for the next tag: `v0.2.0`** — three backward-compatible feature commits since `v0.1.0` (smart-auto, tts, learn). Pre-1.0, so a feature batch is a minor bump; `v1.0.0` is for when you consider the CLI/flag/config surface frozen.
+
+The `AGENTS.md` edit is currently **uncommitted**, and nothing is pushed/tagged yet. Since pushing + tagging + editing the dotfiles pin are outward-facing (a public GitHub tag is effectively permanent), I'll confirm before doing them:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:33:33Z)**_
+
+<tool-use data-tool-type="generic" data-tool-name="AskUserQuestion"><details>
+<summary>Tool use: **AskUserQuestion**</summary>
+
+```text
+<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issues:
+The required parameter `questions[0].question` is missing
+The required parameter `questions[1].question` is missing</tool_use_error>
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:33:42Z)**_
+
+I missed the `question` field — let me resend:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:35:25Z)**_
+
+<tool-use data-tool-type="generic" data-tool-name="AskUserQuestion"><details>
+<summary>Tool use: **AskUserQuestion**</summary>
+**How far should I take the release right now?**
+
+Options:
+- **Cut the release now** - Commit the AGENTS.md guidance, push main, create + push the tag, then bump the dotfiles go_tools pin and chezmoi apply so this machine gets the new binary.
+- **Commit doc only** - Commit just the AGENTS.md versioning guidance; hold the push/tag/release for later. Leaves main unpushed.
+- **Hold everything** - Leave AGENTS.md uncommitted and don't push/tag. You'll handle the release yourself.
+
+**What version number should the next tag be?**
+
+Options:
+- **v0.2.0 (Recommended)** - Three backward-compatible features since v0.1.0 (smart-auto, tts, learn) → minor bump, staying pre-1.0.
+- **v1.0.0** - Declare the CLI/flag/config surface stable and go 1.0. Signals API stability; breaking changes then require v2.
+
+
+**Answer:** Cut the release now, v0.2.0 (Recommended)
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:35:47Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to walk through the release process for v0.2.0: commit the AGENTS.md changes, push to origin, create and push an annotated tag, verify the installation works correctly, then update the dotfiles to pin the new version. I'm drafting the release notes for v0.2.0 to highlight the key features: the bidirectional learning mode, text-to-speech support, and the smart-auto improvements. Then I'll check git status, commit AGENTS.md with a co-author trailer, push to the remote, create and push the annotated tag, handling any auth issues that come up.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:35:47Z)**_
+
+Cutting **v0.2.0** now. First, commit the AGENTS.md guidance so it's part of the release:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:35:48Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit AGENTS.md versioning guidance
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git status --short
+echo "=== committing AGENTS.md ==="
+git add AGENTS.md
+git commit -q -F - <<'MSG'
+docs(agents): add releasing & versioning guide
+
+Record that the version is the git tag (cmd/version.go reads build info, no
+version constant), the pre-1.0 SemVer policy, and the push→tag→bump-pin→apply
+release chain to ship main to this machine via chezmoi/ansible.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+git log -1 --oneline
+```
+
+```text
+ M .specstory/history/2026-07-14_20-09-09Z-llm-prompt-text-gpt.md
+ M AGENTS.md
+=== committing AGENTS.md ===
+428c4ef docs(agents): add releasing & versioning guide
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:36:02Z)**_
+
+<think><details><summary>Thought Process</summary>
+The specstory transcript is still being updated as the session continues, so I'll leave it out of the commit since it's constantly changing. Now I'm pushing main to origin, tagging it as v0.2.0, and pushing the tag.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:36:02Z)**_
+
+Committed as `428c4ef`. (The specstory transcript keeps updating live as we talk — I'll leave that out of the release; it's not code.) Now push `main` and cut the tag:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:36:19Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Push main and push the v0.2.0 tag
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== push main ==="; git push origin main 2>&1 | tail -8
+echo "=== create annotated tag v0.2.0 ==="
+git tag -a v0.2.0 -F - <<'MSG'
+v0.2.0
+
+- feat(learn): bidirectional language-learning mode (--learn / ^n) — teach
+  (native→foreign: translation + vocab glosses + examples) or grammar-correct
+  (foreign→native: corrected sentence + per-error explanation + translation).
+- feat(tts): free cross-platform text-to-speech for pronunciation (--speak / ^s).
+- feat: smart-auto default (word→dict, phrase→LLM), pair-mode echo fix,
+  TUI focus/scroll, per-front-end [cli]/[tui] config defaults, debug mode.
+MSG
+echo "=== push tag ==="; git push origin v0.2.0 2>&1 | tail -8
+echo "=== tags now ==="; git tag --sort=-v:refname | head
+```
+
+```text
+=== push main ===
+To https://github.com/daviddwlee84/translate.git
+   a6d9f19..428c4ef  main -> main
+=== create annotated tag v0.2.0 ===
+=== push tag ===
+To https://github.com/daviddwlee84/translate.git
+ * [new tag]         v0.2.0 -> v0.2.0
+=== tags now ===
+v0.2.0
+v0.1.0
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:36:33Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've pushed the main branch and v0.2.0 tag, so now I need to verify the installation works through the Go module proxy using `go install github.com/daviddwlee84/translate@v0.2.0`. The proxy might take a moment to cache the new release, so I'll set GOBIN to a temporary directory first to test without overwriting their existing installation, then check the version. Actually, replacing their current `translate` binary with v0.2.0 is the intended outcome anyway.
+
+I'll use GOBIN=/tmp/gobin-verify for the test. The `go install` command will pull from proxy.golang.org, though freshly-pushed tags sometimes need a few seconds to propagate. If the proxy returns a 404, I can retry with GOPROXY=direct to fetch straight from GitHub instead. Let me run this now.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:36:33Z)**_
+
+Pushed: `main` → `428c4ef`, and tag `v0.2.0` is live. Now verify a clean install resolves the new tag (into a throwaway GOBIN so it doesn't disturb your real install):
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:13Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Install v0.2.0 from module proxy and verify version + learn flag
+
+```bash
+export GOBIN=/tmp/gobin-verify; mkdir -p "$GOBIN"
+echo "=== go install @v0.2.0 (via proxy) ==="
+GOFLAGS=-mod=mod go install github.com/daviddwlee84/translate@v0.2.0 2>&1 | tail -8 || {
+  echo "proxy not ready, retrying GOPROXY=direct"; GOPROXY=direct go install github.com/daviddwlee84/translate@v0.2.0 2>&1 | tail -8; }
+echo "=== version ==="; "$GOBIN/translate" --version 2>&1
+echo "=== smoke: learn flag exists ==="; "$GOBIN/translate" --help 2>&1 | grep -i learn
+```
+
+```text
+=== go install @v0.2.0 (via proxy) ===
+go: downloading github.com/daviddwlee84/translate v0.2.0
+=== version ===
+translate version v0.2.0
+=== smoke: learn flag exists ===
+      --learn                 learning mode: teach (native→foreign) or grammar-correct (foreign→native)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:38Z)**_
+
+<think><details><summary>Thought Process</summary>
+The installation checks out—v0.2.0 is properly installed and the flag is there. Now I need to update the dotfiles configuration by bumping the version pin in the Ansible defaults file from v0.1.0 to v0.2.0, then apply those changes through chezmoi. This config lives in the chezmoi source repository, which is separate from the translate project, so I need to find that location. I'm weighing whether to invoke the chezmoi-dotfiles skill directly since it's designed for exactly this kind of task — navigating dotfiles, understanding how custom tools work, and applying changes — or to start with some read-only commands to locate the file and understand the structure first. Given that the user is asking to bump a version pin and apply it, the skill seems like the right approach, but let me gather a bit more context first to see how the go_tools role gets applied.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:38Z)**_
+
+Verified end-to-end: `@v0.2.0` installs from the module proxy, reports `translate version v0.2.0`, and `--learn` is present.
+
+Last step — bump the chezmoi/ansible pin and apply. That lives in your dotfiles repo, so let me locate it and follow this machine's conventions:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:39Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Locate the go_tools pin in chezmoi source and how it applies
+
+```bash
+echo "=== chezmoi source root ==="; chezmoi source-path 2>&1
+src="$(chezmoi source-path 2>/dev/null)"
+echo "=== locate go_tools defaults ==="
+f="$src/dot_ansible/roles/go_tools/defaults/main.yml"
+if [ -f "$f" ]; then echo "FOUND: $f"; grep -n "translate" "$f"; else echo "not at expected path; searching…"; grep -rn "daviddwlee84/translate" "$src" 2>/dev/null | head; fi
+echo "=== how is the role applied? (look for just/bootstrap/run_ scripts) ==="
+ls "$src"/justfile "$src"/Justfile "$src"/.chezmoiscripts 2>/dev/null; grep -rniE "go_tools|ansible-playbook" "$src"/justfile "$src"/*.just 2>/dev/null | head
+```
+
+```text
+=== chezmoi source root ===
+/Users/david/.local/share/chezmoi
+=== locate go_tools defaults ===
+FOUND: /Users/david/.local/share/chezmoi/dot_ansible/roles/go_tools/defaults/main.yml
+19:  - name: github.com/daviddwlee84/translate@v0.1.0
+20:    binary: translate
+=== how is the role applied? (look for just/bootstrap/run_ scripts) ===
+/Users/david/.local/share/chezmoi/justfile
+/Users/david/.local/share/chezmoi/Justfile
+
+/Users/david/.local/share/chezmoi/.chezmoiscripts:
+global
+repo
+(eval):7: no matches found: /Users/david/.local/share/chezmoi/*.just
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:55Z)**_
+
+<think><details><summary>Thought Process</summary>
+I found the translate tool entry in the Ansible defaults file, and now I'm checking the justfile to see how the go_tools and Ansible setup are typically invoked so I can run the right apply command.
+
+The flow is becoming clearer: I need to edit the source file under chezmoi (which is fine—it's just the source), then run `chezmoi apply` to deploy it to `~/.ansible`, and finally execute the Ansible playbook via a just recipe to actually install the updated go tools. Let me check what command to run.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:55Z)**_
+
+Found it: `dot_ansible/roles/go_tools/defaults/main.yml:19`. This is the chezmoi *source* (it deploys to `~/.ansible` and an ansible role does the `go install`). Let me use the chezmoi-dotfiles skill to follow this repo's exact apply convention rather than guess:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:37:55Z)**_
+
+<tool-use data-tool-type="generic" data-tool-name="Skill"><details>
+<summary>Tool use: **Skill**</summary>
+
+**Input:**
+
+- args: `I need to bump a pinned Go tool version and apply it. The file is dot_ansible/roles/go_tools/defaults/main.yml line 19: `- name: github.com/daviddwlee84/translate@v0.1.0` → change to @v0.2.0. What's the canonical way in this repo to (a) edit this source file and (b) re-run the go_tools ansible role so the new version installs? Is there a just recipe for the ansible playbook / go tools?`
+- skill: `chezmoi-dotfiles`
+
+</details></tool-use>
+
+---
+
+_**User (2026-07-14 21:37:55Z)**_
+
+Base directory for this skill: /Users/david/.claude/skills/chezmoi-dotfiles
+
+<!-- managed-by: chezmoi-dotfiles (chezmoi source: dot_agents/skills/chezmoi-dotfiles/SKILL.md.tmpl) — do not hand-edit the deployed copy; it re-renders on every `chezmoi apply`. -->
+
+# chezmoi-dotfiles
+
+This machine's `$HOME` is managed by a **chezmoi** (configs) + **ansible** (system
+deps) dotfiles repo. This skill is the agent-facing map: how to drive it, and what
+custom tooling exists that you wouldn't otherwise know about. It is rendered per-host
+— the "What's enabled on THIS machine" section reflects what the user actually
+selected at init.
+
+## Orientation (read this first)
+
+- **Repo root**: `chezmoi source-path` (no args) prints the source dir. Work there
+  to edit: `cd "$(chezmoi source-path)"`.
+- **Source path of one file**: `chezmoi source-path ~/.config/foo/bar` → the
+  managed source file for that target.
+- **`docs/**` is NOT deployed to `$HOME`** (it's chezmoi-ignored). Read detail via
+  `"$(chezmoi source-path)/docs/..."`. A *subset* is deployed to `~/.config/docs/`
+  (e.g. keybindings, cli-tools) for runtime helpers.
+- **Read the contract before editing**: `"$(chezmoi source-path)/CLAUDE.md"` holds
+  Hard invariants and cross-file maintenance rules. Honor them.
+- This host: profile `macos_intel`, OS `darwin`/`amd64`, primary shell `zsh`.
+
+## chezmoi essentials
+
+```bash
+chezmoi diff                 # preview changes (also: just chezmoi-diff)
+chezmoi apply                # deploy + run scripts (also: cas, or just chezmoi-apply)
+chezmoi status               # modified/added/removed targets
+chezmoi edit ~/.zshrc        # edit the SOURCE of a target
+chezmoi add  ~/.config/x     # start managing an existing file
+chezmoi re-add               # pull live edits back into source
+chezmoi managed | grep foo   # is X managed?
+chezmoi cat ~/.config/x      # render a target without applying
+chezmoi data | jq            # the template data (ground truth for the toggles below)
+```
+
+- **`cas`** = `chezmoi apply` + reload hint; **`cau`** = update from remote then apply
+  (defined in `dot_config/shell/99_chezmoi_reload.sh`).
+- **`dotcfg`** = reconfigure the init prompts on an already-set-up machine
+  (`dotcfg` for the TUI, `dotcfg --set installLlmTools=true --yes` for one toggle,
+  `dotcfg --dry-run` to preview). Shell twin: `czcfg`.
+- **Never `chezmoi add` a `modify_`/`create_` target** — it overwrites the script.
+- Full command cheat-sheet: `docs/this_repo/cheatsheet.md`. Install-vs-upgrade is
+  split: `chezmoi apply`/ansible is **install-only**; upgrades go through
+  `just upgrade-*`.
+
+## What's enabled on THIS machine
+
+(Rendered from this host's selections. For live truth: `chezmoi data | jq`.)
+- **Coding agents** — Claude Code, OpenCode, Cursor, Codex, Gemini, Copilot (configs + CLIs). See `docs/tools/agent-overlays.md`, `docs/tools/agent-skills.md`.
+- **Python uv tools** — mlflow, marimo, jupyter, etc. (powers the `mlf` CLI). See `docs/this_repo/uv-bootstrap.md`.
+- **Extra runtimes** — rust, bun, ruby via mise (+ cargo/gem tools). Node is always present.
+- **LLM tools** — Ollama / LiteLLM / local models.
+- **JS CLI tools** — standalone npm CLIs (e.g. readability-cli).
+- **.NET tools** — .NET SDK (mise) + dotnet global tools.
+- **IaC** — Azure CLI, Terraform, OpenTofu.
+- **Media** — ffmpeg, ImageMagick, exiftool, libvips.
+- **Media control** — nowplaying-cli + switchaudio-osx (macOS) / playerctl (Linux); unlocks full `sysplay`/`sysnow` (built-in `sysvol`/`sysmute` work regardless).
+- **Networking** — nmap, mtr, httpie, gping, trippy.
+- **Tunnels** — ngrok, cloudflared.
+- **Vim mode** — shell modal editing + tmux vim nav (NOT Neovim/editors — those are always vim).
+
+## Custom in-house CLIs (always deployed to `~/.dotfiles/bin`, on PATH)
+
+Each works from any cwd. Run with `--help`, or read `docs/tools/<name>.md`. Full list: `ls "$(chezmoi source-path)/dot_dotfiles/bin/"`.
+
+- **`fleet`** — cross-host ops over your machines: `fleet chezmoi apply`, `fleet hosts`, `fleet tmux`, `fleet info`, `fleet pueue`, `fleet exec`. See `docs/this_repo/fleet-apply.md`, `docs/tools/fleet-exec.md`, `docs/tools/fleet-hosts.md`.
+- **`mlf`** — MLflow umbrella CLI + TUI dashboard (needs Python uv tools). Picker twin: `tv mlflow`.
+- **`pqsum`** — pueue queue summary (text / AI / JSON). See `docs/tools/pueue.md`.
+- **`x`** — clipboard/file copy-paste-open with cross-platform fallbacks.
+- **`view-office`** — open/preview Office docs (.docx/.xlsx/.pptx + legacy .doc/.xls/.ppt) in the terminal; also powers the yazi Office previewer. See `docs/tools/office-viewers.md`.
+- **`mi-router`** / **`reyee`** / **`sms`** — read-only router CLIs (Xiaomi MiWiFi / Ruijie Reyee / Huawei HiLink SMS). See `docs/tools/{mi-router,reyee,sms}.md`.
+- **`mi-dhcp-bind`** — opt-in **write** companion to `mi-router`: set/remove MiWiFi static DHCP reservations (`bind --self` autodetects this host). See `docs/tools/mi-dhcp-bind.md`.
+- **`ping-monitor`** — record ping over time, flag latency spikes. See `docs/tools/ping-monitor.md`.
+- **`wake`** — Wake-on-LAN sender: `wake <host>` powers a box on by magic packet (hosts in `~/.config/wake/hosts.toml`). Passive side = `installWakeOnLan` ansible role. See `docs/sysadmin/wake-on-lan.md`.
+- **`yth`** — search your YouTube watch history (title/channel/description + captions; Takeout import + optional cookie sync). Picker twin: `tv yth`. See `docs/tools/yth.md`.
+- **`dotcfg`** — reconfigure dotfiles prompts (above).
+- **`sesh-preview`** — preview helper for the sesh picker.
+
+## Television (`tv`) — fuzzy pickers with custom channels
+
+There are ~40 **custom** channels (system state, fleet, services, infra, agents…)
+that you won't discover otherwise. Browse them:
+
+```bash
+tv                      # default picker
+tv list-channels        # list everything available
+tv <channel>            # open one, e.g. tv fleet-hosts | tv mlflow | tv pueue
+ls "$(chezmoi source-path)/dot_config/television/cable/"   # the channel definitions
+```
+
+Handy ones: `fleet-hosts`, `mlflow`, `pueue`, `ports`, `kill-process`, `services`,
+`sessions`, `keybindings`, `aliases`, `git-ops`, `mac-apps`/`linux-apps`. Full
+reference: `docs/tools/tv.md`.
+
+## Keybindings & keymaps
+
+- **`bindings`** (shell function) or **`tv keybindings`** — interactive reference.
+- **tmux**: `prefix + Space` (or `prefix + e`) opens the action menu;
+  `prefix + T` = sesh picker, `prefix + U` = tools. Deep ref: `docs/tools/tmux/keybindings.md`.
+- **shell ZLE widgets**: `Alt+S` sesh sessions, `Alt+T` tools, `Ctrl+R` history (atuin).
+- Master reference: `docs/shells/keybindings.md` (also deployed to `~/.config/docs/shells/keybindings.md`).
+
+## Aliases & functions
+
+`alias` to list shell aliases, or `tv aliases`. Catalog: `docs/shells/aliases.md`.
+Helpers worth knowing: `chezmoi-cd` (jump to source), `run-for` (time-box a command),
+`bindings` (above). App control: `applaunch`/`appquit`/`apprestart`/… (cross-platform).
+System audio (cross-platform, built-in): `sysvol`/`sysmute` (+ `sysplay`/`sysnow` with `installMediaControl`); remote mute via `fleet exec --login -- sysmute on`.
+
+## just recipes (run from the source dir)
+
+```bash
+cd "$(chezmoi source-path)" && just --list
+```
+
+Categories: `chezmoi-*`, `ansible-*`, `upgrade-*` (brew/mise/uv/npm/cargo/…),
+`fleet`/`fleet-*`, `gen-prompts` (regenerate prompt scaffolding), `check`/`lint`,
+`docker-*`. See `docs/this_repo/cheatsheet.md`.
+
+## Editing rules (don't skip)
+
+Before changing anything under the repo, read `CLAUDE.md` Hard invariants and the
+"Cross-file maintenance rules" table — many surfaces have mandatory mirror updates
+in the same commit (docs, completions, tool-managers index, this very skill, …).
+
+
+ARGUMENTS: I need to bump a pinned Go tool version and apply it. The file is dot_ansible/roles/go_tools/defaults/main.yml line 19: `- name: github.com/daviddwlee84/translate@v0.1.0` → change to @v0.2.0. What's the canonical way in this repo to (a) edit this source file and (b) re-run the go_tools ansible role so the new version installs? Is there a just recipe for the ansible playbook / go tools?
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:12Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm loading the skill and reviewing the key constraints: the chezmoi repo lives at `/Users/david/.local/share/chezmoi`, and I need to read `CLAUDE.md` first to understand the hard invariants and cross-file maintenance rules that require synchronized updates across docs and completions. I also note that `chezmoi apply` and ansible only handle installation, while upgrades flow through `just upgrade-*` commands.
+
+Now I'm checking whether the go_tools ansible role installs unconditionally or skips if the binary already exists, since translate is pinned at v0.1.0 and bumping it might not trigger a re-install. My plan is to read `CLAUDE.md` and the go_tools role tasks, find the relevant just recipe, update the pin, and run the appropriate command to upgrade translate to v0.2.0.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:13Z)**_
+
+Skill loaded — key caveat it flags: **`chezmoi apply`/ansible is install-only; upgrades go through `just upgrade-*`**. Since `translate` is already installed at v0.1.0, I need to check whether the role reinstalls on a version change or skips. And the contract requires reading `CLAUDE.md` invariants + cross-file rules before editing. Let me gather all that:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:13Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Read go_tools defaults and tasks
+
+```bash
+src="$(chezmoi source-path)"
+echo "=== go_tools defaults (full) ==="; cat -n "$src/dot_ansible/roles/go_tools/defaults/main.yml"
+echo; echo "=== go_tools tasks (how it installs / skip logic) ==="; cat "$src/dot_ansible/roles/go_tools/tasks/main.yml" 2>/dev/null | head -80
+```
+
+```text
+=== go_tools defaults (full) ===
+     1	---
+     2	# Go CLI tools installed via `go install`.
+     3	#
+     4	# The Go toolchain comes from mise and is gated on installExtraRuntimes
+     5	# (see dot_config/mise/config.toml.tmpl — `go = "latest"`). Binaries are
+     6	# installed into ~/.local/bin (via GOBIN), the blessed auto-install dir that
+     7	# is already on PATH (dot_config/shell/00_exports.sh.tmpl), matching where
+     8	# cargo/uv/npm/dotnet tools land.
+     9	#
+    10	# Add tools here. Pin the version so a fresh box installs a known-good build;
+    11	# `binary` is the resulting executable name, used for the `creates:`
+    12	# idempotency guard. Version bumps are handled by the upgrade path
+    13	# (`just upgrade-go` → scripts/upgrade_tools.sh cat_go), NOT by editing the pin
+    14	# — same install-vs-upgrade split as cargo. Example:
+    15	#   - name: github.com/owner/tool@v1.2.3
+    16	#     binary: tool
+    17	
+    18	go_tools:
+    19	  - name: github.com/daviddwlee84/translate@v0.1.0
+    20	    binary: translate
+
+=== go_tools tasks (how it installs / skip logic) ===
+---
+# Go CLI tools installation via `go install`.
+# The Go toolchain is installed via mise (gated on installExtraRuntimes; see
+# dot_config/mise/config.toml.tmpl). This role no-ops cleanly when Go is absent.
+
+# =============================================================================
+# Resolve the mise-managed Go bin dir (no-op the whole role if Go is absent)
+# =============================================================================
+# `mise which go` prints the absolute path to the managed go binary
+# (~/.local/share/mise/installs/go/<ver>/bin/go); its dirname is the bin dir we
+# prepend to PATH so `go install` runs. Empty/failed → Go isn't installed
+# (installExtraRuntimes=false, or mise missing) and the install task below is
+# skipped. Mirrors the herdr-plus build idiom in dot_ansible/roles/devtools.
+- name: Resolve mise Go bin dir
+  ansible.builtin.shell: |
+    set -o pipefail
+    gobin="$(mise which go 2>/dev/null)" || exit 0
+    [ -n "$gobin" ] && dirname "$gobin"
+  args:
+    executable: /bin/bash
+  environment:
+    PATH: "{{ ansible_facts['env']['HOME'] }}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{{ ansible_facts['env']['PATH'] }}"
+  register: go_bindir
+  changed_when: false
+  failed_when: false
+
+# =============================================================================
+# Install Go CLI tools (all platforms)
+# =============================================================================
+# GOBIN forces binaries into ~/.local/bin (the blessed dir already on PATH),
+# not ~/go/bin (GOPATH/bin) or the version-pinned mise toolchain dir. GOPATH is
+# pinned to ~/.local/share/go (XDG data) so the build-time module cache lands
+# there instead of recreating ~/go — matches the interactive shell
+# (dot_config/shell/02_legacy_tools.sh) and scripts/upgrade_tools.sh cat_go. The
+# `creates:` guard makes this install-only + idempotent — version bumps go
+# through `just upgrade-go` (scripts/upgrade_tools.sh cat_go), never a re-apply.
+- name: Install Go CLI tools via go install
+  when: (go_bindir.stdout | default('') | trim) != ""
+  ansible.builtin.command: "go install {{ item.name }}"
+  args:
+    creates: "{{ ansible_facts['env']['HOME'] }}/.local/bin/{{ item.binary }}"
+  loop: "{{ go_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  environment:
+    GOBIN: "{{ ansible_facts['env']['HOME'] }}/.local/bin"
+    GOPATH: "{{ ansible_facts['env']['HOME'] }}/.local/share/go"
+    PATH: "{{ (go_bindir.stdout | trim) }}:{{ ansible_facts['env']['HOME'] }}/.local/bin:{{ ansible_facts['env']['PATH'] }}"
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:36Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm seeing an important constraint from the go_tools role: version pinning is handled through the upgrade path via `just upgrade-go`, not by manually editing the pin in the defaults header. This means the install and upgrade workflows are deliberately separated, with version bumps managed through a dedicated upgrade script rather than direct modification. ich is now v0.2.0). If the upgrade script reads the pin, then I need to bump it AND run the upgrade.
+
+Let me check what `scripts/upgrade_tools.sh cat_go` actually does — that'll tell me whether it installs `@latest` or uses the pinned version. The defaults comment says version bumps happen through the upgrade path, not by editing the pin, but I need to understand if that means the pin stays frozen or if there's a separate mechanism for keeping it in sync with what fresh installs should get.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:36Z)**_
+
+Important: the role's own header says version bumps go through **`just upgrade-go` → `scripts/upgrade_tools.sh cat_go`, NOT by editing the pin** (the `creates:` guard makes ansible install-only, so it won't reinstall over the existing v0.1.0 binary). Let me read that upgrade script to see whether it installs `@latest` or reads the pin — that determines the exact action:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:38:37Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect upgrade_tools.sh cat_go logic
+
+```bash
+src="$(chezmoi source-path)"
+echo "=== upgrade recipe in justfile ==="; grep -n "upgrade-go\|upgrade_tools\|cat_go" "$src/justfile" | head
+echo; echo "=== scripts/upgrade_tools.sh : cat_go section ==="
+f="$src/scripts/upgrade_tools.sh"
+[ -f "$f" ] && awk '/cat_go\(\)|go install|@latest|go_tools|defaults\/main\.yml/{print NR": "$0}' "$f" | head -40
+echo; echo "=== show cat_go function body ==="
+[ -f "$f" ] && sed -n '/cat_go()/,/^}/p' "$f" | head -60
+```
+
+```text
+=== upgrade recipe in justfile ===
+423:    ./scripts/upgrade_tools.sh all
+427:    ./scripts/upgrade_tools.sh brew
+431:    ./scripts/upgrade_tools.sh mise
+435:    ./scripts/upgrade_tools.sh uv
+439:    ./scripts/upgrade_tools.sh npm
+443:    ./scripts/upgrade_tools.sh cargo
+446:upgrade-go:
+447:    ./scripts/upgrade_tools.sh go
+451:    ./scripts/upgrade_tools.sh dotnet
+455:    ./scripts/upgrade_tools.sh gem
+
+=== scripts/upgrade_tools.sh : cat_go section ===
+262:   # install script or `go install`. If it was installed via a package manager
+457: # Category: cargo — `cargo install-update -a` (bootstraps cargo-update if needed)
+477:     info "Bootstrapping cargo-update (needed for 'cargo install-update -a')"
+478:     if _run cargo install cargo-update; then
+491:     _run cargo install-update -a || any_fail=1
+500: # Category: go — `go install <pkg>@latest` for each tool in
+501: # dot_ansible/roles/go_tools/defaults/main.yml
+503: cat_go() {
+517:   local defaults_file="$_REPO_ROOT/dot_ansible/roles/go_tools/defaults/main.yml"
+523:             /^go_tools:/ { in_list=1; next }
+539:   # toolchain dir. Upgrade = re-install at @latest regardless of the version
+544:   # go_tools ansible role.
+550:     # Strip any @version pin (module paths never contain '@') and go to @latest.
+552:     info "Upgrading go tool: $pkg@latest"
+553:     _run "$go_cmd" install "$pkg@latest" || any_fail=1
+559: # Category: dotnet — upgrade each tool in dot_ansible/roles/dotnet_tools/defaults/main.yml
+576:   local defaults_file="$_REPO_ROOT/dot_ansible/roles/dotnet_tools/defaults/main.yml"
+
+=== show cat_go function body ===
+cat_go() {
+  # Resolve go via mise shim first, then system PATH.
+  local go_cmd=""
+  if [[ -x "$HOME/.local/share/mise/shims/go" ]]; then
+    go_cmd="$HOME/.local/share/mise/shims/go"
+  elif command -v go >/dev/null 2>&1; then
+    go_cmd="go"
+  else
+    warn "go not found (Go not installed via mise?) — skipping"
+    return $SKIP_RC
+  fi
+
+  # Parse the tools list from defaults YAML — lines `  - name: <pkg>@<ver>`.
+  # Same hand-rolled awk parser as cat_dotnet.
+  local defaults_file="$_REPO_ROOT/dot_ansible/roles/go_tools/defaults/main.yml"
+  local tools=()
+  if [[ -f "$defaults_file" ]]; then
+    while IFS= read -r line; do
+      tools+=("$line")
+    done < <(awk '
+            /^go_tools:/ { in_list=1; next }
+            in_list && /^[^ ]/ { in_list=0 }
+            in_list && /^[[:space:]]*-[[:space:]]*name:/ {
+                sub(/^[[:space:]]*-[[:space:]]*name:[[:space:]]*/, "")
+                gsub(/["'"'"']/, "")
+                print
+            }
+        ' "$defaults_file")
+  fi
+
+  if [[ ${#tools[@]} -eq 0 ]]; then
+    warn "no go tools to upgrade — skipping"
+    return $SKIP_RC
+  fi
+
+  # Install into ~/.local/bin (the blessed dir), not ~/go/bin or the mise
+  # toolchain dir. Upgrade = re-install at @latest regardless of the version
+  # pinned in defaults (install-vs-upgrade split — defaults pin for fresh
+  # installs, this moves them forward). See docs/this_repo/tool-managers.md.
+  # GOPATH pinned to ~/.local/share/go (XDG data) so the build-time module cache
+  # doesn't repopulate ~/go — mirrors dot_config/shell/02_legacy_tools.sh and the
+  # go_tools ansible role.
+  export GOBIN="$HOME/.local/bin"
+  export GOPATH="$HOME/.local/share/go"
+
+  local any_fail=0
+  for t in "${tools[@]}"; do
+    # Strip any @version pin (module paths never contain '@') and go to @latest.
+    local pkg="${t%@*}"
+    info "Upgrading go tool: $pkg@latest"
+    _run "$go_cmd" install "$pkg@latest" || any_fail=1
+  done
+  return "$any_fail"
+}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:39:36Z)**_
+
+<think><details><summary>Thought Process</summary>
+So the distinction is becoming clear: `cat_go` strips the version pin and installs everything at `@latest` for upgrades, while the pin in `defaults/main.yml` serves as a baseline for fresh installations. The comment in `cat_go` confirms that upgrades intentionally ignore the pinned version and pull the latest available.
+
+To get v0.2.0 running on this machine, I'd run `just upgrade-go`, which would install the latest version automatically. The convention explicitly discourages editing the pin for version bumps—the pin is meant to be a stable floor for new installs, not a version tracker. Even though v0.1.0 is still a known-good build, leaving it pinned is consistent with the design: fresh boxes start at v0.1.0, then subsequent upgrades move them forward to whatever's latest.
+
+But I realize my AGENTS.md guidance telling people to bump the pin in the dotfiles repo was actually wrong—it contradicts the documented convention here. I need to correct that guidance to align with what the dotfiles repo actually does: leave the pin alone and use `just upgrade-go` to float to @latest. The pin should stay at v0.1.0 as the fresh-install floor by design—new machines get that baseline, then users run `just upgrade-go` to reach the latest version. This two-phase model is intentional, so I won't edit the pin.
+
+I need to fix the AGENTS.md guidance in the translate repo, which incorrectly told people to bump the pin; the real convention is to use `just upgrade-go` instead. Since I'm not touching the dotfiles source, I avoid any cross-file maintenance obligations. Rather than my initial suggestion, I should follow the repo's actual convention and use `just upgrade-go` to get v0.2.0 installed. After verifying the installation works, I need to fix the AGENTS.md guidance in the translate repo — though since I've already pushed and tagged v0.2.0 with the incorrect documentation, that's now published and would require amending the tag. The guidance is definitely wrong — the correct approach is running `just upgrade-go` in the dotfiles repo, which installs the latest version; the `go_tools` pin is only a fresh-install floor, not the upgrade mechanism. I need to update step 5 in AGENTS.md to clarify this, noting that `chezmoi apply` alone won't move an existing binary. Since I've already pushed and tagged v0.2.0, this docs fix would be a new commit on main post-tag, which is fine for documentation improvements. docs fix is part of wrapping up the release cleanly. I'll run the upgrade command from the chezmoi source directory to install the latest Go version into ~/.local/bin, then verify it worked before fixing the documentation.
+
+Let me check if Go is actually available through mise — the go_tools role depends on it, and since translate is already installed at v0.1.0, Go must be present. I'll just run the upgrade and see what happens.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:39:36Z)**_
+
+This clarifies the real mechanism — and it means my earlier plan (and the AGENTS.md step I wrote) was slightly off. The go_tools **pin is only a fresh-install floor**; the header explicitly says *don't* bump it for upgrades, and the `creates:` guard makes ansible install-only. The blessed upgrade path is **`just upgrade-go`**, which installs each tool at **`@latest`** — which now resolves to your `v0.2.0` tag. So I should *not* edit the pin; I should run the upgrade.
+
+Let me do that:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:40:53Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run just upgrade-go to install translate@latest
+
+```bash
+cd "$(chezmoi source-path)"
+echo "=== which translate BEFORE ==="; command -v translate; translate --version 2>&1
+echo; echo "=== just upgrade-go (installs @latest → v0.2.0) ==="
+just upgrade-go 2>&1 | tail -20
+```
+
+```text
+=== which translate BEFORE ===
+/Users/david/.dotfiles/bin/translate
+translate version v0.1.1-0.20260714212606-d127812a68fd (d127812a68fd) commit 2026-07-14T21:26:06Z
+
+=== just upgrade-go (installs @latest → v0.2.0) ===
+go: downloading github.com/mattn/go-runewidth v0.0.24
+go: downloading github.com/rivo/uniseg v0.4.7
+go: downloading github.com/clipperhouse/displaywidth v0.11.0
+go: downloading github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
+go: downloading github.com/charmbracelet/x/termios v0.1.1
+go: downloading github.com/charmbracelet/x/windows v0.2.2
+go: downloading golang.org/x/sync v0.20.0
+go: downloading github.com/clipperhouse/uax29/v2 v2.7.0
+go: downloading github.com/dustin/go-humanize v1.0.1
+go: downloading modernc.org/libc v1.73.4
+go: downloading github.com/mattn/go-isatty v0.0.20
+go: downloading github.com/google/uuid v1.6.0
+go: downloading github.com/ncruces/go-strftime v1.0.0
+go: downloading modernc.org/memory v1.11.0
+go: downloading modernc.org/mathutil v1.7.1
+go: downloading github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec
+[SUCCESS] category 'go' completed
+────────────────────────────────────────────
+[INFO] Upgrade Summary
+[SUCCESS] OK:      go
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:12Z)**_
+
+<think><details><summary>Thought Process</summary>
+The upgrade succeeded, but the previous version was a pseudo-version built from a commit after v0.1.0, which means the user had already installed a development build from that commit.
+
+The active `translate` binary on PATH is at `/Users/david/.dotfiles/bin/translate`, not `~/.local/bin/translate` where the upgrade installed v0.2.0. Since `.dotfiles/bin` is where custom in-house CLIs live, I need to check whether this is a symlink or a separate copy — if it's shadowing the upgraded version, the user might still be running the old binary.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:12Z)**_
+
+Upgrade succeeded. Note the active binary is at `/Users/david/.dotfiles/bin/translate` (which came first on PATH), while `go install` writes to `~/.local/bin`. Let me confirm which one runs now and that it reports v0.2.0:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:14Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Confirm active translate version and binary identity
+
+```bash
+echo "=== active translate ==="; command -v translate; translate --version 2>&1
+echo; echo "=== what is .dotfiles/bin/translate? ==="; ls -l /Users/david/.dotfiles/bin/translate 2>&1
+echo "=== ~/.local/bin/translate ==="; ls -l ~/.local/bin/translate 2>&1; ~/.local/bin/translate --version 2>&1
+echo; echo "=== learn flag present on active binary? ==="; translate --help 2>&1 | grep -i learn
+```
+
+```text
+=== active translate ===
+/Users/david/.dotfiles/bin/translate
+translate version v0.1.1-0.20260714212606-d127812a68fd (d127812a68fd) commit 2026-07-14T21:26:06Z
+
+=== what is .dotfiles/bin/translate? ===
+.rwxr-xr-x@ 22M david 15 Jul 05:26 /Users/david/.dotfiles/bin/translate
+=== ~/.local/bin/translate ===
+.rwxr-xr-x@ 22M david 15 Jul 05:40 /Users/david/.local/bin/translate
+translate version v0.2.0
+
+=== learn flag present on active binary? ===
+      --learn                 learning mode: teach (native→foreign) or grammar-correct (foreign→native)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:50Z)**_
+
+<think><details><summary>Thought Process</summary>
+So the real issue is that there's a separate binary at `/Users/david/.dotfiles/bin/translate` — a full 22M file, not a symlink — that's still running the old version and taking precedence on the PATH, which is why the upgrade to v0.2.0 in `~/.local/bin` isn't actually being used. The stray binary at ~/.dotfiles/bin is running the old pseudo-version from the learn commit, shadowing the freshly upgraded v0.2.0 in ~/.local/bin. Since I didn't create this file and it contradicts what was described, I should surface this to the user rather than silently overwriting it. The stray ~/.dotfiles/bin/translate is shadowing the official v0.2.0 release in ~/.local/bin because of PATH ordering, so I should surface this to the user and ask before removing it—they may have placed it there intentionally, or it could be a GOBIN configuration issue. The cleanest approach is to let them decide whether to remove the stray copy so the managed version takes precedence.
+
+I also need to fix the AGENTS.md guidance (step 5 should recommend `just upgrade-go` instead of manually bumping the pin), and verify whether ~/.dotfiles/bin/translate is actually chezmoi-managed or a stray file by checking the managed file list.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:50Z)**_
+
+Found the real issue. The upgrade worked — `~/.local/bin/translate` is now **v0.2.0** with `--learn`. But the binary you actually run is a **separate 22 MB copy at `/Users/david/.dotfiles/bin/translate`** that sits *earlier* on PATH and shadows it. It's a regular file (not a symlink), built earlier today from the learn commit `d127812` (hence the `v0.1.1-…-d127812` pseudo-version). I didn't create it, so I won't touch it without checking with you. Let me confirm whether it's chezmoi-managed:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:41:50Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check if the shadowing binary is chezmoi-managed and PATH order
+
+```bash
+echo "=== is .dotfiles/bin/translate chezmoi-managed? ==="; chezmoi managed 2>/dev/null | grep -i 'dotfiles/bin/translate' || echo "NOT managed by chezmoi (stray manual copy)"
+echo; echo "=== is it in the chezmoi source? ==="; ls "$(chezmoi source-path)/dot_dotfiles/bin/" 2>/dev/null | grep -i translate || echo "not in dot_dotfiles/bin source"
+echo; echo "=== PATH order: .dotfiles/bin vs .local/bin ==="; echo "$PATH" | tr ':' '\n' | grep -nE '\.dotfiles/bin|\.local/bin'
+```
+
+```text
+=== is .dotfiles/bin/translate chezmoi-managed? ===
+NOT managed by chezmoi (stray manual copy)
+
+=== is it in the chezmoi source? ===
+not in dot_dotfiles/bin source
+
+=== PATH order: .dotfiles/bin vs .local/bin ===
+11:/Users/david/.dotfiles/bin
+13:/Users/david/.local/bin
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:14Z)**_
+
+<think><details><summary>Thought Process</summary>
+The stray `~/.dotfiles/bin/translate` is shadowing the properly managed version in `~/.local/bin` because the dotfiles bin directory appears earlier in the PATH, but the actual release (v0.2.0) was tagged and installed correctly to the intended location.
+
+Since the user explicitly wanted v0.2.0 to be the active version and this leftover dev binary is the only thing blocking that, removing it directly fulfills their intent—but I should confirm with them first rather than unilaterally delete a file they created, even though the analysis makes the right move clear.
+
+I also need to fix the AGENTS.md documentation in the translate repo, since step 5 currently gives incorrect guidance about bumping a pin when the actual process is running `just upgrade-go` to install the latest tagged version into `~/.local/bin`.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:14Z)**_
+
+Confirmed: `~/.dotfiles/bin/translate` is a **stray, unmanaged dev build** (not chezmoi-managed, not in source) that shadows the managed `~/.local/bin/translate` because `.dotfiles/bin` is earlier on PATH.
+
+Two follow-ups. First, my AGENTS.md guidance step 5 was wrong (it predated my reading the dotfiles convention) — the pin is a fresh-install floor, not the upgrade path. Let me correct it:
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:16Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/AGENTS.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:29Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to create a new commit for the AGENTS.md fix since the previous docs commit is already pushed and tagged. Let me commit and push this change, then I'll ask the user about the stray binary file.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:29Z)**_
+
+Now commit and push the doc correction (a new commit — `428c4ef` is already tagged, so I won't amend it):
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit and push AGENTS.md doc fix
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add AGENTS.md
+git commit -q -m "docs(agents): fix install step — just upgrade-go, not pin bump
+
+The go_tools pin is a fresh-install floor (its header says don't bump it for
+upgrades); upgrades install @latest via 'just upgrade-go'. chezmoi apply is
+install-only. Also warn about a stale binary shadowing ~/.local/bin on PATH.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+git push origin main 2>&1 | tail -3
+echo "=== main vs origin ==="; git status -sb | head -1
+```
+
+```text
+To https://github.com/daviddwlee84/translate.git
+   428c4ef..0607061  main -> main
+=== main vs origin ===
+## main...origin/main
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:57Z)**_
+
+<think><details><summary>Thought Process</summary>
+The doc fix is committed and synced. Now I need to address a stray binary file at ~/.dotfiles/bin/translate that's shadowing the managed v0.2.0 version in ~/.local/bin. I'll present this to the user with a recommendation to remove it, offering options through a question prompt.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 21:42:57Z)**_
+
+Doc fix pushed; `main` is in sync with origin. 
+
+Now the only thing left is the **stray shadowing binary**. The release itself is complete and correct:
+- Tag **`v0.2.0`** pushed to GitHub; `go install …@v0.2.0` verified.
+- `just upgrade-go` installed **v0.2.0** into the blessed `~/.local/bin`.
+
+But `~/.dotfiles/bin/translate` (an unmanaged hand-built copy from commit `d127812`, earlier on PATH) is what your shell actually runs, so `translate --version` still shows the old pseudo-version. Since I didn't create that file, I'll let you decide how to clear the shadow:
+
+_**Agent (claude-opus-4-8 2026-07-14 22:00:57Z)**_
+
+<tool-use data-tool-type="generic" data-tool-name="AskUserQuestion"><details>
+<summary>Tool use: **AskUserQuestion**</summary>
+**How should I clear the ~/.dotfiles/bin/translate that's shadowing the new v0.2.0 install?**
+
+Options:
+- **Remove the stray** - rm ~/.dotfiles/bin/translate so the chezmoi/go-managed ~/.local/bin/translate (v0.2.0) becomes the active one. It's unmanaged cruft; the same feature code is in the tagged v0.2.0.
+- **Replace with v0.2.0** - Copy ~/.local/bin/translate over ~/.dotfiles/bin/translate — keeps that path but updates it to the v0.2.0 build. (Note: translate isn't a chezmoi-managed CLI, so it doesn't really belong in ~/.dotfiles/bin.)
+- **Leave it** - Do nothing. ~/.local/bin has v0.2.0, but your shell keeps running the older ~/.dotfiles/bin copy until you clear it yourself.
+
+
+**Answer:** Remove the stray
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 22:01:08Z)**_
+
+<think><details><summary>Thought Process</summary>
+The user chose to remove the stray translate binary, so I'm deleting it from ~/.dotfiles/bin/translate and then verifying that the active translate command now resolves to the v0.2.0 version in ~/.local/bin/translate using command resolution.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 22:01:13Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Remove stray binary and verify active version + learn
+
+```bash
+rm -v /Users/david/.dotfiles/bin/translate
+echo "=== active translate now ==="; hash -r 2>/dev/null; command -v translate; translate --version 2>&1
+echo "=== learn smoke on the active binary ==="; translate --learn --to zh-TW --pair-with en --no-history "I has three apple" 2>&1 | head -8
+```
+
+```text
+/Users/david/.dotfiles/bin/translate
+=== active translate now ===
+/Users/david/.local/bin/translate
+translate version v0.2.0
+=== learn smoke on the active binary ===
+✔ I have three apples
+  ↳ 我有三個蘋果
+  ✎ I has → I have: 主詞是「I」時,動詞要用「have」,不是「has」。「has」是用在第三人稱單數(如he, she, it)的時候。
+  ✎ three apple → three apples: 當數量超過一個時,名詞要用複數形式,所以「apple」要加「s」變成「apples」。
+  ⓘ 很棒的嘗試!記得注意主詞跟動詞的搭配,以及複數名詞要加s喔,加油!
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-14 22:01:32Z)**_
+
+<think><details><summary>Thought Process</summary>
+The v0.2.0 release is complete—it's now installed at ~/.local/bin/translate with the learn feature working properly, the stray shadow removed, and AGENTS.md updated with the correct guidance.
+
+Fresh installs will still pull v0.1.0 from the pinned version (that's the repo's convention for a fresh-install floor), but running `just upgrade-go` moves them to the latest. If needed, bumping the pin would start fresh boxes at v0.2.0, but the dotfiles convention keeps the pin as a floor rather than the default.
+
+The release flow and tool-manager conventions are already documented in AGENTS.md and the dotfiles docs, so I'll skip saving a memory — the cleanup of that stray shadow file isn't worth recording either since it's a one-time fix. I'll wrap this up in Traditional Chinese.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-14 22:01:42Z)**_
+
+完成。`translate` 現在指向 `~/.local/bin/translate`＝**v0.2.0**，learn 功能在正式安裝的二進位上也實測正常。
+
+## 這次發版全部做完了
+
+| 步驟 | 結果 |
+|---|---|
+| 推 main | `0607061`（含 learn/tts/smart-auto + AGENTS.md 指南）已推上 origin |
+| 打 tag | `v0.2.0`（annotated，含 release note）已推上 GitHub |
+| 驗證 | `go install …@v0.2.0` 從 module proxy 正常，`--version` 顯示 v0.2.0 |
+| 安裝到本機 | `just upgrade-go` → `~/.local/bin/translate` = v0.2.0 |
+| 清掉遮蔽 | 移除手工殘留的 `~/.dotfiles/bin/translate`（未被 chezmoi 管理），現在 shell 跑的就是 v0.2.0 |
+
+## 兩個關於「chezmoi 安裝」的重點（已寫進 AGENTS.md）
+
+1. **版本號就是 git tag** — `cmd/version.go` 讀 build info，沒有版本常數；打 tag 就是升版，不用改程式。
+2. **dotfiles 的 go_tools pin 是「全新機器的安裝下限」，不是升級機制**。它的 header 明講升級不要動 pin；升級走 `just upgrade-go`（裝 `@latest`）。`chezmoi apply`/ansible 是 install-only（`creates:` 守衛），不會覆蓋已存在的 binary。所以我**沒有**去改那個 pin——那才是符合你 dotfiles 慣例的做法（我一開始在 AGENTS.md 寫「改 pin」是錯的，已修正並補推）。
+
+附帶一提：全新機器仍會先裝 pin 的 v0.1.0，再靠 `just upgrade-go` 前進到最新——這是 repo 刻意的 install-vs-upgrade 分離。若你希望新機器起手就接近最新，可以把 pin 抬到 v0.2.0，但那會違反 go_tools 那份 header 的約定，所以我留著沒動；你要的話我再幫你抬。
+
+要不要我把這次 learn mode 也在 GitHub 上開一個 v0.2.0 Release（把 tag message 當 release note）？或是就到這裡收工？
