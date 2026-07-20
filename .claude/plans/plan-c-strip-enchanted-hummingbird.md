@@ -1,61 +1,60 @@
-# Plan: switch dotfiles `translate` install go → Homebrew (hybrid: brew on macOS, go on Linux)
+# Plan: context-aware "doc" bilingual mode alongside the per-block mode (+ compare)
 
 ## Context
 
-`translate` now ships a public Homebrew tap (`daviddwlee84/tap`, verified: `brew install daviddwlee84/tap/translate` builds from source, `v0.3.1`, `brew test` green). The user wants the **chezmoi dotfiles** to install it via brew instead of `go install`.
+`--bilingual` currently translates each blank-line block in **isolation** (N concurrent LLM calls). Real output showed three failures from that isolation, all in one `tldr rg` run:
+- `rg` (the command header) → mistranslated as an abbreviation ("角速度陀螺仪 / 巴西航空") because the model never sees it's Ripgrep's command.
+- **Simplified/Traditional drift** — some blocks came back in 简体 among the 繁體.
+- **Reasoning leak** — `Wait, need Traditional Chinese…` bled into a block.
 
-The dotfiles currently install it via the `go_tools` ansible role (`go install …@v0.1.0` → `~/.local/bin/translate`), which sits **earlier on PATH** than brew's `/usr/local/bin` (so `brew` already warns the brew copy is shadowed). Straight "brew everywhere" would **regress Linux** (Homebrew on Linux is gated by `installBrewApps`+arch+non-noRoot; `Brewfile.linux.tmpl` is empty), whereas `go install` works on every host via mise Go. The repo already handles such tools per-OS (starship/atuin/pueue = "macOS brew, Linux apt/cargo"), so the chosen approach is a **hybrid**: macOS → Homebrew tap, Linux → keep `go install`.
+The user's insight: Immersive Translate's LLM advantage is **context-awareness**. A single whole-document call fixes all three at once, and is actually **cheaper** (system prompt once + shared context vs repeated per block). We'll **keep both** strategies behind a flag and compare them.
 
-Outcome: on macOS `translate` comes from brew (single authoritative copy, `brew upgrade`); on Linux it stays on `go install` (`just upgrade-go`); no host loses translate; CLAUDE.md cross-file mirrors stay consistent.
+`--learn` already establishes the structured-JSON call pattern to reuse: `promptFor` branches to `buildLearnPrompt`, output is parsed by `finalizeLearn`/`parseLearn`/`extractJSON` (which tolerates surrounding reasoning — directly defusing the leak), forced non-streaming, larger token cap (`internal/engine/llm.go`, `prompt.go`).
 
-This plan modifies the **chezmoi repo** (`$(chezmoi source-path)` = `/Users/david/.local/share/chezmoi`), not the translate repo. It is a separate commit there.
+Outcome: `--bilingual` defaults to the new context-aware **doc** mode; `--bilingual-mode blocks` keeps the old per-block behavior for comparison/fallback.
 
-## Key facts established
+## Design
 
-- `trust_bundle_taps()` in `.chezmoiscripts/global/run_onchange_after_30_brew_bundle.sh.tmpl` auto-runs `brew trust` on every `tap "…"` in a Brewfile before `brew bundle` → the Homebrew-6 untrusted-tap gate (see `pitfalls/homebrew-6-refuses-untrusted-tap-formula.md`) is handled just by adding the `tap` line.
-- `Brewfile.tmpl` is the shared CLI-formula Brewfile (currently all `installBrewApps`-gated); the run-script bundles it on macOS and is hash-gated (edits trigger re-run).
-- `translate` is the **only** entry in `go_tools/defaults/main.yml`.
-- `just upgrade-go` → `scripts/upgrade_tools.sh::cat_go()` parses that **static** defaults YAML and `go install …@latest` **regardless of OS** — so it must also be OS-gated, else it re-installs the go copy on macOS and re-shadows brew.
+### 1. New prompt — `internal/engine/prompt.go` `buildBilingualPrompt(req)`
+- **System**: "Translate terminal/CLI documentation into `<target>`. You are given the full document as a numbered list of segments; some are prose to translate, others are command/code shown ONLY as context. Use the whole document — a bare token like `rg` is the command being documented, NOT an abbreviation; never expand it. Keep command names, flags, paths, URLs, and code verbatim. Translate ONLY prose segments. Reply with ONE JSON object `{"<n>": "<translation>"}` and nothing else — no reasoning, no commentary." (target expanded via `lang.Name`, like `buildTranslatePrompt`).
+- **User**: the numbered segments — prose shown plainly, code lines tagged `[code — context only]`.
+- Reuse `extractJSON` (`llm.go:342`) for robust parsing.
 
-## Changes (chezmoi source)
+### 2. Engine wiring — mirror learn mode (`internal/engine/`)
+- `engine.go`: add `Segment{ Text string; Code bool }`; `Request.Bilingual bool` + `Request.Segments []Segment`; `TranslateResult.Bilingual map[int]string` (prose-segment number → translation), transient (`json:"-"`), alongside `Learn`.
+- `llm.go`: in `promptFor` (~L277) `if req.Bilingual { return buildBilingualPrompt(req) }`; extend the stream gates (`stream := req.Stream && !req.Learn && !req.Bilingual`, L369/L444); use a large cap when `req.Bilingual` (reuse `learnMaxTokens`); after drain (~L287) `if req.Bilingual { return e.finalizeBilingual(full, model, req) }` → new `finalizeBilingual` mirroring `finalizeLearn` (L299): `extractJSON` → `map[string]string` → convert keys to int → `res.Bilingual`.
+- google/dict ignore Bilingual (LLM-only); doc mode requires an LLM provider.
 
-### 1. macOS install — `dot_config/homebrew/Brewfile.tmpl`
-Add, **darwin-gated but NOT `installBrewApps`-gated** (it's a CLI wanted on every mac):
-- Taps section: `{{ if eq .chezmoi.os "darwin" -}}tap "daviddwlee84/tap"{{ end -}}`
-- Formulas section: `{{ if eq .chezmoi.os "darwin" -}}brew "daviddwlee84/tap/translate"  # terminal translator; Linux uses go install (go_tools){{ end -}}`
+### 3. cmd wiring — `cmd/root.go`
+- New standalone flag (Pattern B): `f.StringVar(&flagBilingualMode, "bilingual-mode", "doc", "bilingual strategy: doc (context-aware, one call) | blocks (per-block)")`.
+- `runBilingual(...)` gains a `mode` param and splits:
+  - **`blocks`**: the existing per-block fan-out (unchanged — `translateOnce` × N, echo-suppression, bounded concurrency).
+  - **`doc`**: build `[]engine.Segment` from `bitext.Split` (prose→`{Text,Code:false}`, code→`{Text,Code:true}`, blanks skipped); one `translateOnce` with `Request{Bilingual:true, Segments:…, Source, Target, Extra}`; map the returned `Bilingual[n]` back to the prose blocks' original indices; render via `bitext.Render`. Keep echo-suppression.
+  - **Fallback**: if doc mode has no LLM provider, or the call errors / returns unparseable JSON / wrong segment count → fall back to `blocks` with a one-line stderr note (never silent). This also covers `--engine google` + doc (google can't emit JSON).
+- Dispatch in the pipe branch passes `flagBilingualMode`.
 
-### 2. Linux install — `dot_ansible/roles/go_tools/`
-- `tasks/main.yml`: add `and ansible_facts['os_family'] != 'Darwin'` to the "Install Go CLI tools" task `when:`, with a comment that macOS installs these via Homebrew. Reframes `go_tools` as "Linux go CLI tools" (translate is its only entry).
-- `defaults/main.yml`: keep the `translate` entry (source of truth for the Linux go install + cat_go); update its comment to note macOS→brew. Leave the `@v0.1.0` floor (per the role's "don't bump the pin for upgrades" rule).
+### 4. Tests
+- `internal/engine/prompt_test.go`: `buildBilingualPrompt` includes the CLI-doc directive ("not an abbreviation"), the JSON-only instruction, and the expanded target name.
+- New parse test: `finalizeBilingual`/`extractJSON` recovers the JSON from a reply with leading reasoning prose (guards the leak fix).
+- `internal/bitext` unchanged.
 
-### 3. Upgrade path — `scripts/upgrade_tools.sh` `cat_go()`
-Add an early **macOS skip** (`return $SKIP_RC` when `os_family`/`uname` is Darwin) with a comment: on macOS translate upgrades via `brew upgrade`; `go_tools` is Linux-only. Prevents `just upgrade-go` from re-creating `~/.local/bin/translate`.
+## Comparison (the "先比一下" step — after implementing)
 
-### 4. Doc mirrors (CLAUDE.md cross-file rule, line 15 — mechanism switch)
-- `docs/this_repo/tool-managers.md`:
-  - § Per-manager summary **go** row (~L38): note translate is macOS→brew / Linux→go.
-  - The `go_tools` formula/tool list (~L597): annotate translate as Linux-only.
-  - The A–Z / routing row for **translate** (~L1163): `brew (macOS) / go install (Linux)`.
-  - § Homebrew formulae catalog (§2.1/2.2): add the `daviddwlee84/tap` translate formula.
-- `docs/this_repo/upgrades.md`: the `go` row (~L53) — note macOS is excluded (brew); mention translate upgrades via `brew upgrade` on macOS.
-- `README.md` (dotfiles): the `just upgrade-go` example (~L373) currently cites translate — update wording since translate is now Linux-only for go.
-- `site/this_repo/…` is **not** git-tracked (build artifact) — do not hand-edit; it regenerates from docs.
-
-## Runtime steps (after source changes; per host)
-
-- **This mac**: `chezmoi diff` → review → `chezmoi apply` (deploys Brewfile → run-script trusts `daviddwlee84/tap` + `brew bundle` installs translate). Then remove the stale go copy: `rm ~/.local/bin/translate` (install-only tooling won't remove it). Verify `which -a translate` → `/usr/local/bin/translate`, `translate --version` → `v0.3.1`.
-- **Fleet**: this is a Brewfile change → needs **full `fleet-apply`** (not `fleet-apply-file`, which skips run-scripts); `just upgrade-*` per host as usual. Linux hosts keep go install (unchanged behavior).
+Run both on the same input and show side-by-side:
+```
+tldr rg | translate --to zh-TW --bilingual --bilingual-mode doc     # new
+tldr rg | translate --to zh-TW --bilingual --bilingual-mode blocks  # old
+```
+Report: `rg` header handling, Simplified/Traditional consistency, reasoning-leak presence, and rough token/latency (doc = 1 call, blocks = N). Use the user's default engine (LLM) — that's where the differences show.
 
 ## Verification
-
-1. `chezmoi diff` shows exactly: Brewfile.tmpl (+tap/+brew), go_tools task `when` + defaults comment, `cat_go` macOS skip, the doc mirrors.
-2. Dry check the formula set: `brew bundle check --file ~/.config/homebrew/Brewfile` (after apply) → "dependencies are satisfied".
-3. `brew tap-info daviddwlee84/tap` shows **not** `Untrusted` after apply (run-script trusted it).
-4. After `rm ~/.local/bin/translate`: `command -v translate` → brew path; `translate --version` → `v0.3.1`; a quick `echo hola | translate --to en --engine google` works.
-5. `just upgrade-go` on macOS → SKIPPED (no re-shadow); on a Linux host → still `go install`s translate.
-6. Dotfiles lint/format gate if present (`just check` / pre-commit) green. Commit in the chezmoi repo (`feat`/`chore` per its convention), honoring the same-commit mirror rule.
+1. `just check` + `go test ./...` green; `gofmt` clean.
+2. Doc mode e2e on real `tldr rg` (default engine): `rg` no longer becomes an abbreviation; all 繁體; no leaked reasoning; command examples still untranslated.
+3. Fallback e2e: `--bilingual-mode doc --engine google` → falls back to blocks with a stderr note (still produces output).
+4. `blocks` mode unchanged from today.
+5. Ship: new flag → **minor** bump (`v0.4.0` per AGENTS.md); bump the tap `Formula/translate.rb` (url + sha256) and `brew upgrade` to verify on this Mac.
 
 ## Notes / trade-offs
-
-- This touches 3 OS-gates (ansible task, `cat_go`, Brewfile) + doc mirrors for one tool — more moving parts than a one-line change, but it's the idiomatic per-OS split the repo already uses and avoids the Linux regression.
-- `go_tools` effectively becomes "Linux go tools"; if a future go tool needs macOS too, revisit the blanket Darwin gate.
+- doc mode is non-streaming (fine for a reading view) and needs an LLM provider (blocks mode remains the any-engine path).
+- Very large piped docs could exceed the token cap → future chunking-with-overlap; tldr/`--help`/man are small. Not handled in v1 (fall back or truncate-warn).
+- Default flips `--bilingual` to `doc` (better + cheaper); `blocks` stays one flag away.
