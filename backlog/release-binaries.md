@@ -51,3 +51,4 @@ sake.
 
 - goreleaser: https://goreleaser.com/
 - chezmoi externals: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
+- Homebrew tap (option C, now researched separately): [homebrew-distribution.md](homebrew-distribution.md) — build-from-source tap is viable independently of this goreleaser work.
