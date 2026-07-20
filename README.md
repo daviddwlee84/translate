@@ -31,12 +31,13 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate` (no args, TTY) | Interactive TUI |
 | `translate --to <lang> --from <lang>` | Language override; both are fuzzy (`chinees` → `zh`) |
 | `translate --json` | Emit the full structured result |
+| `… \| translate --bilingual` (`-2`) | Bilingual pipe view: keep the original (with color) + translation beneath (stdin only) |
 | `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API) |
 | `translate history` / `history search <q>` | Recent history / fuzzy search (`--tsv`, `--json`) |
 | `translate init` | Interactive config wizard (probes providers) |
 | `translate config path\|show` · `lang resolve <q>` | Introspection helpers |
 
-Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--no-history`, `--debug`.
+Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--bilingual`/`-2`, `--no-history`, `--debug`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
 Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
 
@@ -112,6 +113,28 @@ input is in and translates it into the **other** — one box, both directions
 decided by script, so even short input routes correctly; the LLM translate prompt is
 also told to detect-and-route and to **never echo** the input. `pair_with` must differ
 from the target (`translate init` enforces this; a degenerate config warns).
+
+### Bilingual mode (`--bilingual` / `-2`)
+
+Pipe colored docs and read both languages at once — inspired by Immersive
+Translate. `cmd | translate --to <lang> --bilingual` keeps each original block
+verbatim (its ANSI/color intact) and prints the translation beneath each **prose**
+block, dimmed on a TTY:
+
+```sh
+tldr rg | translate --to zh-TW --bilingual     # or -2
+```
+
+Indented command/example blocks are echoed **untranslated** (so `rg pattern` stays
+runnable), and blank-line spacing is preserved. It is opt-in and **stdin-only** —
+never the pipe default, so plain `cmd | translate | less`/`grep` stays clean
+single-output. Best for prose docs (tldr, man, `--help`); tabular output
+(`ls -l`, `git status`) and hard-wrapped prose don't interleave cleanly.
+`--json`/`--learn` take precedence. Design notes + why per-word recoloring was
+rejected: [`backlog/bilingual-immersive-mode.md`](backlog/bilingual-immersive-mode.md).
+
+Separately, ANSI escapes are now **stripped from piped input** before translating,
+so colored input (e.g. `grep --color=always`) no longer pollutes the prompt.
 
 ### Debugging
 

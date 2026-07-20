@@ -11,12 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	tea "charm.land/bubbletea/v2"
+	lg "charm.land/lipgloss/v2"
 
+	"github.com/daviddwlee84/translate/internal/bitext"
 	"github.com/daviddwlee84/translate/internal/config"
 	"github.com/daviddwlee84/translate/internal/debug"
 	"github.com/daviddwlee84/translate/internal/engine"
@@ -39,6 +42,7 @@ var (
 	flagPair         bool
 	flagPairWith     string
 	flagLearn        bool
+	flagBilingual    bool
 	flagJSON         bool
 	flagNoHistory    bool
 	flagDebug        bool
@@ -76,6 +80,7 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVar(&flagPair, "pair", false, "bidirectional mode: home-language input → --pair-with, else → --to")
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagLearn, "learn", false, "learning mode: teach (native→foreign) or grammar-correct (foreign→native)")
+	f.BoolVarP(&flagBilingual, "bilingual", "2", false, "bilingual pipe mode: keep original (with color) + translation beneath (stdin only)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
@@ -206,9 +211,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		text := strings.TrimSpace(string(b))
+		// Strip ANSI/SGR escapes so colored piped input (e.g. `tldr rg | translate`)
+		// never pollutes the prompt. The raw bytes are retained only for --bilingual,
+		// which needs the original styling for display.
+		text := strings.TrimSpace(bitext.Strip(string(b)))
 		if text == "" {
 			return fmt.Errorf("no input on stdin")
+		}
+		// Bilingual is a multi-block reading view; --json/--learn keep their own
+		// structured output and take precedence.
+		if flagBilingual && !flagJSON && !res.Learn {
+			return runBilingual(ctx, oneShotEng, string(b), src, tgt, res.Instructions)
 		}
 		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
 		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
@@ -469,6 +482,95 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		fmt.Println(res.Translation)
 	}
 	return res, nil
+}
+
+// runBilingual renders the "immersive" bilingual view for piped input: every
+// original block is printed verbatim (ANSI/color intact) and a translation is
+// shown beneath each prose block. Indented command/code blocks are echoed
+// untranslated. Prose blocks translate concurrently (bounded) into target; pair
+// and learn routing are intentionally out of scope for this reading mode.
+func runBilingual(ctx context.Context, eng engine.Engine, raw, source, target, instructions string) error {
+	blocks := bitext.Split(raw)
+	if len(blocks) == 0 {
+		return fmt.Errorf("no input on stdin")
+	}
+
+	translations := make(map[int]string)
+	errs := make(map[int]error)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 5) // bound concurrent LLM calls
+
+	for i, blk := range blocks {
+		if blk.Kind != bitext.Prose {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, plain string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// Force concise (Stream:false, Preset:"") so each block maps to exactly
+			// one translation — contextual/dictionary presets would reshape output.
+			r, err := translateOnce(ctx, eng, engine.Request{
+				Text:   plain,
+				Source: source,
+				Target: target,
+				Mode:   engine.ModeTranslate,
+				Extra:  instructions,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			tr := strings.TrimSpace(r.Translation)
+			// Drop echoes (proper nouns / already-target text): nothing to add beneath.
+			if tr != "" && !strings.EqualFold(tr, strings.TrimSpace(plain)) {
+				translations[i] = tr
+			}
+		}(i, blk.Plain)
+	}
+	wg.Wait()
+
+	dim := dimFunc(term.IsTerminal(int(os.Stdout.Fd())))
+	fmt.Print(bitext.Render(blocks, translations, dim))
+
+	// Never fail silently: report untranslated blocks (originals still printed).
+	if len(errs) > 0 {
+		var sample error
+		for _, e := range errs {
+			sample = e
+			break
+		}
+		fmt.Fprintf(os.Stderr, "translate: warning: %d block(s) not translated (%v)\n", len(errs), sample)
+	}
+	return nil
+}
+
+// translateOnce runs a single non-streaming translation and returns the result,
+// draining the engine channel with no token callback. It is the printing-free core
+// shared by bilingual mode.
+func translateOnce(ctx context.Context, eng engine.Engine, req engine.Request) (*engine.TranslateResult, error) {
+	ch, err := eng.Translate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return engine.Drain(ch, nil)
+}
+
+// dimFunc returns the styler for bilingual translation lines. It dims (grey) only
+// when stdout is a TTY and NO_COLOR is unset, so piping the output onward stays
+// clean; otherwise it is the identity function. The original block's own ANSI is
+// never touched — only our added translation lines are styled.
+func dimFunc(stdoutTTY bool) func(string) string {
+	if !stdoutTTY || os.Getenv("NO_COLOR") != "" {
+		return func(s string) string { return s }
+	}
+	style := lg.NewStyle().Foreground(lg.Color("#6C6C6C"))
+	return func(s string) string { return style.Render(s) }
 }
 
 // defaultAway picks the "away" (foreign) language for learn/pair mode when none is

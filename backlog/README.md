@@ -50,6 +50,7 @@ Add new entries here as you create them. Keep alphabetical.
 
 | Slug | Status | TODO entry |
 |---|---|---|
+| `bilingual-immersive-mode` | shipped (2026-07) | Done "Bilingual `--bilingual`/`-2` pipe mode…" |
 | `chezmoi-go-tool-integration` | spike done, paused on scope (2026-07) | P? "Wire `translate` into chezmoi…" |
 | `dict-bundling` | deferred (2026-07) | P? "Bundle or prebuild the dictionary…" |
 | `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |

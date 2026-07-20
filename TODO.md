@@ -31,6 +31,7 @@ Worth doing, no rush.
 
 Someday / nice-to-have.
 
+- [ ] **[M] Table/wrapped-prose-aware bilingual mode** — the `--bilingual`/`-2` reading view interleaves a translation per blank-line-delimited prose block, which breaks on tabular output (`ls -l`, `kubectl get`, `git status`) and on hard-wrapped prose split by blank lines. Add column/table detection (skip or column-align) and soft-wrap coalescing; consider per-span parsing via the `charmbracelet/x/ansi` tokenizer already imported. See [backlog/bilingual-immersive-mode.md](backlog/bilingual-immersive-mode.md).
 - [ ] **[M] lingua-go detection upgrade behind the `Detector` seam** — whatlanggo is light/fast but weak on short and mixed-script text; lingua-go is more accurate but heavy (embedded n-gram models → bigger binary, slower init). Swap behind the existing `internal/lang` interface only if short-text detection proves insufficient. Detection is mostly a fallback (Google returns the source, LLM returns `DetectedSource`), so keeping it light is defensible.
 - [ ] **[S] MyMemory fallback engine** — trivial flat JSON (`responseData.translatedText`, `matches[]`); wire as an easy secondary free path after Google. Limits: 5k chars/day anon (50k with `&de=email`), 500 B max per `q`, no source auto-detect.
 - [ ] **[M] Azure Translator engine behind the engine seam** — the only supported Microsoft path (needs an Azure subscription key). Keyless Bing scraping (`ttranslatev3` + transient `IG`/`IID`/token) is too fragile/ToS-risky for v1. Leave the engine interface ready; add when a key is available.
@@ -45,6 +46,7 @@ Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
 
 ## Done
 
+- ✅ [2026-07-20] [P2/M] Bilingual `--bilingual`/`-2` immersive pipe mode + ANSI-strip-on-input — piped colored input is now stripped (`bitext.Strip`) before reaching the LLM; `--bilingual` keeps each original block (color intact) and prints the translation beneath prose blocks, dimmed on a TTY, echoing indented command/code blocks untranslated. New pure `internal/bitext` pkg (Split/Render). Per-word recoloring (approaches A/B) rejected as over-engineering. → [backlog/bilingual-immersive-mode.md](backlog/bilingual-immersive-mode.md).
 - ✅ [2026-07-09] [P?/L] Wire `translate` into chezmoi dotfiles as an auto-installed go tool — go_tools ansible role added to dotfiles (commit 306bfb0): go install → ~/.local/bin, mise-gated, + cat_go upgrade path. Pending chezmoi apply on normal cadence.
 
 Recently shipped. When implementing an active item, in the same commit run:
