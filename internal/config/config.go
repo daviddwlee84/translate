@@ -15,6 +15,13 @@ import (
 
 // Config is the top-level config.toml schema.
 type Config struct {
+	// Version is the app version (git tag) that last wrote this file, and Schema is
+	// the config schema generation (see SchemaVersion). Both are stamped by Save;
+	// Version is informational, Schema drives the "your config is outdated" reminder.
+	// Declared first so they serialize above the [general] table.
+	Version string `toml:"version,omitempty"`
+	Schema  int    `toml:"schema"`
+
 	General   General    `toml:"general"`
 	CLI       *Overlay   `toml:"cli,omitempty"` // per-front-end overrides on [general]
 	TUI       *Overlay   `toml:"tui,omitempty"` // (nil unless the user adds the table)
@@ -26,6 +33,19 @@ type Config struct {
 	TTS       TTS        `toml:"tts"`
 	History   History    `toml:"history"`
 }
+
+// SchemaVersion is the current config schema generation. Bump it whenever a new
+// field or default is added that `translate init` would materialize, so an older
+// on-disk config (schema < this) can be detected and the user reminded to re-init.
+// It is NOT the app version (which is the git tag; see cmd/version.go). History:
+//
+//	1 — smart-auto default, pair-mode home anchoring, debug, TTS/learn fields.
+const SchemaVersion = 1
+
+// Generator is the app version string (git tag) stamped into config.version on
+// Save. The cmd layer sets it at startup; it stays "" for library/test callers,
+// in which case the version key is simply omitted.
+var Generator string
 
 // Overlay is a partial [general] applied for one front-end ([cli] or [tui]). Every
 // field is a pointer so a nil means "inherit from [general]"; only keys the user
@@ -266,10 +286,16 @@ func Load() (cfg *Config, created bool, err error) {
 	return cfg, false, nil
 }
 
-// Save writes the config atomically (temp file + rename).
+// Save writes the config atomically (temp file + rename). It stamps the current
+// schema generation and (when known) the writing app version, so a later build
+// can detect an outdated config.
 func Save(cfg *Config) error {
 	if err := xdgpath.EnsureDirs(); err != nil {
 		return err
+	}
+	cfg.Schema = SchemaVersion
+	if Generator != "" {
+		cfg.Version = Generator
 	}
 	b, err := toml.Marshal(cfg)
 	if err != nil {
@@ -291,6 +317,11 @@ func Save(cfg *Config) error {
 	}
 	return os.Rename(tmpName, p)
 }
+
+// Outdated reports whether the loaded config predates the current schema, i.e.
+// it was written by an older build (or before schema tracking existed, in which
+// case the key is absent and reads as 0). The caller uses it to nudge a re-init.
+func (c *Config) Outdated() bool { return c.Schema < SchemaVersion }
 
 // ProviderByName returns the named provider, or nil if absent.
 func (c *Config) ProviderByName(name string) *Provider {

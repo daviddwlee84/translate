@@ -58,3 +58,13 @@ func buildVersion() string {
 	}
 	return b.String()
 }
+
+// shortVersion is just the leading version token of buildVersion() (e.g.
+// "v0.4.0" or "(devel)"), for stamping config.version and the outdated reminder.
+func shortVersion() string {
+	v := buildVersion()
+	if i := strings.IndexByte(v, ' '); i > 0 {
+		return v[:i]
+	}
+	return v
+}

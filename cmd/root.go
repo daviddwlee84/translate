@@ -96,6 +96,8 @@ func NewRootCmd() *cobra.Command {
 
 // Execute runs the root command with the given (cancellable) context.
 func Execute(ctx context.Context) error {
+	// Stamp the writing app version into any config Save this run makes.
+	config.Generator = shortVersion()
 	return NewRootCmd().ExecuteContext(ctx)
 }
 
@@ -139,6 +141,12 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	if created {
 		fmt.Fprintf(os.Stderr, "translate: wrote default config to %s (run `translate init` to customize)\n", config.Path())
+	} else if cfg.Outdated() {
+		msg := fmt.Sprintf("translate: your config predates %s", shortVersion())
+		if cfg.Version != "" {
+			msg = fmt.Sprintf("translate: your config was written by %s (now %s)", cfg.Version, shortVersion())
+		}
+		fmt.Fprintln(os.Stderr, msg+" — run `translate init` to pick up new settings")
 	}
 
 	res := cfg.Resolve(overrides(), invocationMode(args))
@@ -286,6 +294,16 @@ func openDebugLog() io.Writer {
 // pair when remember_last_pair is on and the user did not pass flags/env.
 func applyLastPair(cfg *config.Config, res *config.Resolved) {
 	if !cfg.General.RememberLastPair {
+		return
+	}
+	// Pair (and learn) mode anchors BOTH languages from config: Target is the home
+	// language, PairWith is the away language, and routing is decided per input. A
+	// remembered target must not override the home here — if the last session
+	// happened to translate into the away language, restoring it as the home makes
+	// home == away and pair mode collapses to a no-op (the "en⇄en" bug). Source is
+	// always auto-detected in pair mode too, so skip the whole override.
+	if res.Pair {
+		debug.Logf("remember_last_pair: skipped (pair mode anchors languages from config)")
 		return
 	}
 	stt, err := state.Load()
