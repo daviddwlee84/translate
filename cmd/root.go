@@ -142,11 +142,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if created {
 		fmt.Fprintf(os.Stderr, "translate: wrote default config to %s (run `translate init` to customize)\n", config.Path())
 	} else if cfg.Outdated() {
-		msg := fmt.Sprintf("translate: your config predates %s", shortVersion())
-		if cfg.Version != "" {
-			msg = fmt.Sprintf("translate: your config was written by %s (now %s)", cfg.Version, shortVersion())
+		// Schema bumps so far are additive: Load already filled any new fields with
+		// their Default() values in memory, so re-saving materializes them on disk
+		// (every existing value preserved) and re-stamps the schema — no wizard
+		// needed. A genuinely breaking change would instead need an explicit
+		// migration here before the re-save.
+		from := cfg.Schema
+		if err := config.Save(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "translate: config is outdated but auto-upgrade failed (%v) — run `translate init`\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "translate: upgraded config schema v%d→v%d (new settings use defaults; `translate init` to review)\n", from, config.SchemaVersion)
 		}
-		fmt.Fprintln(os.Stderr, msg+" — run `translate init` to pick up new settings")
 	}
 
 	res := cfg.Resolve(overrides(), invocationMode(args))

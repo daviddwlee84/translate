@@ -14,10 +14,13 @@ SemVer, pre-1.0 (`0.y.z`):
 - breaking CLI/flag/config change → still a minor bump while `0.x`; call it out in the tag message
 - cut **`v1.0.0`** only once the CLI/flags/config surface is considered stable
 
-**Config schema:** when a release adds a `config.toml` field/default that `translate init`
-materializes, bump `config.SchemaVersion` (`internal/config/config.go`). Older on-disk configs
-(schema `< SchemaVersion`) then print a one-line "run `translate init`" reminder on the next run.
-`Save` stamps the current schema + writing app version (`config.Generator`, set in `cmd.Execute`).
+**Config schema:** when a release adds a `config.toml` field/default, bump
+`config.SchemaVersion` (`internal/config/config.go`). On the next run a config with
+`schema < SchemaVersion` is **auto-migrated** — `runRoot` re-saves it so new fields land at
+their `Default()` values (existing values preserved) and the schema is re-stamped; no re-init
+is needed for additive changes. A **breaking** change (renamed/removed/re-meaning a key) needs
+an explicit migration in `runRoot` before the re-save. `Save` stamps schema + the writing app
+version (`config.Generator`, set in `cmd.Execute`).
 
 To ship the current `main` to this machine via chezmoi:
 
