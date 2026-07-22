@@ -1,0 +1,253 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "translate API",
+    "version": "1.0.0",
+    "description": "Local loopback HTTP API for the `translate` CLI. Wraps the same translation engine used by the CLI and TUI. Bind is 127.0.0.1 by default; /v1/history is guarded by a bearer token when one is configured.\n\nNote: visible token streaming on /v1/translate/stream depends on the upstream provider — copilot-proxy buffers Claude responses, so those arrive in a burst regardless of transport."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:4155", "description": "Default loopback bind" }
+  ],
+  "tags": [
+    { "name": "translate", "description": "Translation" },
+    { "name": "dictionary", "description": "Definitions" },
+    { "name": "history", "description": "Translation history" },
+    { "name": "meta", "description": "Health and docs" }
+  ],
+  "paths": {
+    "/v1/translate": {
+      "post": {
+        "tags": ["translate"],
+        "summary": "Translate text",
+        "operationId": "translate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TranslateRequest" },
+              "example": { "text": "hello world", "target": "zh-TW" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Translation result",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TranslateResult" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "422": { "$ref": "#/components/responses/Unprocessable" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v1/translate/stream": {
+      "get": {
+        "tags": ["translate"],
+        "summary": "Translate text (Server-Sent Events)",
+        "description": "Streams the translation as SSE. Events: `token` (JSON-encoded token string), `warning` (e.g. truncation), `done` (the final TranslateResult as JSON), `error` (message). GET-only because browser EventSource is GET-only.",
+        "operationId": "translateStream",
+        "parameters": [
+          { "name": "text", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Text to translate" },
+          { "name": "target", "in": "query", "schema": { "type": "string" }, "description": "Target language (default: server config)" },
+          { "name": "source", "in": "query", "schema": { "type": "string" }, "description": "Source language or \"auto\"" },
+          { "name": "preset", "in": "query", "schema": { "type": "string", "enum": ["concise", "contextual", "dictionary"] } },
+          { "name": "instructions", "in": "query", "schema": { "type": "string" } },
+          { "name": "model", "in": "query", "schema": { "type": "string" } },
+          { "name": "pair", "in": "query", "schema": { "type": "boolean" }, "description": "Enable bidirectional pair routing" }
+        ],
+        "responses": {
+          "200": {
+            "description": "An SSE stream (text/event-stream)",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/define": {
+      "post": {
+        "tags": ["dictionary"],
+        "summary": "Define a word",
+        "operationId": "define",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DefineRequest" },
+              "example": { "word": "ephemeral" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Definition (dictionary payload, or suggestions on a miss)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TranslateResult" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "422": { "$ref": "#/components/responses/Unprocessable" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v1/history": {
+      "get": {
+        "tags": ["history"],
+        "summary": "List or search history",
+        "operationId": "history",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Fuzzy search query; omit for most-recent" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "History records, newest first",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Record" } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Liveness probe",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" } } } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed request body",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unprocessable": {
+        "description": "Missing or empty required field",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid bearer token",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "ServerError": {
+        "description": "Engine or internal error",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "TranslateRequest": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string", "description": "Text to translate" },
+          "source": { "type": "string", "description": "Source language or \"auto\"" },
+          "target": { "type": "string", "description": "Target language (default: server config)" },
+          "preset": { "type": "string", "enum": ["concise", "contextual", "dictionary"] },
+          "instructions": { "type": "string", "description": "Extra system-prompt guidance" },
+          "model": { "type": "string", "description": "Per-request model override" },
+          "max_alts": { "type": "integer", "description": "Cap on alternatives (0 => engine default)" },
+          "pair": { "type": "boolean", "description": "Enable bidirectional pair routing" }
+        }
+      },
+      "DefineRequest": {
+        "type": "object",
+        "required": ["word"],
+        "properties": {
+          "word": { "type": "string" }
+        }
+      },
+      "TranslateResult": {
+        "type": "object",
+        "properties": {
+          "translation": { "type": "string" },
+          "detected_source": { "type": "string" },
+          "target": { "type": "string" },
+          "alternatives": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" },
+          "confidence": { "type": "number" },
+          "warnings": { "type": "array", "items": { "type": "string" } },
+          "engine": { "type": "string" },
+          "model": { "type": "string" },
+          "dictionary": { "$ref": "#/components/schemas/DictEntry" },
+          "learn": { "$ref": "#/components/schemas/LearnResult" },
+          "suggestions": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "DictEntry": {
+        "type": "object",
+        "properties": {
+          "word": { "type": "string" },
+          "phonetic": { "type": "string" },
+          "meanings": { "type": "array", "items": { "$ref": "#/components/schemas/Meaning" } },
+          "source_url": { "type": "string" }
+        }
+      },
+      "Meaning": {
+        "type": "object",
+        "properties": {
+          "part_of_speech": { "type": "string" },
+          "definitions": { "type": "array", "items": { "$ref": "#/components/schemas/Definition" } },
+          "synonyms": { "type": "array", "items": { "type": "string" } },
+          "antonyms": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Definition": {
+        "type": "object",
+        "properties": {
+          "definition": { "type": "string" },
+          "example": { "type": "string" }
+        }
+      },
+      "LearnResult": {
+        "type": "object",
+        "description": "Structured tutor payload (present only for learn-mode results).",
+        "properties": {
+          "direction": { "type": "string", "enum": ["teach", "correct"] },
+          "original": { "type": "string" },
+          "corrected": { "type": "string" },
+          "translation": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      },
+      "Record": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ts": { "type": "string", "format": "date-time" },
+          "source_lang": { "type": "string" },
+          "target_lang": { "type": "string" },
+          "engine": { "type": "string" },
+          "model": { "type": "string" },
+          "input": { "type": "string" },
+          "output": { "type": "string" },
+          "alternatives": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" },
+          "favorite": { "type": "boolean" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

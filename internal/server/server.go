@@ -64,6 +64,7 @@ func newMux(h *handlers) *http.ServeMux {
 	mux.HandleFunc("POST /v1/define", h.define)
 	mux.HandleFunc("GET /v1/history", h.requireToken(h.history))
 	mux.HandleFunc("GET /healthz", h.healthz)
+	registerDocs(mux)
 	return mux
 }
 
@@ -76,7 +77,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "translate: HTTP API on http://%s (try GET /healthz)\n", s.addr)
+	fmt.Fprintf(os.Stderr, "translate: HTTP API on http://%s (docs: /docs)\n", s.addr)
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpSrv.Serve(ln) }()
 
