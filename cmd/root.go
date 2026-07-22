@@ -93,7 +93,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagSpeakLang, "speak-lang", "", "force the spoken language (e.g. en, zh-TW)")
 
 	root.SuggestionsMinimumDistance = 2
-	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd(), newServeCmd())
+	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd(), newServeCmd(), newMcpCmd())
 	return root
 }
 
