@@ -155,8 +155,15 @@ func (m Model) footerContent(forceState bool) string {
 	}
 
 	pair := fmt.Sprintf("%s→%s", lang.Name(m.source), lang.Name(m.target))
-	if m.pair && m.pairWith != "" {
-		pair = fmt.Sprintf("pair %s⇄%s", m.target, m.pairWith) // compact codes
+	if m.pairOn() && m.pairWith != "" {
+		switch m.pairMode {
+		case pairAway:
+			pair = fmt.Sprintf("pair →%s", m.pairWith) // forced to the away language
+		case pairHome:
+			pair = fmt.Sprintf("pair →%s", m.target) // forced to the home language
+		default: // pairAuto
+			pair = fmt.Sprintf("pair %s⇄%s", m.target, m.pairWith) // compact codes
+		}
 	}
 
 	// Engine segment: the selected engine name, plus the model that actually
@@ -179,7 +186,7 @@ func (m Model) footerContent(forceState bool) string {
 		left += "  " + state
 	}
 
-	help := m.st.dim.Render("↵ translate  ^y copy  ^s speak  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g pair  ^u clear  ⇥ focus  ^r history  ^c quit")
+	help := m.st.dim.Render("↵ translate  ^y copy  ^s speak  ^l live  ^e engine  ^t lang  ^p model  ^o style  ^g dir  ^u clear  ⇥ focus  ^r history  ^c quit")
 	return left + "  " + help
 }
 

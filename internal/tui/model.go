@@ -65,6 +65,40 @@ const (
 	focusOutput                  // keyboard scrolling of the result viewport
 )
 
+// pairMode is the bidirectional-pair direction control, cycled by ^g. Beyond
+// on/off it can PIN the output language (bypassing auto-detection), so the user
+// can force an ad-hoc direction without leaving their pair setup.
+type pairMode int
+
+const (
+	pairOff  pairMode = iota // not a pair: plain source→target (manual, any ^t target)
+	pairAuto                 // detect the input's language and translate to the OTHER side
+	pairAway                 // force output → the away language (pairWith)
+	pairHome                 // force output → the home language (target)
+)
+
+// nextPairMode advances the ^g cycle: auto → →away → →home → off → auto.
+func nextPairMode(p pairMode) pairMode {
+	switch p {
+	case pairOff:
+		return pairAuto
+	case pairAuto:
+		return pairAway
+	case pairAway:
+		return pairHome
+	default: // pairHome
+		return pairOff
+	}
+}
+
+// initialPairMode seeds the mode from the launch --pair flag.
+func initialPairMode(on bool) pairMode {
+	if on {
+		return pairAuto
+	}
+	return pairOff
+}
+
 // inputH is the fixed height (rows) of the input textarea box; shared by the
 // layout and the click-to-focus hit test.
 const inputH = 4
@@ -94,7 +128,7 @@ type Model struct {
 
 	source   string
 	target   string
-	pair     bool
+	pairMode pairMode
 	pairWith string
 	learn    bool // learning mode (^n): structured teach/correct via p.LearnEngine
 	preset   string
@@ -214,7 +248,7 @@ func New(ctx context.Context, p Params) Model {
 		st:          newStyles(),
 		source:      p.Source,
 		target:      p.Target,
-		pair:        p.Pair,
+		pairMode:    initialPairMode(p.Pair),
 		pairWith:    p.PairWith,
 		learn:       p.Learn && p.LearnEngine != nil,
 		preset:      preset,
@@ -228,6 +262,9 @@ func New(ctx context.Context, p Params) Model {
 // Pair returns the current source and target language codes (read by the caller
 // after the program exits to persist the last pair).
 func (m Model) Pair() (source, target string) { return m.source, m.target }
+
+// pairOn reports whether any bidirectional-pair mode is active (auto or forced).
+func (m Model) pairOn() bool { return m.pairMode != pairOff }
 
 // Init requests the initial window size and starts the cursor blink + spinner.
 func (m Model) Init() tea.Cmd {

@@ -216,7 +216,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.learn = !m.learn
 		if m.learn {
 			// Learn is bidirectional; ensure a distinct "away" (foreign) language.
-			m.pair = true
+			m.pairMode = pairAuto
 			if m.pairWith == "" || strings.EqualFold(m.pairWith, m.target) {
 				if strings.HasPrefix(strings.ToLower(m.target), "en") {
 					m.pairWith = "zh-TW"
@@ -233,9 +233,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.TogglePair):
-		m.pair = !m.pair
-		// Pair mode is a no-op when "away" equals the target; pick a distinct away.
-		if m.pair && (m.pairWith == "" || strings.EqualFold(m.pairWith, m.target)) {
+		// ^g cycles the direction: auto (⇄) → force→away → force→home → off.
+		m.pairMode = nextPairMode(m.pairMode)
+		// Entering any pair-on mode needs a distinct "away"; pick one if unset/equal.
+		if m.pairOn() && (m.pairWith == "" || strings.EqualFold(m.pairWith, m.target)) {
 			if strings.HasPrefix(strings.ToLower(m.target), "en") {
 				m.pairWith = "zh-TW"
 			} else {
@@ -373,6 +374,28 @@ func (m Model) translatingPlaceholder() string {
 	return m.sp.View() + " " + m.st.dim.Render(label)
 }
 
+// pairTargetFor resolves the effective target language for the current pair mode,
+// and reports whether a pair is active and whether the model should auto-detect
+// direction. A forced direction (pairAway/pairHome) pins the target and returns
+// autoRoute=false, so the request is a plain directed translate instead of the
+// "detect which language and flip" prompt (which would undo the forced direction).
+func (m Model) pairTargetFor(text string, mode engine.Mode) (target string, pairOn, autoRoute bool) {
+	target = m.target
+	pairOn = m.pairOn() && m.pairWith != "" && mode == engine.ModeTranslate
+	autoRoute = pairOn && m.pairMode == pairAuto
+	if pairOn {
+		switch m.pairMode {
+		case pairAway:
+			target = m.pairWith // force → away
+		case pairHome:
+			target = m.target // force → home
+		default: // pairAuto
+			target = lang.PairTarget(m.target, m.pairWith, text) // home-lang input → away, else home
+		}
+	}
+	return target, pairOn, autoRoute
+}
+
 // launch starts a streaming translation for the current input, cancelling any
 // in-flight request first. It is the single place a translation begins.
 // When force is false (the live/debounce path) it skips re-translating text that
@@ -427,11 +450,9 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 	seq := m.seq
 	ne := m.active()
 	eng := ne.Engine
-	target := m.target
-	pairOn := m.pair && m.pairWith != "" && ne.Mode == engine.ModeTranslate
+	target, pairOn, autoRoute := m.pairTargetFor(text, ne.Mode)
 	if pairOn {
-		target = lang.PairTarget(m.target, m.pairWith, text) // home-lang input → away, else home
-		debug.Logf("tui pair route: home=%s away=%s → target=%s", m.target, m.pairWith, target)
+		debug.Logf("tui pair route: mode=%d home=%s away=%s → target=%s", m.pairMode, m.target, m.pairWith, target)
 	}
 	req := engine.Request{
 		Text:          text,
@@ -443,7 +464,7 @@ func (m Model) launch(force bool) (tea.Model, tea.Cmd) {
 		ModelProvider: m.p.ModelProvider,
 		Preset:        m.preset,
 		Extra:         m.p.Instructions,
-		Pair:          pairOn,
+		Pair:          autoRoute,
 		PairHome:      m.target,
 		PairAway:      m.pairWith,
 	}
@@ -549,7 +570,7 @@ func (m Model) foreignPref() string {
 	if m.p.Foreign != "" {
 		return m.p.Foreign
 	}
-	if m.pair && m.pairWith != "" {
+	if m.pairOn() && m.pairWith != "" {
 		return m.pairWith
 	}
 	return ""

@@ -5,11 +5,13 @@ import "github.com/daviddwlee84/translate/internal/engine"
 // cacheKey identifies a translation result for the session cache. It is
 // comparable, so it can be a map key. Keying on the *selected* engine name
 // (e.g. "auto") means a chain fallback still caches under the user-visible engine.
-// learn/pair/pairWith are included so a learn result, a pair result, and a plain
-// translation of the same text never collide.
+// learn/pairMode/pairWith are included so a learn result, each pair direction
+// (auto vs a forced target), and a plain translation of the same text never
+// collide.
 type cacheKey struct {
 	preset, engineName, model, source, target, text string
-	learn, pair                                     bool
+	learn                                           bool
+	pairMode                                        pairMode
 	pairWith                                        string
 }
 
@@ -23,7 +25,7 @@ func (m Model) cacheKeyFor(text string) cacheKey {
 		target:     m.target,
 		text:       text,
 		learn:      m.learn,
-		pair:       m.pair,
+		pairMode:   m.pairMode,
 		pairWith:   m.pairWith,
 	}
 }

@@ -31,7 +31,7 @@ func defaultKeys() keyMap {
 		PickLang:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "lang")),
 		PickModel:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("^p", "model")),
 		PickPreset:  key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("^o", "style")),
-		TogglePair:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "pair")),
+		TogglePair:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "dir")),
 		ToggleLearn: key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("^n", "learn")),
 		Copy:        key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("^y", "copy")),
 		// ctrl+s is XOFF flow-control only in cooked-mode terminals; Bubble Tea puts
