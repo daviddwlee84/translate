@@ -95,7 +95,7 @@ func (m Model) handleStream(msg streamMsg) (tea.Model, tea.Cmd) {
 	case engine.ChunkToken:
 		m.retrying = false // real tokens are flowing; drop the "retrying" label
 		m.streamBuf += msg.chunk.Text
-		m.vp.SetContent(m.st.trans.Render(m.streamBuf))
+		m.vp.SetContent(m.st.renderTranslation(m.streamBuf))
 		m.vp.GotoBottom()
 		return m, waitStream(m.stream, m.inflight) // re-subscribe for the next token
 
@@ -499,7 +499,7 @@ func (m Model) copyText() string {
 	if m.result == nil {
 		return ""
 	}
-	return strings.TrimSpace(m.result.Translation)
+	return collapseBlankLines(strings.TrimSpace(m.result.Translation))
 }
 
 // speak plays the foreign side of the current lookup/translation. When the output

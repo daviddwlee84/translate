@@ -7,7 +7,9 @@ mismatch between `which translate` and the just-installed binary.
 **First seen**: 2026-07 (anticipated — no live collision yet)
 **Affects**: this host's PATH order, where `~/.dotfiles/bin` precedes
 `~/.local/bin`; triggered by the Justfile `install` recipe.
-**Status**: workaround documented; real fix tracked in `TODO.md` P2.
+**Status**: fixed — `just install` now targets `~/.local/bin` (2026-07-22), so it
+no longer creates a shadowing copy; the workaround below still applies if a stale
+`~/.dotfiles/bin/translate` lingers from a past run.
 
 ## Symptom
 

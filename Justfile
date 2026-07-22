@@ -43,9 +43,10 @@ tidy:
 test:
     go test ./...
 
-# install into the chezmoi bin dir (first on PATH)
-install: build
-    install -m 0755 translate ~/.dotfiles/bin/translate
+# install into ~/.local/bin (first on PATH; override with DIR=…)
+install DIR="~/.local/bin": build
+    mkdir -p {{DIR}}
+    install -m 0755 translate {{DIR}}/translate
 
 # remove build artifacts
 clean:

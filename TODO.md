@@ -25,8 +25,6 @@ Likely next batch — items you'd reach for if you sat down to work today.
 
 Worth doing, no rush.
 
-- [ ] **[S] Align `just install` with `go install` / `~/.local/bin`** — the `install` recipe copies the binary to `~/.dotfiles/bin` (PATH position 11), which **shadows** the `go install` location `~/.local/bin` (position 13); a stale `just install` copy would win silently. Point the recipe at `GOBIN=$HOME/.local/bin go install .` (or drop it) so both paths agree. See [pitfalls/duplicate-translate-on-path-dotfiles-bin-shadows-local-bin.md](pitfalls/duplicate-translate-on-path-dotfiles-bin-shadows-local-bin.md).
-
 ## P3
 
 Someday / nice-to-have.
@@ -47,6 +45,8 @@ Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
 
 ## Done
 
+- ✅ [2026-07-22] [—/S] TUI result pane: collapse excess blank lines between paragraphs — multi-paragraph translations (esp. terminal-scrape input) showed 2–4 blank rows per paragraph break while `^y` copy stayed clean. Root cause was `lipgloss.Style.Render` block-padding a multi-line block's blank lines out to the widest line's width, which the `SoftWrap` viewport then re-wrapped into several blank rows. Fixed by styling per line (`styles.renderTranslation`) + Unicode-aware blank-run collapsing (`collapseBlankLines`, handles `U+3000`/NBSP/CRLF). End-to-end guard drives the real Model with long wrapping paragraphs. See [pitfalls/tui-lipgloss-block-padding-inflates-blank-lines-in-viewport.md](pitfalls/tui-lipgloss-block-padding-inflates-blank-lines-in-viewport.md).
+- ✅ [2026-07-22] [P2/S] Align `just install` with `~/.local/bin` — the `install` recipe now installs to `~/.local/bin` (first on PATH, where `go install` lands), with a `DIR=` override, instead of `~/.dotfiles/bin`; both paths agree so a stale copy can't shadow. See [pitfalls/duplicate-translate-on-path-dotfiles-bin-shadows-local-bin.md](pitfalls/duplicate-translate-on-path-dotfiles-bin-shadows-local-bin.md).
 - ✅ [2026-07-20] [P3/M] Homebrew tap distribution — `brew install daviddwlee84/tap/translate` is live (build-from-source personal tap). Landed the two prereqs in v0.3.1 (injectable `var version` in `cmd/version.go` + MIT `LICENSE`) and published `Formula/translate.rb` to `daviddwlee84/homebrew-tap`. Verified install/`brew test` on macos_intel; no Gatekeeper/quarantine (source build). → [backlog/homebrew-distribution.md](backlog/homebrew-distribution.md).
 - ✅ [2026-07-20] [P2/M] Bilingual `--bilingual`/`-2` immersive pipe mode + ANSI-strip-on-input — piped colored input is now stripped (`bitext.Strip`) before reaching the LLM; `--bilingual` keeps each original block (color intact) and prints the translation beneath prose blocks, dimmed on a TTY, echoing indented command/code blocks untranslated. New pure `internal/bitext` pkg (Split/Render). Per-word recoloring (approaches A/B) rejected as over-engineering. → [backlog/bilingual-immersive-mode.md](backlog/bilingual-immersive-mode.md).
 - ✅ [2026-07-09] [P?/L] Wire `translate` into chezmoi dotfiles as an auto-installed go tool — go_tools ansible role added to dotfiles (commit 306bfb0): go install → ~/.local/bin, mise-gated, + cat_go upgrade path. Pending chezmoi apply on normal cadence.

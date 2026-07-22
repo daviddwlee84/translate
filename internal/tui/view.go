@@ -196,7 +196,7 @@ func (m Model) renderResult(res engine.TranslateResult) string {
 		return m.renderSuggestions(res)
 	}
 	var b strings.Builder
-	b.WriteString(m.st.trans.Render(res.Translation))
+	b.WriteString(m.st.renderTranslation(res.Translation))
 
 	if res.DetectedSource != "" && (m.source == "" || m.source == "auto") {
 		b.WriteString("\n" + m.st.dim.Render("detected: "+lang.Name(res.DetectedSource)))
