@@ -1,76 +1,57 @@
-# Plan: Collapse excess blank lines in the TUI result pane
+# Plan: Fix pair-mode routing for mixed-script (mostly-Latin + a few CJK) input
 
 ## Context
 
-When translating multi-paragraph text, the result pane shows large vertical gaps
-— several blank lines between paragraphs (see the user's screenshot: 2–3 blank
-rows between each translated paragraph).
+In bidirectional **pair mode** (`zh-TW⇄en`), pasting a mostly-English passage that
+contains a few Chinese proper nouns (e.g. 李榮浩, 李白) came back **unchanged as
+English** — an "English→English" no-op — and `^t` (re-pick target) didn't help.
+The footer showed `detected: english` (correct), which disagreed with the actual
+routing (to English), and that mismatch is the tell.
 
-**Root cause (confirmed by tracing the code):** the excess blank lines live in the
-translation *text*, not in styling or layout.
-- The `concise` prompt tells the model "Output ONLY the translated text"
-  (`internal/engine/prompt.go:21`), so the model faithfully reproduces the source's
-  paragraph structure — and occasionally emits runs of 2+ blank lines.
-- `finalize` does only `strings.TrimSpace(full)` (`internal/engine/llm.go:264`),
-  which trims the ends but leaves *internal* blank-line runs verbatim.
-- The `trans` style is just a color + bold, no padding/margins
-  (`internal/tui/styles.go:41`), and the result viewport uses `SoftWrap`
-  (`internal/tui/model.go:199–200`) which preserves blank lines exactly.
+**Root cause:** `lang.PairTarget` (`internal/lang/detect.go`) routes a CJK⇄Latin
+pair by `containsCJK(text)` — "does the text contain **any** CJK rune?". A single
+Han character flips the whole routing to the Latin side, so mostly-English text
+with a couple of Chinese names was treated as "CJK text" → target = English → the
+model "translated" already-English text into English. `^t` can't change this
+because the CJK-side decision ignores the target entirely; it's pure script
+presence. The `detected: english` label (`lang.Detect`, whatlanggo) was correct
+all along — the bug is in the **routing**, not detection.
 
-So nothing in the pipeline collapses the whitespace. The fix is a small
-display-layer normalizer.
+## Change (already implemented in the working tree; awaiting approval)
 
-**Decision (confirmed with user):** apply in the result pane (streaming + final)
-**and** in `^y` copy, so what you see equals what you copy. Leave engine output,
-saved history, and TTS verbatim. Collapse runs of 2+ blank lines down to a single
-blank line (paragraph breaks are kept; only the excess is removed).
+`internal/lang/detect.go`
+- Extract `isCJKRune(r rune) bool` (Han/Hiragana/Katakana/Hangul); `containsCJK`
+  now calls it (kept — still a tested utility).
+- Add `cjkDominant(text string) bool`: compares the CJK rune count against the
+  number of **non-CJK words** (maximal runs of non-CJK letters, any script).
+  Since one CJK rune ≈ a word, this measures which script *dominates* rather than
+  mere presence — a few CJK proper nouns in a long Latin passage no longer flip
+  routing, while genuinely CJK-heavy text still counts as CJK. Works for
+  non-Latin "other" scripts too (e.g. zh⇄ru) because it counts any non-CJK letter.
+- `PairTarget`: replace the `containsCJK(text)` branch with `cjkDominant(text)`
+  (predominantly CJK → Latin side; else → CJK side). Update the doc comment.
 
-## Changes
+`internal/lang/detect_test.go`
+- Keep existing cases; the CJK-majority mixed case `"hello 世界" → en` still holds
+  (2 Han > 1 Latin word). Add the reported-bug cases (`mostly-latin-few-han`,
+  `latin-with-cjk-filenames` → `zh-TW`) and a CJK-sentence-with-loanword case
+  (`"我今天在用 iPhone 打字" → en`). Add `TestCJKDominant`.
 
-### 1. New helper — `internal/tui/text.go`
-Add a small pure function (with doc comment matching the file's dense-comment style):
+Callers unaffected in signature: `cmd/root.go:268` (`effectiveTarget`),
+`internal/tui/update.go:433,461`, `internal/engine/prompt.go:178` (learn-mode
+direction) all keep calling `PairTarget`; they just get correct routing now.
 
-```go
-// collapseBlankLines trims trailing whitespace from each line and collapses any
-// run of 2+ blank (whitespace-only) lines down to a single blank line, so a
-// multi-paragraph translation keeps its paragraph breaks without the model's
-// occasional extra vertical whitespace piling up in the result pane.
-func collapseBlankLines(s string) string
-```
-Implementation: split on `"\n"`, `strings.TrimRight(line, " \t")` each line, keep at
-most one consecutive blank line, `strings.Join` back with `"\n"`. No regexp needed.
-(Leading/trailing blank lines are already handled by the callers' `TrimSpace`, but
-the helper is safe on them regardless.)
+## Verification (already run this session)
 
-### 2. Apply at the three free-text render/copy sites
-These are the only places the plain `Translation`/stream buffer becomes visible text
-(the learn/dictionary/suggestions renderers build their own structure and are not
-affected):
-
-- **Streaming render** — `internal/tui/update.go:98`
-  `m.vp.SetContent(m.st.trans.Render(collapseBlankLines(m.streamBuf)))`
-- **Final render** — `internal/tui/view.go:199` (in `renderResult`)
-  `b.WriteString(m.st.trans.Render(collapseBlankLines(res.Translation)))`
-- **Copy** — `internal/tui/update.go:502` (in `copyText`)
-  `return collapseBlankLines(strings.TrimSpace(m.result.Translation))`
-
-Applying the same helper to both the streaming buffer and the final result means the
-pane does not visually "jump" when the completed result replaces the live stream.
-
-### 3. Test — `internal/tui/text_test.go`
-Table-driven unit test for `collapseBlankLines` covering: 3+ blank lines → 1,
-single blank line preserved, whitespace-only lines treated as blank, trailing
-spaces stripped, no-blank text unchanged, empty string.
-
-## Verification
-
-- `go test ./internal/tui/...` — new helper test passes.
-- `go build ./...` — compiles.
-- Manual smoke (needs a configured provider): run the TUI, paste multi-paragraph
-  text that has double/triple blank lines between paragraphs, and confirm the result
-  pane now shows a single blank line between paragraphs; press `^y` and paste
-  elsewhere to confirm the copied text matches what's shown.
+- `go build ./...` — OK.
+- `go test ./internal/lang -run 'PairTarget|CJK'` — all PASS (incl. the two
+  reported-bug cases and `TestCJKDominant`).
+- End-to-end CLI (`translate --pair --pair-with en --to zh-TW …`), real provider:
+  - mostly-English + 李榮浩/李白 → **Chinese** output (was echoed English) ✓
+  - pure English → Chinese ✓ · pure Chinese → English ✓ · Chinese+`iPhone` → English ✓
+- Remaining (post-approval): run full `just check` + `go test ./...`, then decide
+  on commit / whether this rides into a follow-up patch release.
 
 ## Out of scope
-- Engine/history/TTS normalization (user chose display + copy only).
-- Learn / dictionary / suggestions renderers (they own their spacing; no change).
+- `lang.Detect` / whatlanggo itself — it returned `english` correctly here; no change.
+- Same-script pairs (en⇄es etc.) — untouched (still trigram `inLang`).

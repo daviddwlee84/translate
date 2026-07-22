@@ -198,6 +198,53 @@ define_default = true         # `translate define` prefers smart-dict when a pro
 Data: **CC-CEDICT** (CC BY-SA 4.0, © Paul Andrew Denisowski / MDBG) and
 **ECDICT** (MIT, © skywind3000).
 
+## HTTP API server (`translate serve`)
+
+Run a persistent **loopback** HTTP service so other clients (Raycast, Alfred,
+editors, `curl`, a browser) reuse one warm engine instead of spawning the binary
+per call:
+
+```sh
+translate serve                       # http://127.0.0.1:4155  (docs at /docs)
+translate serve --port 8080 --token "$TOK"
+```
+
+Endpoints (JSON in, JSON out — same shape the CLI emits with `--json`):
+
+```sh
+curl -s localhost:4155/v1/translate -d '{"text":"hello","target":"zh-TW"}'
+curl -s localhost:4155/v1/define    -d '{"word":"ephemeral"}'
+curl -s 'localhost:4155/v1/history?q=hello&limit=10'
+curl -N 'localhost:4155/v1/translate/stream?text=hello&target=zh-TW'   # SSE
+```
+
+- **Docs**: interactive Swagger UI at `/docs`, spec at `/openapi.json` (both embedded, offline).
+- **Security**: binds `127.0.0.1` only — a non-loopback `--bind` is refused unless a
+  token is set. `/v1/history` requires `Authorization: Bearer <token>` when a token
+  is configured (`[server].token`, or `token_env` to keep it out of `config.toml`).
+- **Streaming caveat**: SSE token cadence depends on the provider — copilot-proxy
+  buffers Claude `/v1/messages`, so Claude models still arrive in a burst.
+
+```toml
+[server]
+port      = 4155
+bind      = "127.0.0.1"
+token_env = "TRANSLATE_API_TOKEN"   # optional; guards /v1/history
+```
+
+## MCP server (`translate mcp`)
+
+Expose translate as tools to any MCP host (Claude Desktop/Code, Cursor, …) over
+**stdio** — no port, no token, history never leaves the pipe. Register:
+
+```json
+{ "command": "translate", "args": ["mcp"] }
+```
+
+Tools: `translate` (text + optional target/source), `define` (word), `history`
+(query + limit). Each returns readable text plus a typed structured result.
+Built on the official Go MCP SDK.
+
 ## Developer note — Charm v2 (`charm.land/*`)
 
 This project pins the **v2** Charm stack on the `charm.land/*` vanity module paths
@@ -213,6 +260,11 @@ The `internal/engine` and `internal/store` layers are pure Go (no TUI imports);
 the one-shot CLI and the Bubble Tea TUI drive the identical engine values and
 diverge only at presentation. A single monotonic `seq` counter in the TUI drives
 debounce-collapse, in-flight cancellation, and stale-result dropping.
+
+`internal/appcore` is the transport-agnostic core: it holds the engine builders and
+a `Service` (a warm engine + history store) that the one-shot CLI, the HTTP server
+(`internal/server`), and the MCP server (`internal/mcpserver`) all drive — so every
+front-end shares one translation path and `appcore` never imports `tui` or `cmd`.
 
 <!-- project-knowledge-harness:readme-roadmap -->
 <!-- Snippet for project's README.md, placed near other meta sections like

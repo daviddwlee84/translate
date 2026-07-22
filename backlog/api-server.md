@@ -1,10 +1,40 @@
 # Local HTTP API server (`translate serve`) + OpenAPI/Swagger
 
-**Status**: P? — needs a spike
+**Status**: ✅ Shipped 2026-07-22 (`translate serve` + `translate mcp`)
 **Effort**: L
-**Related**: `TODO.md` P? · `internal/engine/` · [raycast-extension.md](raycast-extension.md) · [../docs/raycast-extension.md](../docs/raycast-extension.md)
+**Related**: `TODO.md` Done · `internal/appcore/` · `internal/server/` · `internal/mcpserver/` · [raycast-extension.md](raycast-extension.md) · [../docs/raycast-extension.md](../docs/raycast-extension.md)
 
-## Context
+## Outcome (what shipped)
+
+Built as thin transport adapters over a new shared core, `internal/appcore.Service`,
+which lifts the engine builders + the warm engine + history glue out of package
+`cmd` (so `cmd`, `server`, and `mcpserver` all drive one core, no import cycle):
+
+- **`translate serve`** — stdlib `net/http` (Go 1.22 method+path routing, no
+  framework). `POST /v1/translate`, `POST /v1/define`, `GET /v1/history[?q=&limit=]`,
+  SSE `GET /v1/translate/stream`, `GET /healthz`. Responses reuse
+  `engine.TranslateResult` / `store.Record` verbatim. **Security**: loopback-only
+  bind (fail-closed unless a token is set); optional bearer token guards
+  `/v1/history` (`crypto/subtle` compare); config via a new `[server]` table
+  (`port` 4155, `bind`, `token`/`token_env`). Graceful shutdown (SIGINT/SIGTERM →
+  `http.Server.Shutdown`). History append hardened with `flock` for concurrent
+  server+CLI writes.
+- **OpenAPI/Swagger** — hand-written `internal/server/openapi.json` (OpenAPI 3.1) at
+  `/openapi.json`; vendored `swagger-ui-dist` (`go:embed`) at `/docs`, fully offline.
+  A reflection test guards schema↔struct drift.
+- **`translate mcp`** — MCP over **stdio** (no port/token) via the official Go SDK
+  `github.com/modelcontextprotocol/go-sdk` v1.6.1, exposing `translate` / `define` /
+  `history` tools (typed structured output inferred from the Go structs). For Claude
+  Desktop/Code, Cursor, etc.: `{ "command": "translate", "args": ["mcp"] }`.
+
+The streaming caveat below still holds: copilot-proxy buffers Claude `/v1/messages`,
+so *visible* SSE/MCP token cadence stays coarse for Claude regardless of transport.
+
+Original investigation & options are preserved below for context.
+
+---
+
+## Original context (2026-07, pre-build)
 
 2026-07, surfaced while building the Raycast extension. Today every client (the
 Raycast extension, script commands) **spawns the `translate` binary per call**. A
