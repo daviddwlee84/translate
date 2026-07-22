@@ -1,42 +1,40 @@
 import {
   Clipboard,
-  getPreferenceValues,
   getSelectedText,
+  launchCommand,
   LaunchProps,
+  LaunchType,
   showHUD,
 } from "@raycast/api";
-import { runTranslate } from "./lib/translate";
 
 interface Args {
   to?: string;
 }
 
+/**
+ * Grab the current selection (or clipboard) and open the editable Translate view
+ * prefilled with it — rather than translating and pasting blind. Falls back to the
+ * clipboard, and to an empty Translate when there's nothing to grab. An optional
+ * `to` argument seeds the target language.
+ */
 export default async function Command(props: LaunchProps<{ arguments: Args }>) {
-  const prefs = getPreferenceValues<{ defaultTarget?: string }>();
-  const to = props.arguments?.to || prefs.defaultTarget || "en";
-
-  let text = "";
+  let seed = "";
   try {
-    text = (await getSelectedText()).trim();
+    seed = (await getSelectedText()).trim();
   } catch {
     // No selection / app doesn't expose it — fall back to the clipboard.
-    text = ((await Clipboard.readText()) ?? "").trim();
-  }
-
-  if (!text) {
-    await showHUD("No text selected");
-    return;
+    seed = ((await Clipboard.readText()) ?? "").trim();
   }
 
   try {
-    const res = await runTranslate(text, { to });
-    await Clipboard.paste(res.translation);
-    await showHUD(
-      res.warnings?.length
-        ? `Translated (⚠ ${res.warnings[0]})`
-        : `Translated → ${res.target}`,
-    );
+    await launchCommand({
+      name: "translate",
+      type: LaunchType.UserInitiated,
+      context: { seed, to: props.arguments?.to || undefined },
+    });
   } catch (e) {
-    await showHUD(`Translation failed: ${String((e as Error).message ?? e)}`);
+    await showHUD(
+      `Couldn't open Translate: ${String((e as Error).message ?? e)}`,
+    );
   }
 }

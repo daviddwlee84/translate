@@ -5,6 +5,7 @@ import {
   Clipboard,
   getSelectedText,
   Icon,
+  LaunchProps,
   List,
   getPreferenceValues,
   showHUD,
@@ -28,17 +29,21 @@ interface Prefs {
   prefill?: string;
 }
 
-export default function Command() {
+export default function Command(
+  props: LaunchProps<{ launchContext?: { seed?: string; to?: string } }>,
+) {
   const prefs = getPreferenceValues<Prefs>();
   const debounceMs = Math.max(250, Number(prefs.liveDebounceMs) || 700);
-  const [text, setText] = useState("");
-  const [to, setTo] = useState(prefs.defaultTarget ?? "en");
+  const ctx = props.launchContext;
+  const [text, setText] = useState(ctx?.seed ?? "");
+  const [to, setTo] = useState(ctx?.to || prefs.defaultTarget || "en");
   const [engine, setEngine] = useState("");
 
   // On first open, seed the input from the current selection (or clipboard), per the
-  // "Prefill input from" preference. Empty when there's nothing to grab, so you can
-  // also just type. Runs once.
+  // "Prefill input from" preference — unless we were launched with a seed (from
+  // Translate Selection). Empty when there's nothing to grab, so you can also type.
   useEffect(() => {
+    if (ctx?.seed) return;
     const mode = prefs.prefill ?? "selection";
     if (mode === "none") return;
     (async () => {

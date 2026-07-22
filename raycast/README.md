@@ -4,12 +4,13 @@ Bring `translate` into [Raycast](https://raycast.com) — translate from root
 search or a global hotkey, backed by the **existing `translate` binary** (this
 directory contains no translation logic; it shells out to the CLI).
 
-There are two independent tracks:
+There are two independent tracks. **The TypeScript extension is the primary,
+full-featured path;** the script commands are an optional zero-Node fallback.
 
 | Track | Path | Build | Best for |
 |---|---|---|---|
-| **Script Commands** (bash) | [`script-commands/`](script-commands/) | none | fastest MVP, one-shot translate/define |
-| **TypeScript extension** | [`extension/`](extension/) | `npm` / `ray` | rich UI: live translate, translate-selection, actions |
+| **TypeScript extension** (primary) | [`extension/`](extension/) | `npm` / `ray` | full UI: live translate, selection prefill, define, history, engine switch, streaming |
+| **Script Commands** (bash, optional) | [`script-commands/`](script-commands/) | none | zero-Node fallback; one-shot translate/define |
 
 Everything requires the `translate` CLI on the machine:
 
@@ -19,7 +20,10 @@ just install                                  # → ~/.local/bin/translate
 brew install daviddwlee84/tap/translate
 ```
 
-## Track A — Script Commands
+## Track A — Script Commands (optional)
+
+The TypeScript extension (Track B) supersedes these; keep them only if you want a
+zero-Node fallback that runs without `ray develop`.
 
 ```sh
 just raycast-scripts   # chmod +x the scripts and print the directory to add
@@ -43,17 +47,19 @@ just raycast-dev       # npm install (first run) + `ray develop`
 Four commands appear in root search and **stay installed after you stop
 `ray develop`** — no store publish needed for personal use:
 **Translate** (type-to-translate, language dropdown, engine-override submenu,
-Copy/Paste/Speak), **Translate Selection** (selection→translate→paste, with an
-optional target-language argument), **Define** (dictionary lookup + LLM fallback),
-and **History** (browse/search past translations). `just raycast-build` /
-`just raycast-lint` type-check and lint.
+streaming ⌘↵, Copy/Paste/Speak), **Translate Selection** (grabs the selection or
+clipboard and opens Translate prefilled, with an optional target-language argument),
+**Define** (dictionary lookup + LLM fallback), and **History** (browse/search past
+translations). `just raycast-build` / `just raycast-lint` type-check and lint.
 
 Configure the binary path and defaults in the extension's **Preferences**
 (the binary is auto-probed in `~/.local/bin`, `/opt/homebrew/bin`,
 `/usr/local/bin`, `~/go/bin`; override with an absolute path if it lives elsewhere).
 Translate-as-you-type is **debounced** (default 700 ms, tunable via the
 "Live translate debounce" preference) and cancels superseded in-flight requests,
-so typing a phrase doesn't fire an LLM call per keystroke.
+so typing a phrase doesn't fire an LLM call per keystroke. Opening **Translate**
+seeds the input from the current selection (or clipboard) per the "Prefill input
+from" preference — set it to "Nothing" to always start empty.
 
 ## Gotchas (both tracks)
 

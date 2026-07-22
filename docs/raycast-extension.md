@@ -118,8 +118,9 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   `just raycast-scripts`, then add the directory in Raycast once.
 - **TS extension** — [`../raycast/extension/`](../raycast/extension/): commands
   `translate` (view: type-to-translate, language dropdown, engine-override submenu,
-  Copy/Paste/Speak), `translate-selection` (no-view: selection→translate→paste,
-  with an optional target-language argument), `define` (view: dictionary lookup +
+  Copy/Paste/Speak, selection/clipboard prefill), `translate-selection` (no-view:
+  grabs the selection/clipboard and opens Translate prefilled via `launchCommand` —
+  editable, not blind-paste), `define` (view: dictionary lookup +
   LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
   past translations). All share `src/lib/translate.ts` (binary resolve + typed
   `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).

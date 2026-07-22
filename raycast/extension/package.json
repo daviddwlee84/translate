@@ -33,7 +33,7 @@
     {
       "name": "translate-selection",
       "title": "Translate Selection",
-      "description": "Translate the selected (or clipboard) text and paste the result.",
+      "description": "Open Translate prefilled with the selected (or clipboard) text.",
       "mode": "no-view",
       "arguments": [
         {
