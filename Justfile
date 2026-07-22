@@ -31,9 +31,9 @@ check: fmt vet build
 fmt:
     gofmt -w cmd internal main.go
 
-# static analysis
+# static analysis (scoped to the Go tree; skips raycast/extension/node_modules)
 vet:
-    go vet ./...
+    go vet . ./cmd/... ./internal/...
 
 # tidy go.mod / go.sum
 tidy:
@@ -41,7 +41,7 @@ tidy:
 
 # run tests
 test:
-    go test ./...
+    go test ./cmd/... ./internal/...
 
 # install into ~/.local/bin (first on PATH; override with DIR=…)
 install DIR="~/.local/bin": build
