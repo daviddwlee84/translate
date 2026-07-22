@@ -60,6 +60,7 @@ func New(svc Service, opt Options) (*Server, error) {
 func newMux(h *handlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/translate", h.translate)
+	mux.HandleFunc("GET /v1/translate/stream", h.translateStream)
 	mux.HandleFunc("POST /v1/define", h.define)
 	mux.HandleFunc("GET /v1/history", h.requireToken(h.history))
 	mux.HandleFunc("GET /healthz", h.healthz)

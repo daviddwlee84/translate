@@ -23,6 +23,8 @@ type fakeService struct {
 	lastParams appcore.Params
 	lastSearch string
 	streamTok  []string
+	// streamFn, when set, overrides TranslateStream (used to test cancellation).
+	streamFn func(ctx context.Context, onToken func(string)) (*engine.TranslateResult, error)
 }
 
 func (f *fakeService) Translate(_ context.Context, p appcore.Params) (*engine.TranslateResult, error) {
@@ -30,8 +32,11 @@ func (f *fakeService) Translate(_ context.Context, p appcore.Params) (*engine.Tr
 	return f.result, f.err
 }
 
-func (f *fakeService) TranslateStream(_ context.Context, p appcore.Params, onToken func(string)) (*engine.TranslateResult, error) {
+func (f *fakeService) TranslateStream(ctx context.Context, p appcore.Params, onToken func(string)) (*engine.TranslateResult, error) {
 	f.lastParams = p
+	if f.streamFn != nil {
+		return f.streamFn(ctx, onToken)
+	}
 	for _, t := range f.streamTok {
 		if onToken != nil {
 			onToken(t)
