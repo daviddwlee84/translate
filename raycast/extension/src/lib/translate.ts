@@ -1,5 +1,5 @@
 import { getPreferenceValues } from "@raycast/api";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -188,4 +188,39 @@ export function speak(text: string, to: string): void {
   execFile(bin, [text, "--to", to, "--speak"], { env: baseEnv() }, () => {
     /* ignore — best-effort audio */
   });
+}
+
+export interface StreamHandlers {
+  onData: (chunk: string) => void;
+  onDone: (code: number | null) => void;
+  onError: (err: Error) => void;
+}
+
+/**
+ * Spawn `translate <text> --to <lang> [--engine] --stream` and stream plain-text
+ * stdout chunks (the `--stream` flag forces streaming over a pipe). Returns a
+ * cancel function that kills the child (call it on unmount). Whether output arrives
+ * progressively depends on the provider — ollama streams; copilot-proxy buffers its
+ * claude responses. `--no-history` avoids duplicating a history row the live view
+ * may already have recorded.
+ */
+export function spawnTranslateStream(
+  text: string,
+  opts: TranslateOptions,
+  h: StreamHandlers,
+): () => void {
+  const bin = resolveBinary();
+  const args = [text, "--to", opts.to ?? "en", "--stream", "--no-history"];
+  if (opts.engine) args.push("--engine", opts.engine);
+  if (opts.from) args.push("--from", opts.from);
+  if (opts.tier) args.push("--tier", opts.tier);
+
+  const child = spawn(bin, args, { env: baseEnv() });
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (d: Buffer | string) => h.onData(d.toString()));
+  child.on("close", (code) => h.onDone(code));
+  child.on("error", (err) => h.onError(err));
+  return () => {
+    if (!child.killed) child.kill("SIGTERM");
+  };
 }

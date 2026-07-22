@@ -124,7 +124,8 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   past translations). All share `src/lib/translate.ts` (binary resolve + typed
   `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).
   Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
-  debounced + abortable to avoid an LLM call per keystroke.
+  debounced + abortable to avoid an LLM call per keystroke, with an opt-in `⌘↵`
+  streaming view (`spawnTranslateStream` → `translate … --stream` → live `Detail`).
 
 ## References
 

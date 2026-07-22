@@ -10,6 +10,7 @@ import {
 import { usePromise } from "@raycast/utils";
 import { runTranslate, speak, LANGS, TranslateResult } from "./lib/translate";
 import { useDebouncedValue } from "./lib/hooks";
+import { StreamView } from "./lib/stream-view";
 
 const ENGINES = [
   { title: "Auto (fallback chain)", value: "" },
@@ -109,6 +110,18 @@ export default function Command() {
               <Action.Paste
                 title="Paste Translation"
                 content={data.translation}
+              />
+              <Action.Push
+                title="Translate (streaming)"
+                icon={Icon.Text}
+                shortcut={{ modifiers: ["cmd"], key: "return" }}
+                target={
+                  <StreamView
+                    text={debouncedText.trim()}
+                    to={to}
+                    engine={engine}
+                  />
+                }
               />
               <Action.CopyToClipboard
                 title="Copy Source Text"
