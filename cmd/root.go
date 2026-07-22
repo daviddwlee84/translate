@@ -479,14 +479,26 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		return nil, err
 	}
 
+	// streamed tracks whether any visible token actually reached stdout. We may
+	// request streaming (stream == true) yet the engine that answers ignores it and
+	// returns a single terminal result with zero tokens — every non-streaming engine
+	// does (the dictionary/smart-dict single-word path, google, a provider that fell
+	// back to a non-streaming completion). In that case nothing was printed during
+	// draining, so the final result must still be emitted below.
 	var onTok func(string)
+	streamed := false
 	if stream {
-		onTok = func(t string) { fmt.Print(t) }
+		onTok = func(t string) {
+			if t != "" {
+				streamed = true
+			}
+			fmt.Print(t)
+		}
 	}
 	res, err := engine.Drain(ch, onTok)
 	if err != nil {
-		if stream {
-			fmt.Println() // terminate any partial line before the error surfaces
+		if streamed {
+			fmt.Println() // terminate any partial streamed line before the error surfaces
 		}
 		return nil, err
 	}
@@ -509,9 +521,11 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 		}
 	case res.Learn != nil:
 		fmt.Print(renderLearnCLI(res))
-	case stream:
+	case streamed:
 		fmt.Println() // newline after the streamed tokens
 	default:
+		// Piped output, or a non-streaming engine answered a stream request with no
+		// tokens (dictionary single-word, google, …): emit the full result now.
 		fmt.Println(res.Translation)
 	}
 	return res, nil
