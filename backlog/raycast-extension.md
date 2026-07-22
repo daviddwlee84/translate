@@ -53,9 +53,16 @@ machine.
 
 ## Decision (if any)
 
-`2026-07 deferred` — ship the local-dev extension first and dogfood it. Revisit B/C once
-the daily-driver UX is proven and (for C) a designed icon + screenshots + registered
-author handle are in place.
+`2026-07 deferred` — ship the local-dev extension first and dogfood it; **private/
+personal is the current path**, public store stays deferred.
+
+Publish prerequisites now IN PLACE: registered author (`da-wei_lee`), `license: MIT`,
+a designed 512×512 icon (`assets/extension-icon.png`, source `.svg`), `CHANGELOG.md`,
+an extension `README.md`, and a graceful binary-not-found onboarding view. Remaining
+before a public PR: **3–6 screenshots (2000×1250, GUI capture)** and a decision on the
+binary-dependency review friction (a private org store sidesteps it entirely). The
+full dev→publish process is documented in
+[../docs/raycast-extension.md](../docs/raycast-extension.md) "Publishing & distribution".
 
 ## References
 

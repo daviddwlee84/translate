@@ -128,6 +128,62 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   debounced + abortable to avoid an LLM call per keystroke, with an opt-in `⌘↵`
   streaming view (`spawnTranslateStream` → `translate … --stream` → live `Detail`).
 
+## Publishing & distribution
+
+The journey from local development to the store, and why we default to
+local/personal for now.
+
+### Three distribution paths
+
+| Path | Review | Audience | How | Our stance |
+|---|---|---|---|---|
+| **Local dev** | none | just you | `just raycast-dev` (`ray develop`) — persists in root search after you stop dev | **current default** |
+| **Private / org store** | none (org-gated) | your Raycast org | set `owner` in package.json → `npm run publish`; needs Raycast Pro/Team | option if sharing to a team |
+| **Public store** | **human review** | everyone | `npm run publish` opens a PR to `raycast/extensions` → CI + Raycast-team review → merge auto-publishes | deferred → [../backlog/raycast-extension.md](../backlog/raycast-extension.md) |
+
+### It is *not* like PyPI
+
+PyPI is self-service: register + `twine upload`, published instantly, no review.
+The Raycast **public** store is curated — closer to Homebrew core:
+
+- `npm run publish` (= `npx @raycast/api@latest publish`) **authenticates with
+  GitHub** and auto-opens a pull request into `github.com/raycast/extensions`.
+- Automated CI checks run, then the **Raycast team reviews** and "request[s] changes
+  when required"; on merge it auto-publishes. Turnaround is days, not seconds.
+- Auth is **GitHub** (for the PR). Your **Raycast account** only supplies the
+  validated `author` handle (ours: `da-wei_lee`).
+
+### Public-store requirements (checklist)
+
+Verified against developers.raycast.com. `✓` = done in this repo.
+
+- `✓` `author` = registered Raycast username; `license: "MIT"`; ≥1 category;
+  one-sentence description; `platforms`; `package-lock.json`; `npm run build` +
+  `ray lint` clean.
+- `✓` **512×512 PNG icon** that reads in light + dark (not the default Raycast icon).
+- `✓` **`CHANGELOG.md`** at the extension root (h2 headers; `{PR_MERGE_DATE}` placeholder).
+- `✓` **`README.md`** at the extension root (setup/onboarding; media under a top-level
+  `media/` folder).
+- `☐` **≥3 (max 6) screenshots at 2000×1250 PNG** — captured from the *running*
+  extension (a GUI step; not scriptable here).
+- `☐` `npm run publish` (GitHub auth) + choose public vs private.
+
+### The binary-dependency hurdle
+
+The store guideline *"Avoid asking users to perform additional downloads"* is exactly
+our case — the extension needs a user-installed `translate` (brew / `go install`).
+"Calling known system binaries" is allowed, but a custom go-install CLI is a gray
+area reviewers may push back on. Mitigations already in place:
+
+- Extension `README.md` documents the dependency + install commands.
+- A graceful **binary-not-found onboarding** view (`src/lib/binary-not-found.tsx`) with
+  copyable install commands + a jump to preferences — instead of a bare error.
+- We do **not** bundle the ~22 MB Go binary (store discourages "heavy" binaries;
+  shipping release binaries is a separate item — `backlog/release-binaries.md`).
+
+This friction is why the public store is deferred and local/private is the current
+path; the analysis lives in [../backlog/raycast-extension.md](../backlog/raycast-extension.md).
+
 ## References
 
 - Raycast API — manifest, commands, UI: https://developers.raycast.com/
