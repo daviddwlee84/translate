@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActionPanel,
   Action,
@@ -8,19 +8,15 @@ import {
   showHUD,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { runTranslate, speak, TranslateResult } from "./lib/translate";
+import { runTranslate, speak, LANGS, TranslateResult } from "./lib/translate";
+import { useDebouncedValue } from "./lib/hooks";
 
-const LANGS = [
-  { title: "English", value: "en" },
-  { title: "Chinese (Traditional)", value: "zh-TW" },
-  { title: "Chinese (Simplified)", value: "zh-CN" },
-  { title: "Japanese", value: "ja" },
-  { title: "Korean", value: "ko" },
-  { title: "Spanish", value: "es" },
-  { title: "French", value: "fr" },
-  { title: "German", value: "de" },
-  { title: "Italian", value: "it" },
-  { title: "Portuguese", value: "pt" },
+const ENGINES = [
+  { title: "Auto (fallback chain)", value: "" },
+  { title: "Google", value: "google" },
+  { title: "Dictionary (offline)", value: "dict" },
+  { title: "Copilot", value: "copilot" },
+  { title: "Ollama", value: "ollama" },
 ];
 
 interface Prefs {
@@ -28,21 +24,12 @@ interface Prefs {
   liveDebounceMs?: string;
 }
 
-/** Debounce a value so the expensive translate call only fires after the user pauses typing. */
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 export default function Command() {
   const prefs = getPreferenceValues<Prefs>();
   const debounceMs = Math.max(250, Number(prefs.liveDebounceMs) || 700);
   const [text, setText] = useState("");
   const [to, setTo] = useState(prefs.defaultTarget ?? "en");
+  const [engine, setEngine] = useState("");
 
   // Only translate once the user pauses (debounce) and cancel superseded in-flight
   // calls (abortable) — so typing a phrase no longer fires an LLM call per keystroke.
@@ -50,15 +37,20 @@ export default function Command() {
   const abortable = useRef<AbortController>();
 
   const { data, isLoading, error } = usePromise(
-    async (q: string, target: string): Promise<TranslateResult | undefined> => {
+    async (
+      q: string,
+      target: string,
+      eng: string,
+    ): Promise<TranslateResult | undefined> => {
       const trimmed = q.trim();
       if (!trimmed) return undefined;
       return runTranslate(trimmed, {
         to: target,
+        engine: eng || undefined,
         signal: abortable.current?.signal,
       });
     },
-    [debouncedText, to],
+    [debouncedText, to, engine],
     { abortable },
   );
 
@@ -118,6 +110,11 @@ export default function Command() {
                 title="Paste Translation"
                 content={data.translation}
               />
+              <Action.CopyToClipboard
+                title="Copy Source Text"
+                content={debouncedText.trim()}
+                shortcut={{ modifiers: ["cmd"], key: "i" }}
+              />
               <Action
                 title="Speak"
                 icon={Icon.SpeakerHigh}
@@ -126,6 +123,20 @@ export default function Command() {
                   await showHUD("Speaking…");
                 }}
               />
+              <ActionPanel.Submenu
+                title="Engine"
+                icon={Icon.Gear}
+                shortcut={{ modifiers: ["cmd"], key: "e" }}
+              >
+                {ENGINES.map((e) => (
+                  <Action
+                    key={e.value || "auto"}
+                    title={e.title}
+                    icon={engine === e.value ? Icon.CheckCircle : Icon.Circle}
+                    onAction={() => setEngine(e.value)}
+                  />
+                ))}
+              </ActionPanel.Submenu>
             </ActionPanel>
           }
         />

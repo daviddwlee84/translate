@@ -19,7 +19,39 @@
       "name": "translate-selection",
       "title": "Translate Selection",
       "description": "Translate the selected (or clipboard) text and paste the result.",
-      "mode": "no-view"
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "to",
+          "type": "dropdown",
+          "placeholder": "Language",
+          "required": false,
+          "data": [
+            { "title": "English", "value": "en" },
+            { "title": "Chinese (Traditional)", "value": "zh-TW" },
+            { "title": "Chinese (Simplified)", "value": "zh-CN" },
+            { "title": "Japanese", "value": "ja" },
+            { "title": "Korean", "value": "ko" },
+            { "title": "Spanish", "value": "es" },
+            { "title": "French", "value": "fr" },
+            { "title": "German", "value": "de" },
+            { "title": "Italian", "value": "it" },
+            { "title": "Portuguese", "value": "pt" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "define",
+      "title": "Define",
+      "description": "Dictionary lookup (offline CC-CEDICT/ECDICT, LLM fallback).",
+      "mode": "view"
+    },
+    {
+      "name": "history",
+      "title": "History",
+      "description": "Browse and search translation history.",
+      "mode": "view"
     }
   ],
   "preferences": [

@@ -42,8 +42,10 @@ Raycast offers four ways to surface functionality. We ship the middle two.
   rather than the `useExec` hook, because `useExec` buffers with a 10 s default
   timeout that LLM engines exceed (and its `timeout: 0` is coerced back to 10000).
   True token streaming would require `child_process.spawn` appending stdout chunks
-  into React state bound to `Detail.markdown` — deferred; `--json` returns the
-  finished result fast enough.
+  into React state bound to `Detail.markdown` — **deferred**, and it also needs a
+  binary change: the CLI only streams to a TTY, so piped stdout (how Raycast always
+  invokes it) yields the whole result at once. A `--stream` flag (TODO) is the
+  prerequisite. For now `--json` returns the finished result fast enough.
 - **Preferences** (`getPreferenceValues()`): persisted per-extension settings —
   our `binaryPath`, `defaultTarget`, `engine`, `tier`.
 - **Input/UI:** `getSelectedText()` (frontmost app's selection),
@@ -112,11 +114,14 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   (`silent`, copies; blank arg → clipboard), `define-word`. Install:
   `just raycast-scripts`, then add the directory in Raycast once.
 - **TS extension** — [`../raycast/extension/`](../raycast/extension/): commands
-  `translate` (view) + `translate-selection` (no-view), sharing
-  `src/lib/translate.ts` (binary resolve + typed `execFile` wrapper mirroring
-  `internal/engine/engine.go`'s `TranslateResult`). Run: `just raycast-dev`
-  (`build`/`lint` variants exist). `define`/`history`/`speak` commands are cheap
-  fast-follows on the same `--json` plumbing.
+  `translate` (view: type-to-translate, language dropdown, engine-override submenu,
+  Copy/Paste/Speak), `translate-selection` (no-view: selection→translate→paste,
+  with an optional target-language argument), `define` (view: dictionary lookup +
+  LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
+  past translations). All share `src/lib/translate.ts` (binary resolve + typed
+  `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).
+  Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
+  debounced + abortable to avoid an LLM call per keystroke.
 
 ## References
 

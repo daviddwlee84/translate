@@ -7,6 +7,21 @@ import { join } from "node:path";
 
 const pexecFile = promisify(execFile);
 
+/** The target languages offered in dropdowns. Keep in sync with the static
+ *  dropdowns declared in package.json (command arguments can't read this at runtime). */
+export const LANGS = [
+  { title: "English", value: "en" },
+  { title: "Chinese (Traditional)", value: "zh-TW" },
+  { title: "Chinese (Simplified)", value: "zh-CN" },
+  { title: "Japanese", value: "ja" },
+  { title: "Korean", value: "ko" },
+  { title: "Spanish", value: "es" },
+  { title: "French", value: "fr" },
+  { title: "German", value: "de" },
+  { title: "Italian", value: "it" },
+  { title: "Portuguese", value: "pt" },
+];
+
 /** Mirrors internal/engine/engine.go TranslateResult (JSON tags). */
 export interface Definition {
   definition: string;
@@ -36,6 +51,18 @@ export interface TranslateResult {
   model?: string;
   dictionary?: DictEntry;
   suggestions?: string[];
+}
+
+/** One row of `translate history --json`. */
+export interface HistoryEntry {
+  id: string;
+  ts: string;
+  source_lang: string;
+  target_lang: string;
+  engine?: string;
+  model?: string;
+  input: string;
+  output: string;
 }
 
 interface Prefs {
@@ -112,13 +139,47 @@ export async function runTranslate(
   return JSON.parse(stdout) as TranslateResult;
 }
 
-export async function runDefine(word: string): Promise<DictEntry> {
+/**
+ * `translate define <word> --json`. The top-level payload is a TranslateResult
+ * whose `.dictionary` holds the entry (on a dict hit); on a miss it falls back
+ * to an LLM definition in `.translation` with a `warnings[]` note.
+ */
+export async function runDefine(
+  word: string,
+  signal?: AbortSignal,
+): Promise<TranslateResult> {
   const bin = resolveBinary();
   const { stdout } = await pexecFile(bin, ["define", word, "--json"], {
     timeout: 60_000,
+    maxBuffer: 16 * 1024 * 1024,
     env: baseEnv(),
+    signal,
   });
-  return JSON.parse(stdout) as DictEntry;
+  return JSON.parse(stdout) as TranslateResult;
+}
+
+/**
+ * `translate history --json` (recent) or `translate history search <q> --json`.
+ * Both return an array of HistoryEntry. Local + fast (no network).
+ */
+export async function runHistory(
+  query?: string,
+  limit = 200,
+  signal?: AbortSignal,
+): Promise<HistoryEntry[]> {
+  const bin = resolveBinary();
+  const q = query?.trim();
+  const args = q
+    ? ["history", "search", q, "--json"]
+    : ["history", "--json", "--limit", String(limit)];
+  const { stdout } = await pexecFile(bin, args, {
+    timeout: 30_000,
+    maxBuffer: 32 * 1024 * 1024,
+    env: baseEnv(),
+    signal,
+  });
+  const parsed = JSON.parse(stdout);
+  return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
 }
 
 /** Fire-and-forget TTS via `translate <text> --to <lang> --speak`. */

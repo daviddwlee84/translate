@@ -2,12 +2,18 @@ import {
   Clipboard,
   getPreferenceValues,
   getSelectedText,
+  LaunchProps,
   showHUD,
 } from "@raycast/api";
 import { runTranslate } from "./lib/translate";
 
-export default async function Command() {
+interface Args {
+  to?: string;
+}
+
+export default async function Command(props: LaunchProps<{ arguments: Args }>) {
   const prefs = getPreferenceValues<{ defaultTarget?: string }>();
+  const to = props.arguments?.to || prefs.defaultTarget || "en";
 
   let text = "";
   try {
@@ -23,7 +29,7 @@ export default async function Command() {
   }
 
   try {
-    const res = await runTranslate(text, { to: prefs.defaultTarget });
+    const res = await runTranslate(text, { to });
     await Clipboard.paste(res.translation);
     await showHUD(
       res.warnings?.length

@@ -40,9 +40,13 @@ just raycast-dev       # npm install (first run) + `ray develop`
 ```
 
 `ray develop` registers the extension with the running Raycast app and hot-reloads.
-The two commands (**Translate**, **Translate Selection**) appear in root search and
-**stay installed after you stop `ray develop`** — no store publish needed for
-personal use. `just raycast-build` / `just raycast-lint` type-check and lint.
+Four commands appear in root search and **stay installed after you stop
+`ray develop`** — no store publish needed for personal use:
+**Translate** (type-to-translate, language dropdown, engine-override submenu,
+Copy/Paste/Speak), **Translate Selection** (selection→translate→paste, with an
+optional target-language argument), **Define** (dictionary lookup + LLM fallback),
+and **History** (browse/search past translations). `just raycast-build` /
+`just raycast-lint` type-check and lint.
 
 Configure the binary path and defaults in the extension's **Preferences**
 (the binary is auto-probed in `~/.local/bin`, `/opt/homebrew/bin`,
