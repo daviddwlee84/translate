@@ -13,7 +13,22 @@
       "name": "translate",
       "title": "Translate",
       "description": "Translate text into a target language.",
-      "mode": "view"
+      "mode": "view",
+      "preferences": [
+        {
+          "name": "prefill",
+          "title": "Prefill input from",
+          "description": "When opening Translate, seed the input box from the current selection or the clipboard (empty when there is nothing to grab, so you can also just type).",
+          "type": "dropdown",
+          "required": false,
+          "default": "selection",
+          "data": [
+            { "title": "Selected text", "value": "selection" },
+            { "title": "Clipboard", "value": "clipboard" },
+            { "title": "Nothing (type manually)", "value": "none" }
+          ]
+        }
+      ]
     },
     {
       "name": "translate-selection",

@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionPanel,
   Action,
+  Clipboard,
+  getSelectedText,
   Icon,
   List,
   getPreferenceValues,
@@ -23,6 +25,7 @@ const ENGINES = [
 interface Prefs {
   defaultTarget?: string;
   liveDebounceMs?: string;
+  prefill?: string;
 }
 
 export default function Command() {
@@ -31,6 +34,27 @@ export default function Command() {
   const [text, setText] = useState("");
   const [to, setTo] = useState(prefs.defaultTarget ?? "en");
   const [engine, setEngine] = useState("");
+
+  // On first open, seed the input from the current selection (or clipboard), per the
+  // "Prefill input from" preference. Empty when there's nothing to grab, so you can
+  // also just type. Runs once.
+  useEffect(() => {
+    const mode = prefs.prefill ?? "selection";
+    if (mode === "none") return;
+    (async () => {
+      let seed = "";
+      if (mode === "selection") {
+        try {
+          seed = (await getSelectedText()).trim();
+        } catch {
+          seed = "";
+        }
+      } else if (mode === "clipboard") {
+        seed = ((await Clipboard.readText()) ?? "").trim();
+      }
+      if (seed) setText(seed);
+    })();
+  }, []);
 
   // Only translate once the user pauses (debounce) and cancel superseded in-flight
   // calls (abortable) — so typing a phrase no longer fires an LLM call per keystroke.
@@ -159,7 +183,8 @@ export default function Command() {
 }
 
 function renderMarkdown(r: TranslateResult): string {
-  const lines = [`# ${r.translation}`, ""];
+  // Plain paragraph (not an H1) so long translations read comfortably.
+  const lines = [r.translation, ""];
   if (r.alternatives?.length)
     lines.push("## Alternatives", ...r.alternatives.map((a) => `- ${a}`), "");
   if (r.notes) lines.push("## Notes", r.notes, "");
