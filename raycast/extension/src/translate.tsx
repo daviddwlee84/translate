@@ -11,9 +11,16 @@ import {
   showHUD,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { runTranslate, speak, LANGS, TranslateResult } from "./lib/translate";
+import {
+  runTranslate,
+  speak,
+  LANGS,
+  isBinaryMissing,
+  TranslateResult,
+} from "./lib/translate";
 import { useDebouncedValue } from "./lib/hooks";
 import { StreamView } from "./lib/stream-view";
+import { BinaryNotFound } from "./lib/binary-not-found";
 
 const ENGINES = [
   { title: "Auto (fallback chain)", value: "" },
@@ -109,11 +116,15 @@ export default function Command(
       }
     >
       {error ? (
-        <List.EmptyView
-          icon={Icon.Warning}
-          title="Translation failed"
-          description={String(error.message ?? error)}
-        />
+        isBinaryMissing(error) ? (
+          <BinaryNotFound />
+        ) : (
+          <List.EmptyView
+            icon={Icon.Warning}
+            title="Translation failed"
+            description={String(error.message ?? error)}
+          />
+        )
       ) : !data ? (
         <List.EmptyView
           icon={Icon.Globe}

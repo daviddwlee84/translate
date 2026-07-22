@@ -1,11 +1,12 @@
 import { useRef } from "react";
 import { ActionPanel, Action, Icon, List } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { runHistory, HistoryEntry } from "./lib/translate";
+import { runHistory, isBinaryMissing, HistoryEntry } from "./lib/translate";
+import { BinaryNotFound } from "./lib/binary-not-found";
 
 export default function Command() {
   const abortable = useRef<AbortController>();
-  const { data, isLoading, revalidate } = usePromise(
+  const { data, isLoading, error, revalidate } = usePromise(
     async (): Promise<HistoryEntry[]> =>
       runHistory(undefined, 200, abortable.current?.signal),
     [],
@@ -20,7 +21,17 @@ export default function Command() {
       searchBarPlaceholder="Search history…"
       isShowingDetail={entries.length > 0}
     >
-      {entries.length === 0 && !isLoading ? (
+      {error ? (
+        isBinaryMissing(error) ? (
+          <BinaryNotFound />
+        ) : (
+          <List.EmptyView
+            icon={Icon.Warning}
+            title="Couldn't load history"
+            description={String(error.message ?? error)}
+          />
+        )
+      ) : entries.length === 0 && !isLoading ? (
         <List.EmptyView
           icon={Icon.Clock}
           title="No history yet"

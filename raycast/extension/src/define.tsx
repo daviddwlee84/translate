@@ -1,8 +1,14 @@
 import { useRef, useState } from "react";
 import { ActionPanel, Action, Icon, List, showHUD } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { runDefine, speak, TranslateResult } from "./lib/translate";
+import {
+  runDefine,
+  speak,
+  isBinaryMissing,
+  TranslateResult,
+} from "./lib/translate";
 import { useDebouncedValue } from "./lib/hooks";
+import { BinaryNotFound } from "./lib/binary-not-found";
 
 export default function Command() {
   const [word, setWord] = useState("");
@@ -32,11 +38,15 @@ export default function Command() {
       isShowingDetail={!!data && !showSuggestions}
     >
       {error ? (
-        <List.EmptyView
-          icon={Icon.Warning}
-          title="Lookup failed"
-          description={String(error.message ?? error)}
-        />
+        isBinaryMissing(error) ? (
+          <BinaryNotFound />
+        ) : (
+          <List.EmptyView
+            icon={Icon.Warning}
+            title="Lookup failed"
+            description={String(error.message ?? error)}
+          />
+        )
       ) : !data ? (
         <List.EmptyView
           icon={Icon.Book}

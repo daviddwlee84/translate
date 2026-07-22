@@ -102,6 +102,11 @@ export function resolveBinary(): string {
   );
 }
 
+/** True when an error came from resolveBinary failing to locate the CLI. */
+export function isBinaryMissing(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith("translate CLI not found");
+}
+
 function baseEnv(): NodeJS.ProcessEnv {
   // Ensure the CLI can locate its config.toml (providers/API keys) under launchd.
   return { ...process.env, HOME: process.env.HOME ?? homedir() };
