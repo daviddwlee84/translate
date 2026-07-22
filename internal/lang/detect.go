@@ -29,18 +29,51 @@ func IsChinese(text string) bool {
 	return false
 }
 
+// isCJKRune reports whether r is a CJK-script rune (Han, Hiragana, Katakana, or
+// Hangul) — one such rune is roughly a word's worth of content.
+func isCJKRune(r rune) bool {
+	return unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
+		unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r)
+}
+
 // containsCJK reports whether text contains any CJK-script rune (Han, Hiragana,
 // Katakana, or Hangul). This is a reliable, offline signal for routing a
 // CJK/non-CJK language pair — unlike trigram detection, it is confident even on
 // very short input.
 func containsCJK(text string) bool {
 	for _, r := range text {
-		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
-			unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r) {
+		if isCJKRune(r) {
 			return true
 		}
 	}
 	return false
+}
+
+// cjkDominant reports whether CJK script dominates text, weighing content rather
+// than mere presence: it compares the CJK rune count against the number of
+// non-CJK "words" (maximal runs of non-CJK letters, any script). Because one CJK
+// rune is roughly a word, this keeps a few CJK proper nouns embedded in a long
+// Latin passage from flipping the routing — the bug where a mostly-English
+// paragraph containing "李榮浩" was treated as Chinese and "translated" back into
+// English — while genuinely CJK-heavy text still counts as CJK.
+func cjkDominant(text string) bool {
+	var cjk, otherWords int
+	inWord := false
+	for _, r := range text {
+		switch {
+		case isCJKRune(r):
+			cjk++
+			inWord = false
+		case unicode.IsLetter(r):
+			if !inWord {
+				otherWords++
+				inWord = true
+			}
+		default:
+			inWord = false
+		}
+	}
+	return cjk > otherWords
 }
 
 // isCJKLang reports whether a language code is Chinese, Japanese, or Korean.
@@ -56,11 +89,13 @@ func isCJKLang(code string) bool {
 // languages the text is written in and return the OTHER one (so "foreign → my
 // language, my language → foreign" both work from one input box).
 //
-// When exactly one side of the pair is a CJK language, routing is decided purely
-// by script presence — reliable and offline, and symmetric regardless of which
-// side is "home". This is what makes short Latin input like "test" route to the
-// CJK side instead of falling through to the wrong language. Same-script pairs
-// (e.g. en⇄es) fall back to best-effort trigram detection.
+// When exactly one side of the pair is a CJK language, routing is decided by
+// which script dominates the text — reliable and offline, and symmetric
+// regardless of which side is "home". Dominance (not mere presence) is what lets
+// short Latin input like "test" route to the CJK side, while a few CJK proper
+// nouns inside a long Latin passage stay routed to the CJK side too (rather than
+// flipping the whole thing to Latin). Same-script pairs (e.g. en⇄es) fall back to
+// best-effort trigram detection.
 func PairTarget(home, away, text string) string {
 	if away == "" || away == home {
 		return home
@@ -71,10 +106,10 @@ func PairTarget(home, away, text string) string {
 		if awayCJK {
 			cjk, latin = away, home
 		}
-		if containsCJK(text) {
-			return latin // CJK text → the non-CJK language
+		if cjkDominant(text) {
+			return latin // predominantly CJK → the non-CJK language
 		}
-		return cjk // non-CJK text → the CJK language
+		return cjk // predominantly non-CJK → the CJK language
 	}
 	// Same-script pair (both or neither CJK): best-effort, symmetric detection.
 	inHome, inAway := inLang(text, home), inLang(text, away)

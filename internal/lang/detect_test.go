@@ -15,8 +15,15 @@ func TestPairTargetCJKNonCJK(t *testing.T) {
 		// asymmetric router broke on short Latin input.
 		{"en-home/english-in", "en", "zh-TW", "test", "zh-TW"},
 		{"en-home/chinese-in", "en", "zh-TW", "測試", "en"},
-		// A mixed sentence with any Han routes to the non-CJK side.
-		{"mixed-han", "zh-TW", "en", "hello 世界", "en"},
+		// Routing follows which script DOMINATES, not mere presence:
+		// a CJK-majority mixed sentence still routes to the non-CJK side …
+		{"mixed-han-majority", "zh-TW", "en", "hello 世界", "en"},
+		// … but a few CJK proper nouns inside a long Latin passage must NOT flip it
+		// to English (the reported bug: mostly-English text came back unchanged).
+		{"mostly-latin-few-han", "zh-TW", "en", "The song by 李榮浩 and 李白 was a genuine hit worldwide", "zh-TW"},
+		{"latin-with-cjk-filenames", "zh-TW", "en", "renamed li-ronghao-libai and shexiang-furen; verified 李榮浩/李白 exact match", "zh-TW"},
+		// A CJK sentence with an embedded Latin loanword still routes to Latin.
+		{"cjk-with-loanword", "zh-TW", "en", "我今天在用 iPhone 打字", "en"},
 		// Degenerate configs collapse to home (a no-op) rather than misbehaving.
 		{"same-lang", "en", "en", "test", "en"},
 		{"empty-away", "zh-TW", "", "test", "zh-TW"},
@@ -41,6 +48,33 @@ func TestContainsCJK(t *testing.T) {
 	for _, s := range no {
 		if containsCJK(s) {
 			t.Errorf("containsCJK(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestCJKDominant(t *testing.T) {
+	dominant := []string{
+		"你好世界",            // pure CJK
+		"hello 世界",        // 2 Han > 1 Latin word
+		"我今天在用 iPhone 打字", // Han majority despite a loanword
+		"テストです",           // Japanese kana
+	}
+	notDominant := []string{
+		"test",
+		"hello world",
+		"",
+		"123 + 456",
+		"The song by 李榮浩 and 李白 was a genuine hit worldwide", // few Han in Latin prose
+		"renamed li-ronghao-libai; verified 李榮浩/李白 exact match",
+	}
+	for _, s := range dominant {
+		if !cjkDominant(s) {
+			t.Errorf("cjkDominant(%q) = false, want true", s)
+		}
+	}
+	for _, s := range notDominant {
+		if cjkDominant(s) {
+			t.Errorf("cjkDominant(%q) = true, want false", s)
 		}
 	}
 }
