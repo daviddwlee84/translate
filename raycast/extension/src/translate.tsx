@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionPanel,
   Action,
@@ -23,26 +23,54 @@ const LANGS = [
   { title: "Portuguese", value: "pt" },
 ];
 
+interface Prefs {
+  defaultTarget?: string;
+  liveDebounceMs?: string;
+}
+
+/** Debounce a value so the expensive translate call only fires after the user pauses typing. */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export default function Command() {
-  const prefs = getPreferenceValues<{ defaultTarget?: string }>();
+  const prefs = getPreferenceValues<Prefs>();
+  const debounceMs = Math.max(250, Number(prefs.liveDebounceMs) || 700);
   const [text, setText] = useState("");
   const [to, setTo] = useState(prefs.defaultTarget ?? "en");
+
+  // Only translate once the user pauses (debounce) and cancel superseded in-flight
+  // calls (abortable) — so typing a phrase no longer fires an LLM call per keystroke.
+  const debouncedText = useDebouncedValue(text, debounceMs);
+  const abortable = useRef<AbortController>();
 
   const { data, isLoading, error } = usePromise(
     async (q: string, target: string): Promise<TranslateResult | undefined> => {
       const trimmed = q.trim();
       if (!trimmed) return undefined;
-      return runTranslate(trimmed, { to: target });
+      return runTranslate(trimmed, {
+        to: target,
+        signal: abortable.current?.signal,
+      });
     },
-    [text, to],
+    [debouncedText, to],
+    { abortable },
   );
+
+  // Keep the loading bar up while the typed text is still ahead of the debounced value.
+  const pending =
+    text.trim().length > 0 && text.trim() !== debouncedText.trim();
 
   return (
     <List
-      isLoading={isLoading}
+      isLoading={isLoading || pending}
       searchText={text}
       onSearchTextChange={setText}
-      throttle
       searchBarPlaceholder="Type text to translate…"
       isShowingDetail={!!data}
       searchBarAccessory={
@@ -94,7 +122,7 @@ export default function Command() {
                 title="Speak"
                 icon={Icon.SpeakerHigh}
                 onAction={async () => {
-                  speak(text.trim(), to);
+                  speak(debouncedText.trim(), to);
                   await showHUD("Speaking…");
                 }}
               />

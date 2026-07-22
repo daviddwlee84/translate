@@ -47,6 +47,9 @@ personal use. `just raycast-build` / `just raycast-lint` type-check and lint.
 Configure the binary path and defaults in the extension's **Preferences**
 (the binary is auto-probed in `~/.local/bin`, `/opt/homebrew/bin`,
 `/usr/local/bin`, `~/go/bin`; override with an absolute path if it lives elsewhere).
+Translate-as-you-type is **debounced** (default 700 ms, tunable via the
+"Live translate debounce" preference) and cancels superseded in-flight requests,
+so typing a phrase doesn't fire an LLM call per keystroke.
 
 ## Gotchas (both tracks)
 

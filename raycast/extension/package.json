@@ -59,6 +59,14 @@
         { "title": "Fast", "value": "fast" },
         { "title": "Max", "value": "max" }
       ]
+    },
+    {
+      "name": "liveDebounceMs",
+      "title": "Live translate debounce (ms)",
+      "description": "How long to wait after you stop typing before translating (min 250). Higher = fewer LLM calls while typing.",
+      "type": "textfield",
+      "required": false,
+      "default": "700"
     }
   ],
   "dependencies": {

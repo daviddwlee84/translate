@@ -86,6 +86,7 @@ export interface TranslateOptions {
   engine?: string;
   tier?: string;
   noHistory?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function runTranslate(
@@ -106,6 +107,7 @@ export async function runTranslate(
     timeout: 60_000, // LLM engines routinely exceed useExec's 10s default
     maxBuffer: 16 * 1024 * 1024,
     env: baseEnv(),
+    signal: opts.signal, // cancel a superseded call when the user keeps typing
   });
   return JSON.parse(stdout) as TranslateResult;
 }
