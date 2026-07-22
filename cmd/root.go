@@ -19,6 +19,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lg "charm.land/lipgloss/v2"
 
+	"github.com/daviddwlee84/translate/internal/appcore"
 	"github.com/daviddwlee84/translate/internal/bitext"
 	"github.com/daviddwlee84/translate/internal/config"
 	"github.com/daviddwlee84/translate/internal/debug"
@@ -188,7 +189,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if res.Provider == nil && res.Engine != "auto" {
 		return fmt.Errorf("no provider configured; check %s", config.Path())
 	}
-	eng, err := buildEngine(res)
+	eng, err := appcore.BuildEngine(res)
 	if err != nil {
 		return err
 	}
@@ -202,7 +203,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	oneShotEng := eng
 	if learnCLI {
-		oneShotEng = learnEngineFromConfig(res)
+		oneShotEng = appcore.LearnEngineFromConfig(res)
 	}
 
 	st := openStore(cfg)
@@ -213,7 +214,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	switch {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
-		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
 		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
 		if err != nil {
 			return err
@@ -244,11 +245,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			// no provider, in which case runBilingual falls back to per-block.
 			var docEng engine.Engine
 			if res.Provider != nil {
-				docEng = learnEngineFromConfig(res)
+				docEng = appcore.LearnEngineFromConfig(res)
 			}
 			return runBilingual(ctx, oneShotEng, docEng, string(b), src, tgt, res.Instructions, flagBilingualMode)
 		}
-		effTgt := effectiveTarget(res.Pair, tgt, pairWith, text)
+		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
 		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
 		if err != nil {
 			return err
@@ -262,26 +263,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	default:
 		return runTUI(ctx, eng, res, st, src, tgt, pairWith)
 	}
-}
-
-// effectiveTarget applies pair mode: home-language input → away, else → home.
-func effectiveTarget(pair bool, home, away, text string) string {
-	if pair && away != "" {
-		t := lang.PairTarget(home, away, text)
-		debug.Logf("pair route: home=%s away=%s text=%q → target=%s", home, away, clip(text, 30), t)
-		return t
-	}
-	return home
-}
-
-// clip shortens a string for a single-line debug label.
-func clip(s string, n int) string {
-	s = strings.TrimSpace(s)
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n]) + "…"
-	}
-	return s
 }
 
 // openDebugLog opens (append) the TUI debug log file, creating the state dir.
@@ -353,28 +334,10 @@ func openStore(cfg *config.Config) store.Store {
 // so persisting it keeps pair mode from drifting its home to the away language.
 func recordAndRemember(ctx context.Context, st store.Store, cfg *config.Config, res *engine.TranslateResult, input, source, target, rememberTarget string) {
 	if st != nil {
-		_, _ = st.Add(ctx, toRecord(res, input, source, target))
+		_, _ = st.Add(ctx, appcore.ToRecord(res, input, source, target))
 	}
 	if cfg.General.RememberLastPair {
 		saveLastPair(source, rememberTarget, res.Engine)
-	}
-}
-
-// toRecord builds a history Record from a translation result.
-func toRecord(res *engine.TranslateResult, input, source, target string) store.Record {
-	src := source
-	if src == "auto" && res.DetectedSource != "" {
-		src = res.DetectedSource
-	}
-	return store.Record{
-		SourceLang:   src,
-		TargetLang:   target,
-		Engine:       res.Engine,
-		Model:        res.Model,
-		Input:        input,
-		Output:       res.Translation,
-		Alternatives: res.Alternatives,
-		Notes:        res.Notes,
 	}
 }
 
@@ -399,14 +362,14 @@ func runTUI(ctx context.Context, eng engine.Engine, res config.Resolved, st stor
 	var modelSrc engine.ModelLister
 	modelProvider := ""
 	if res.Provider != nil {
-		modelSrc = llmFromProvider(res.Provider, res.Model)
+		modelSrc = appcore.LLMFromProvider(res.Provider, res.Model)
 		modelProvider = res.Provider.Name
 	}
 	// Learn mode (^n) runs against a bare LLM engine; nil when no provider is
 	// configured, in which case the toggle refuses.
 	var learnEng engine.Engine
 	if res.Provider != nil {
-		learnEng = learnEngineFromConfig(res)
+		learnEng = appcore.LearnEngineFromConfig(res)
 	}
 	p := tui.Params{
 		Engines:       buildEngineSet(res, eng),
