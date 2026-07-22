@@ -45,6 +45,7 @@ var (
 	flagBilingual     bool
 	flagBilingualMode string
 	flagJSON          bool
+	flagStream        bool
 	flagNoHistory     bool
 	flagDebug         bool
 	flagSpeak         bool
@@ -84,6 +85,7 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVarP(&flagBilingual, "bilingual", "2", false, "bilingual pipe mode: keep original (with color) + translation beneath (stdin only)")
 	f.StringVar(&flagBilingualMode, "bilingual-mode", "doc", "bilingual strategy: doc (context-aware, one LLM call) | blocks (per-block)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
+	f.BoolVar(&flagStream, "stream", false, "force token streaming to stdout even when it is not a TTY (for piped consumers, e.g. the Raycast extension)")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
 	f.BoolVarP(&flagSpeak, "speak", "s", false, "speak the foreign side of the result aloud (free TTS)")
@@ -459,7 +461,10 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // with no ANSI; --json emits the full structured result.
 func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
-	stream := streamPref && stdoutTTY && !flagJSON && !learn // learn output is structured (parsed at done)
+	// Stream when the config asks for it on a TTY, or when --stream forces it (a
+	// piped consumer like the Raycast extension). --json/--learn are structured
+	// and never stream.
+	stream := (flagStream || (streamPref && stdoutTTY)) && !flagJSON && !learn
 
 	req := engine.Request{
 		Text:     text,

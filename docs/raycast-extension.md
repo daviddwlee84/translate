@@ -41,11 +41,14 @@ Raycast offers four ways to surface functionality. We ship the middle two.
   [`../raycast/extension/src/lib/translate.ts`](../raycast/extension/src/lib/translate.ts))
   rather than the `useExec` hook, because `useExec` buffers with a 10 s default
   timeout that LLM engines exceed (and its `timeout: 0` is coerced back to 10000).
-  True token streaming would require `child_process.spawn` appending stdout chunks
-  into React state bound to `Detail.markdown` — **deferred**, and it also needs a
-  binary change: the CLI only streams to a TTY, so piped stdout (how Raycast always
-  invokes it) yields the whole result at once. A `--stream` flag (TODO) is the
-  prerequisite. For now `--json` returns the finished result fast enough.
+  The CLI's **`--stream` flag** forces token streaming even when stdout is piped
+  (which Raycast always is; without it the CLI treats non-TTY as buffered). A
+  streaming `Detail` view can spawn `translate … --stream` and append `stdout`
+  chunks into React state bound to `Detail.markdown`. Caveat: visible progressive
+  output depends on the provider — ollama streams; **copilot-proxy currently buffers
+  its claude `/v1/messages` responses**, so the result appears after first-token
+  latency. The default live view uses `--json` (buffered, structured), which returns
+  fast enough.
 - **Preferences** (`getPreferenceValues()`): persisted per-extension settings —
   our `binaryPath`, `defaultTarget`, `engine`, `tier`.
 - **Input/UI:** `getSelectedText()` (frontmost app's selection),
