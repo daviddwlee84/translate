@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -32,6 +33,7 @@ type Config struct {
 	SmartDict SmartDict  `toml:"smartdict"`
 	TTS       TTS        `toml:"tts"`
 	History   History    `toml:"history"`
+	Server    Server     `toml:"server"`
 }
 
 // SchemaVersion is the current config schema generation. Bump it whenever a new
@@ -40,7 +42,8 @@ type Config struct {
 // It is NOT the app version (which is the git tag; see cmd/version.go). History:
 //
 //	1 — smart-auto default, pair-mode home anchoring, debug, TTS/learn fields.
-const SchemaVersion = 1
+//	2 — [server] table (translate serve: HTTP API).
+const SchemaVersion = 2
 
 // Generator is the app version string (git tag) stamped into config.version on
 // Save. The cmd layer sets it at startup; it stays "" for library/test callers,
@@ -154,6 +157,59 @@ type History struct {
 	Path    string `toml:"path,omitempty"`
 }
 
+// Server configures the local HTTP API server (`translate serve`). The bind is
+// loopback by default because history is personal data; a non-loopback bind is
+// refused unless a token is set. Prefer token_env over an inline token so the
+// secret stays out of config.toml.
+type Server struct {
+	Port     int    `toml:"port"`                // listen port (default 4155)
+	Bind     string `toml:"bind"`                // bind address (default 127.0.0.1)
+	Token    string `toml:"token,omitempty"`     // inline bearer token (guards /v1/history)
+	TokenEnv string `toml:"token_env,omitempty"` // env var holding the token (preferred)
+}
+
+// ServerOverrides carries explicit `translate serve` flag values (zero == unset).
+type ServerOverrides struct {
+	Port  int
+	Bind  string
+	Token string
+}
+
+// ResolvedServer is the effective server config after flags/env are applied.
+type ResolvedServer struct {
+	Port  int
+	Bind  string
+	Token string // resolved token (inline or from token_env); "" => no auth
+}
+
+// ResolveServer merges flag overrides over the [server] table and resolves the
+// bearer token (flag > inline token > token_env), filling in the built-in
+// defaults for an empty port/bind (an older config predating [server] reads 0/"").
+func (c *Config) ResolveServer(o ServerOverrides) ResolvedServer {
+	port := c.Server.Port
+	if o.Port != 0 {
+		port = o.Port
+	}
+	if port == 0 {
+		port = 4155
+	}
+	bind := c.Server.Bind
+	if o.Bind != "" {
+		bind = o.Bind
+	}
+	if bind == "" {
+		bind = "127.0.0.1"
+	}
+	token := o.Token
+	if token == "" {
+		token = c.Server.Token
+	}
+	if token == "" && c.Server.TokenEnv != "" {
+		token = strings.TrimSpace(os.Getenv(c.Server.TokenEnv))
+	}
+	return ResolvedServer{Port: port, Bind: bind, Token: token}
+}
+
 // SmartDict configures the smart-dict engine: a dictionary lookup that falls back
 // to the LLM when it misses or the fuzzy match is too far off (see engine.SmartDict).
 type SmartDict struct {
@@ -252,6 +308,10 @@ func Default() *Config {
 		History: History{
 			Enabled: true,
 			Backend: "jsonl",
+		},
+		Server: Server{
+			Port: 4155,
+			Bind: "127.0.0.1",
 		},
 	}
 }

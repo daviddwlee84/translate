@@ -51,6 +51,13 @@ func (s *jsonlStore) Add(ctx context.Context, r Record) (Record, error) {
 		return r, err
 	}
 	defer f.Close()
+	// Serialize appends across processes too (server + CLI): the in-process mutex
+	// only covers this process.
+	unlock, err := lockFile(f)
+	if err != nil {
+		return r, err
+	}
+	defer unlock()
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		return r, err
 	}
