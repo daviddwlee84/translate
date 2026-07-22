@@ -3,3 +3,9 @@
 /dist/
 *.test
 *.out
+
+# Raycast TS extension
+raycast/extension/node_modules/
+raycast/extension/dist/
+raycast/extension/.raycast/
+raycast/extension/raycast-env.d.ts

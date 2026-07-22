@@ -93,6 +93,7 @@ Pitfalls owned by this folder. Keep alphabetical.
 | `go-install-module-path-mismatch` | `module declares its path as: translate`, `but was required as`, `parsing go.mod` | fixed (module renamed) |
 | `gobin-points-at-mise-toolchain-dir` | binary vanishes after Go upgrade, `go env GOBIN` = `.../mise/installs/go/<ver>/bin` | workaround (pin GOBIN) |
 | `llm-stream-truncation-silently-rendered-as-complete` | translation cut mid-word / half output, no error, `detected:` line still shown, streamed result truncated, copilot-proxy SSE dropped | fixed (assert stream completeness) |
+| `raycast-launchd-path-translate-not-found` | `spawn translate ENOENT`, `translate: command not found` in Raycast, works in terminal not Raycast, launchd PATH not inherited from shell | prevented (absolute-path probe) |
 | `tui-lipgloss-block-padding-inflates-blank-lines-in-viewport` | TUI shows many blank lines / big gaps between paragraphs, excess vertical whitespace, but `^y` copy is clean, gap grows with paragraph length / narrow width / CJK | fixed (per-line styling) |
 | `tui-viewport-clips-long-translation-no-softwrap` | TUI translation cut mid-sentence but CLI/curl shows full text, no `⚠`, long/multi-line results clipped, viewport SoftWrap | fixed (SoftWrap=true) |
 

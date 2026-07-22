@@ -51,3 +51,21 @@ install DIR="~/.local/bin": build
 # remove build artifacts
 clean:
     rm -f translate
+
+# make the Raycast script-commands executable + show how to add them
+raycast-scripts:
+    chmod +x raycast/script-commands/*.sh
+    @echo "Add in Raycast → Settings → Extensions → Script Commands → Add Script Directory:"
+    @echo "  {{justfile_directory()}}/raycast/script-commands"
+
+# run the TS extension in dev (registers it in Raycast; persists after you stop)
+raycast-dev:
+    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run dev
+
+# type-check / build the extension bundle (does NOT install into Raycast)
+raycast-build:
+    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run build
+
+# lint the extension with the Raycast eslint config
+raycast-lint:
+    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run lint

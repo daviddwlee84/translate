@@ -42,6 +42,7 @@ Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
 
 - [ ] **[?/L] Ship prebuilt release binaries (goreleaser + GitHub Releases)** — cross-compile per OS/arch (pure-Go, no cgo — trivial) so hosts without a Go toolchain install via chezmoi `.chezmoiexternal` with a templated `{{ .chezmoi.os }}/{{ .chezmoi.arch }}` URL instead of `go install`. Also unlocks shipping the dictionary DB as a release asset. → [research](backlog/release-binaries.md)
 - [ ] **[?/M] Bundle or prebuild the dictionary vs the 67 MB runtime `dict update`** — evaluate embedding a trimmed DB via `go:embed`, or shipping the built ECDICT sqlite + CC-CEDICT as release assets, so first run isn't a big download/build. Weigh binary-size blowup vs first-run friction. → [research](backlog/dict-bundling.md)
+- [ ] **[?/L] Publish the Raycast extension to the store** — the local-dev extension (`raycast/extension`) works via `npm run dev`; publishing publicly hits the "avoid requiring manual installs" review guideline (it depends on the `translate` binary). Evaluate private org store vs public, icon/screenshots/CHANGELOG, and graceful binary-not-found onboarding. → [research](backlog/raycast-extension.md)
 
 ## Done
 

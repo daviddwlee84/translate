@@ -1,0 +1,84 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "translate",
+  "title": "Translate",
+  "description": "Translate, define, and speak text using the local translate CLI (multi-engine auto-fallback, offline dictionaries).",
+  "icon": "extension-icon.png",
+  "author": "daviddwlee84",
+  "categories": ["Productivity", "Developer Tools"],
+  "license": "MIT",
+  "platforms": ["macOS"],
+  "commands": [
+    {
+      "name": "translate",
+      "title": "Translate",
+      "description": "Translate text into a target language.",
+      "mode": "view"
+    },
+    {
+      "name": "translate-selection",
+      "title": "Translate Selection",
+      "description": "Translate the selected (or clipboard) text and paste the result.",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "binaryPath",
+      "title": "translate binary path",
+      "description": "Absolute path to the translate CLI. Empty = auto-probe ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/go/bin.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "/Users/you/.local/bin/translate"
+    },
+    {
+      "name": "defaultTarget",
+      "title": "Default target language",
+      "description": "Language code used when none is picked (e.g. en, zh-TW, ja).",
+      "type": "textfield",
+      "required": false,
+      "default": "en"
+    },
+    {
+      "name": "engine",
+      "title": "Engine",
+      "description": "Engine override: auto, google, dict, or a provider name. Empty = CLI default.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "auto"
+    },
+    {
+      "name": "tier",
+      "title": "Model tier",
+      "description": "LLM model tier when an LLM engine is used.",
+      "type": "dropdown",
+      "required": false,
+      "default": "default",
+      "data": [
+        { "title": "Default", "value": "default" },
+        { "title": "Fast", "value": "fast" },
+        { "title": "Max", "value": "max" }
+      ]
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.103.6",
+    "@raycast/utils": "^2.2.2"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    "eslint": "^8.57.0",
+    "prettier": "^3.5.3",
+    "react": "^19.0.0",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "fix-lint": "ray lint --fix",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
