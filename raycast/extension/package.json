@@ -4,7 +4,7 @@
   "title": "Translate",
   "description": "Translate, define, and speak text using the local translate CLI (multi-engine auto-fallback, offline dictionaries).",
   "icon": "extension-icon.png",
-  "author": "daviddwlee84",
+  "author": "da-wei_lee",
   "categories": ["Productivity", "Developer Tools"],
   "license": "MIT",
   "platforms": ["macOS"],
