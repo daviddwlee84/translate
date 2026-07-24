@@ -21,6 +21,7 @@ import {
 import { useDebouncedValue } from "./lib/hooks";
 import { StreamView } from "./lib/stream-view";
 import { BinaryNotFound } from "./lib/binary-not-found";
+import { DidYouMean } from "./lib/did-you-mean";
 
 const ENGINES = [
   { title: "Auto (fallback chain)", value: "" },
@@ -95,13 +96,18 @@ export default function Command(
   const pending =
     text.trim().length > 0 && text.trim() !== debouncedText.trim();
 
+  // A single-word typo routes to the dictionary and comes back with an empty
+  // translation + fuzzy suggestions — surface them as "did you mean?".
+  const showSuggestions =
+    !!data && !data.translation && !!data.suggestions?.length;
+
   return (
     <List
       isLoading={isLoading || pending}
       searchText={text}
       onSearchTextChange={setText}
       searchBarPlaceholder="Type text to translate…"
-      isShowingDetail={!!data}
+      isShowingDetail={!!data?.translation}
       searchBarAccessory={
         <List.Dropdown
           tooltip="Target language"
@@ -131,7 +137,9 @@ export default function Command(
           title="Translate"
           description="Enter text above and pick a language."
         />
-      ) : (
+      ) : showSuggestions ? (
+        <DidYouMean suggestions={data.suggestions!} onPick={setText} />
+      ) : data.translation ? (
         <List.Item
           title={data.translation}
           subtitle={data.engine}
@@ -192,6 +200,12 @@ export default function Command(
               </ActionPanel.Submenu>
             </ActionPanel>
           }
+        />
+      ) : (
+        <List.EmptyView
+          icon={Icon.Text}
+          title="No translation"
+          description="No result for this input — try rephrasing or another engine (⌘E)."
         />
       )}
     </List>

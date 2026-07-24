@@ -9,6 +9,7 @@ import {
 } from "./lib/translate";
 import { useDebouncedValue } from "./lib/hooks";
 import { BinaryNotFound } from "./lib/binary-not-found";
+import { DidYouMean } from "./lib/did-you-mean";
 
 export default function Command() {
   const [word, setWord] = useState("");
@@ -54,24 +55,7 @@ export default function Command() {
           description="Type a word to look it up."
         />
       ) : showSuggestions ? (
-        <List.Section title="Did you mean?">
-          {data.suggestions!.map((s) => (
-            <List.Item
-              key={s}
-              title={s}
-              icon={Icon.MagnifyingGlass}
-              actions={
-                <ActionPanel>
-                  <Action
-                    title="Define This"
-                    icon={Icon.Book}
-                    onAction={() => setWord(s)}
-                  />
-                </ActionPanel>
-              }
-            />
-          ))}
-        </List.Section>
+        <DidYouMean suggestions={data.suggestions!} onPick={setWord} />
       ) : (
         <List.Item
           title={data.dictionary?.word ?? word}
