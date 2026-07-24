@@ -50,10 +50,11 @@ Add new entries here as you create them. Keep alphabetical.
 
 | Slug | Status | TODO entry |
 |---|---|---|
-| `api-server` | P? — deferred (2026-07) | P? "Local HTTP API server + OpenAPI/Swagger…" |
+| `api-server` | shipped (2026-07) | Done "Local HTTP API server + MCP…" |
 | `bilingual-immersive-mode` | shipped (2026-07) | Done "Bilingual `--bilingual`/`-2` pipe mode…" |
 | `chezmoi-go-tool-integration` | spike done, paused on scope (2026-07) | P? "Wire `translate` into chezmoi…" |
 | `dict-bundling` | deferred (2026-07) | P? "Bundle or prebuild the dictionary…" |
 | `homebrew-distribution` | shipped (2026-07) | Done "Homebrew tap distribution…" |
 | `raycast-extension` | P? — local dev shipped, publish deferred (2026-07) | P? "Publish the Raycast extension to the store…" |
 | `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |
+| `suggestion-ranking` | P? — deferred (2026-07) | P? "Frequency-aware did-you-mean ranking…" |
