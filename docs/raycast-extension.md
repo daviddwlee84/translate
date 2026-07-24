@@ -118,7 +118,8 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   `just raycast-scripts`, then add the directory in Raycast once.
 - **TS extension** — [`../raycast/extension/`](../raycast/extension/): commands
   `translate` (view: type-to-translate, language dropdown, engine-override submenu,
-  Copy/Paste/Speak, selection/clipboard prefill), `translate-selection` (no-view:
+  Copy/Paste/Speak, typo "did you mean?" suggestions, opt-in selection prefill),
+  `translate-selection` (no-view:
   grabs the selection/clipboard and opens Translate prefilled via `launchCommand` —
   editable, not blind-paste), `define` (view: dictionary lookup +
   LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
@@ -127,6 +128,9 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
   debounced + abortable to avoid an LLM call per keystroke, with an opt-in `⌘↵`
   streaming view (`spawnTranslateStream` → `translate … --stream` → live `Detail`).
+  Typo suggestions reuse the engine's fuzzy `suggestions[]` (a shared
+  `did-you-mean.tsx` component) — no CLI change; single-word lookups route to the
+  offline dict, full sentences to the LLM which corrects implicitly.
 
 ## Publishing & distribution
 
