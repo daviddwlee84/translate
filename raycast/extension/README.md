@@ -40,4 +40,7 @@ isn’t found, the extension shows an install-instructions screen instead of fai
 ## Preferences
 
 Binary path, default target language, engine, model tier, live-translate debounce,
-and how Translate prefills its input (selection / clipboard / nothing).
+and how Translate prefills its input (selection / clipboard / nothing). Leave
+**target / tier / debounce** empty to inherit them from the `translate` config
+(`~/.config/translate/config.toml`, read via `config show --json`) — configure them
+once and Raycast honors them; set a preference to override the config for Raycast.

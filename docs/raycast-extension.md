@@ -130,7 +130,10 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   streaming view (`spawnTranslateStream` → `translate … --stream` → live `Detail`).
   Typo suggestions reuse the engine's fuzzy `suggestions[]` (a shared
   `did-you-mean.tsx` component) — no CLI change; single-word lookups route to the
-  offline dict, full sentences to the LLM which corrects implicitly.
+  offline dict, full sentences to the LLM which corrects implicitly. Default target,
+  live-debounce, and tier are inherited from the CLI config (`config show --json`)
+  when the matching Raycast preference is empty, so `config.toml` is the single
+  source of truth (a Raycast preference overrides it).
 
 ## Publishing & distribution
 

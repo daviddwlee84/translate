@@ -25235,3 +25235,1921 @@ All in — two commits (`9007860` prep, `ba0724d` docs). The new **A文** icon i
 So everything I could prepare without the GUI/account is done — the only remaining items are the screenshots and the actual publish, both of which are yours to trigger whenever you move off "personal-only." Nothing here changes your daily local use; it just makes the eventual publish a short hop.
 
 Want me to move on to anything else — e.g., the `translate serve` spike, or leave it here?
+
+---
+
+_**User (2026-07-24 01:02:11Z)**_
+
+是說我認爲Raycast的 Translate Selection 再去獲取clipboard就好？
+如果 Translate 的也獲取clipboard 感覺使用體驗怪怪的
+另外 user可能會有typo 有可能有什麼機制能夠猜出要打什麼字？
+查dictionary可能可以用fuzzy find 之類的
+然後如果是LLM inference應該是能猜出來
+translate API 可能不一定
+(總之 平時搜尋 xxx 意思 但打錯字 它會問 是不是要搜 yyy 這樣的UX [Image #7])
+看看是否能design一下這方面的solution
+
+_**User (2026-07-24 01:02:11Z)**_
+
+[Image: source: /Users/david/.claude/image-cache/ade4aae0-3a3d-4ef9-a7e8-ef48a3dde603/7.png]
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-24 01:04:24Z)**_
+
+<think><details><summary>Thought Process</summary>
+Looking at the system reminders, it seems the `translate serve` and `translate mcp` commands have already been shipped, along with new internal packages for the app core and server infrastructure. The root command now has handlers for both serve and MCP modes, and the configuration schema has been updated to v2 with a `[server]` table. The API server implementation appears to have been completed in a previous session.
+
+Now the user is reconsidering the clipboard behavior for the Translate commands. They're saying that Translate Selection should just grab from clipboard, and they're concerned that if the main Translate command also auto-grabs clipboard on open, it creates an awkward user experience. So they want to rethink the prefill strategy — currently Translate prefills from selection by default with a preference option, but this might need adjustment based on their feedback about what feels natural. me think through this more carefully. The user's real concern is that the plain Translate command shouldn't auto-grab clipboard on every open—that's the surprising behavior. Translate Selection is the explicit command for that, so it's fine there. So the solution is to change Translate's default prefill to either `selection` only or `none`, avoiding the clipboard auto-grab that feels intrusive. ty understanding: the plain Translate command should default to opening empty (no auto-grab), while Translate Selection keeps its current behavior of trying selection first, then clipboard as fallback. This way the basic command is predictable and clean, but users who want auto-prefill can use the dedicated Selection command or enable it via preferences. interpretation and not over-change. I'll ask or just make a sensible change. The user is giving design feedback; I should propose a clean solution.
+
+Actually, let me reconsider — maybe simplest and matching their intent:
+- Remove the auto-prefill from the plain Translate command (default `none`), OR keep selection-only prefill but never clipboard. 
+- Translate Selection remains the explicit prefill-from-selection/clipboard entry.
+
+I'll go with: Translate default prefill → `none`. This makes the plain command predictable (empty), and Translate Selection is the explicit "act on selection/clipboard" path. Keep the preference so users who want selection-prefill can set it.
+
+Wait, but if default is `none`, then the "prefill from selection" nicety is off by default. The user earlier wanted selection prefill. But now they find clipboard-prefill weird. So the real tension is: they want selection-prefill in Translate but not clipboard-prefill. The fix is to set Translate's default prefill to `selection` only—grab highlighted text when intentional, but skip clipboard entirely. That's already the current default, so on open, Translate grabs the selection, not the clipboard. Clipboard only comes in if the user explicitly sets that preference. And Translate Selection does the selection-to-clipboard fallback. So I need to figure out where the "Translate also grabs clipboard" behavior is actually coming from. Maybe they're suggesting that if Translate itself grabbed clipboard as a fallback, it would feel odd — so the clipboard fallback should stay exclusive to Translate Selection. The user seems to be expressing a design preference: keep Translate Selection as the command that handles both selection and clipboard fallback, while Translate (plain) stays focused on just the current selection or seed text.
+
+The safest approach might be to default Translate to no auto-prefill at all, making it predictable and manual-input focused, while Translate Selection remains the explicit path for grabbing selection or clipboard. This would directly address the concern about Translate auto-grabbing clipboard feeling strange. Translate Selection gives them the prefilled behavior they wanted, so plain Translate should default to `none` for a clean separation. I'll make that change and explain the reasoning, then move on to designing the typo correction feature since that's the bigger ask.
+
+For the "did you mean" mechanism, they want the extension to suggest corrections when someone searches with a typo—like Google's spelling correction. The CLI's `define` command already has fuzzy matching and returns a suggestions list, so I can leverage that existing functionality across the extension and potentially the CLI as well. matches). For **Translate**, the LLM will typically handle typos implicitly by translating sensibly, but adding explicit spell-check would give us a proper "did you mean" flow. The user wants a typo-correction mechanism across both commands, so I'm sketching out design options — starting with leveraging the dictionary's existing fuzzy matching for Define, then considering what spell-check approach makes sense for Translate. I could also use a system spell-checker like `NSSpellChecker` on macOS, a wordlist with edit distance matching, or external tools like `aspell`/`hunspell` if available. Alternatively, I could ask the LLM directly whether something's a typo, though that adds an extra call. The LLM approach is cleaner since it's already processing the input — I could extend the translate prompt to detect likely typos and return a `corrected` field, letting the model naturally suggest the intended word. This would require updating the CLI engine's prompt, but it only works with LLM-based engines. I notice the CLI already has related features like learn mode for grammar correction and a Notes system.
+
+The most practical solution is probably a spell-suggestion step in the extension that leverages the local dictionary via `translate define --json` to surface "did you mean?" options for single-word queries — it's offline and fast. But multi-word sentences complicate per-word correction, so I should focus the UX on single-word inputs where this is most useful.
+
+My approach: enhance the Define command to show suggestions more prominently when a query looks like a typo despite having a match, add an optional background fuzzy check in the Translate command for single-word English input with a subtle "did you mean?" affordance, and consider a broader engine-level enhancement for typo handling. I should present a clear design with a recommendation and offer to implement the straightforward parts first. Since the codebase has parallel work happening (serve/mcp already shipped), I need to be careful about conflicts — my changes would be isolated to the extension and possibly a small engine change for typo detection, which shouldn't overlap with the existing serve/mcp work in internal/appcore and internal/server. Given the scope of designing a did-you-mean solution, this feels like a substantive task that warrants using Workflow. I think I can work through the design directly from what I know. Let me start by testing the current fuzzy matching behavior with the exact example from the screenshot—running the define command on "cononical" to see if it suggests "canonical"—and also check how the translate command handles typos. This will ground my design decisions before I implement the improvements.
+
+Actually, re-reading the user's feedback more carefully, I'm now clearer on the distinction: Translate Selection grabbing the clipboard as its source is fine, but having plain Translate also auto-grab the clipboard creates weird UX. Since Translate's default prefill is already set to selection (not clipboard), it shouldn't be auto-grabbing clipboard by default anyway. The question is whether the user wants Translate to avoid auto-grabbing entirely, or if they're okay with selection as the default but not clipboard.
+
+Wait — I think I see the real issue now. When Translate Selection has no selection to work with, it falls back to clipboard and opens Translate pre-seeded with that clipboard content. The user might be interpreting this as "Translate grabbed my clipboard," when really it was Translate Selection doing the fallback. Let me think through this scenario more carefully.
+
+The user's preference seems to be: keep clipboard-grabbing behavior in Translate Selection (selection → clipboard fallback), but make the plain Translate command predictable and non-intrusive. Setting plain Translate's default to `none` (opening empty) feels like the safest approach — it won't surprise-grab anything. Translate Selection keeps its current behavior of pulling from selection or clipboard as needed. Though there's a question of whether plain Translate should still prefill with selected text when you use the hotkey — that feels intentional and expected, but the user seems to want a clean slate. I'll settle on defaulting plain Translate to no prefill, keeping the Selection/Clipboard/Nothing options available for users who want auto-prefill—this cleanly implements the requirement that Translate shouldn't automatically grab content. Now I need to test the current dictionary behavior for the did-you-mean feature, starting with checking if typos return suggestions in the define output. I should focus on testing the current fuzzy matching behavior first to understand what needs fixing, then design the did-you-mean improvements. Let me run the tests using the installed binary to verify the define fuzzy logic is working as expected before moving forward with the implementation.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:04:24Z)**_
+
+A lot shipped since — I can see `translate serve` + `translate mcp` are now in (nice; the extension could optionally talk to the loopback server later). Let me focus on your two points. First let me ground the "did you mean" design by checking what the dictionary already does with your exact example.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:04:33Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Test current fuzzy/suggestion behavior for typos
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+go build -o translate . 2>&1 | tail -3 && echo "built"
+echo "=== define cononical --json (typo of canonical) ==="; ./translate define cononical --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print({k:d.get(k) for k in ('translation','engine','suggestions')}); print('has dictionary:', bool(d.get('dictionary')))" 2>/dev/null || ./translate define cononical --json --no-history 2>/dev/null | head -c 400
+echo; echo "=== define cononical (human) ==="; ./translate define cononical --no-history 2>&1 | head -8
+echo "=== translate typo word to zh ==="; ./translate "cononical" --to zh-TW --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print({k:d.get(k) for k in ('translation','engine','notes','detected_source')})" 2>/dev/null
+```
+
+```text
+built
+=== define cononical --json (typo of canonical) ===
+{'translation': '', 'engine': 'dictionary', 'suggestions': ['canonical', 'acanonical', 'canonicals', 'centonical', 'chronical', 'colonial', 'conical']}
+has dictionary: False
+
+=== define cononical (human) ===
+no exact match — did you mean: canonical, acanonical, canonicals, centonical, chronical, colonial, conical
+=== translate typo word to zh ===
+{'translation': '', 'engine': 'dictionary', 'notes': None, 'detected_source': None}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:05:50Z)**_
+
+<think><details><summary>Thought Process</summary>
+The dictionary engine already handles fuzzy matching for misspellings like "cononical," surfacing "canonical" as the top suggestion, which my Define command displays in a "Did you mean?" section. But when I tried translating that same misspelled word to Traditional Chinese, the dictionary engine returned empty results instead of attempting a translation—that's unexpected behavior worth investigating. on and suggestions, I should render a "Did you mean?" section in the Translate command just like Define does. The engine already provides the suggestions array when the dictionary lookup fails, so I just need to surface it in the UI — both commands should handle this the same way when translation is empty but suggestions are available.
+
+There's a key distinction though: this only applies when a single word or short lookup routes to the dictionary engine. For full sentences that go through the LLM path, typos get handled implicitly since the model translates the intended meaning, so explicit did-you-mean suggestions aren't needed there.
+
+The implementation is straightforward—reuse the existing `suggestions[]` array that the smart-dict engine already computes for both define and translate commands, then render it in the Translate UI the same way Define does. A fancier enhancement would be showing "Showing results for [corrected term]" with an option to search the original instead, similar to Google's behavior, but the simple did-you-mean list works well as a first version.
+
+The challenge with auto-correction is that `SuggestDistance` isn't exposed in the JSON output (it's marked as `json:"-"`), so the frontend can't distinguish between high-confidence and weak suggestions. I could expose it by changing the tag to `json:"suggest_distance,omitempty"`, but given the parallel work on serve and MCP, I'll stick with the safer approach—let users pick from the suggestions list rather than auto-correcting, which aligns with how Define currently works.
+
+I'm also considering whether the LLM path could detect typos and return a corrected interpretation, but that would require changes to the Go engine and prompt logic, and the LLM often just silently translates the intended word anyway. I'll note that as a possible future enhancement.
+
+My approach: disable the default auto-grab of clipboard/selection for plain Translate, then build out the rest of the solution. plain Translate to default to `none` so it doesn't auto-grab anything, making Translate Selection the explicit path for prefilling. But that sacrifices the selection-prefill convenience they wanted earlier. I'm caught between two conflicting preferences, so I should either ask a clarifying question about part 1 or make a clear choice and explain the tradeoff so they can adjust if needed. So the plain Translate command's default is already set to selection (which doesn't grab clipboard), meaning the current behavior might already align with what they want — the real issue is just that the preference offers "Clipboard" as an option for plain Translate, which feels unnecessary. They may have seen clipboard content pop up because they had something copied, but that's not the default behavior kicking in.
+
+I'll change the plain Translate default to `none` to be explicit and predictable — the user can manually enable selection if they want it, and Translate Selection remains the dedicated path for acting on selected text or clipboard fallback. This removes the ambiguity and keeps plain Translate truly empty by default. they'd need to use Translate Selection instead, which is fine since any command can get a hotkey. So the flow works cleanly either way — select and use Translate Selection for prefilled input, or just hotkey plain Translate for an empty box. I'll change the default in package.json from `"selection"` to `"none"` and keep the prefill option available but unused by default. Actually, I'm wondering if I should even keep the prefill preference on plain Translate at all if it's defaulting to none and Translate Selection handles that use case...
+
+but it's harmless to leave it for power users who might want it.
+
+Now for part 2: I need to handle the case where translation comes back empty but suggestions are available. I'll reuse the "Did you mean?" pattern from Define — checking if the translation is empty and suggestions exist, then rendering that section. First let me verify the translate JSON actually includes suggestions, then update the prefill default and add the suggestion-handling logic to the translate component.
+
+Restructuring the render logic...
+
+When the user selects a suggestion, it updates the text and triggers a new translation. I should extract the "Did you mean?" section into a reusable component that both Translate and Define can use, passing in the suggestions and a callback for when the user picks one.
+
+Writing component code... I need to verify the translate function's JSON output for suggestions, then run through the typo test to see what suggestions come back.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:05:50Z)**_
+
+The dictionary already computes fuzzy "did you mean" — `define cononical` → `['canonical', ...]`, exactly your Google example. And crucially, a single-word **typo in Translate mode** also routes to the dict and returns empty translation + suggestions. Let me confirm the Translate JSON carries those suggestions.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:05:55Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Confirm suggestions in translate JSON for typo word vs sentence
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== translate single typo word --json (full) ==="; ./translate "cononical" --to zh-TW --json --no-history 2>/dev/null
+echo "=== translate a correct single word (baseline) ==="; ./translate "canonical" --to zh-TW --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print({k:d.get(k) for k in ('translation','engine')})"
+echo "=== translate a full sentence with a typo (LLM path?) ==="; ./translate "this is a cononical example of good design" --to zh-TW --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print({k:d.get(k) for k in ('translation','engine','suggestions')})"
+```
+
+```text
+=== translate single typo word --json (full) ===
+{
+  "translation": "",
+  "target": "zh-TW",
+  "engine": "dictionary",
+  "suggestions": [
+    "canonical",
+    "acanonical",
+    "canonicals",
+    "centonical",
+    "chronical",
+    "colonial",
+    "conical"
+  ]
+}
+=== translate a correct single word (baseline) ===
+{'translation': 'a. 依教规的, 被认为圣典的, 权威的, 典型的', 'engine': 'dictionary'}
+=== translate a full sentence with a typo (LLM path?) ===
+{'translation': '這是良好設計的典型範例。', 'engine': 'copilot', 'suggestions': None}
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:23Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm mapping out how the translation system handles different input types: single-word typos trigger the dictionary engine with suggestions, correct words return their definitions, and full sentences with errors go through the copilot engine which silently corrects them—the bug is that Translate isn't showing the "Did you mean?" prompt for typos like it should.
+
+The fix is straightforward: create a shared component for the "Did you mean?" UI that both Translate and Define can use, then have Translate render it when there's no translation but suggestions are available. I'll also need to update the package.json prefill default to "none" and then implement the component alongside refactoring both commands to use it. Writing the DidYouMean component... Now I need to refactor the final branch to handle three cases: show suggestions if available, show the translation if it exists, or display a "no translation" message. I also need to update the detail view condition to check for `data?.translation` specifically instead of just `data`.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:23Z)**_
+
+Confirmed and elegant: the engine **already** returns fuzzy `suggestions[]` for a single-word typo — in *both* Define and Translate (a typo'd word routes to the dict; a full sentence goes to the LLM which silently corrects, e.g. "cononical" → "典型範例"). So the "did you mean" data exists; Translate just isn't rendering it yet. No CLI change needed.
+
+Let me read the current Translate render to wire it in, plus flip the prefill default.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:23Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./raycast/extension/src/translate.tsx`
+
+```text
+70	
+71	  // Only translate once the user pauses (debounce) and cancel superseded in-flight
+72	  // calls (abortable) — so typing a phrase no longer fires an LLM call per keystroke.
+73	  const debouncedText = useDebouncedValue(text, debounceMs);
+74	  const abortable = useRef<AbortController>();
+75	
+76	  const { data, isLoading, error } = usePromise(
+77	    async (
+78	      q: string,
+79	      target: string,
+80	      eng: string,
+81	    ): Promise<TranslateResult | undefined> => {
+82	      const trimmed = q.trim();
+83	      if (!trimmed) return undefined;
+84	      return runTranslate(trimmed, {
+85	        to: target,
+86	        engine: eng || undefined,
+87	        signal: abortable.current?.signal,
+88	      });
+89	    },
+90	    [debouncedText, to, engine],
+91	    { abortable },
+92	  );
+93	
+94	  // Keep the loading bar up while the typed text is still ahead of the debounced value.
+95	  const pending =
+96	    text.trim().length > 0 && text.trim() !== debouncedText.trim();
+97	
+98	  return (
+99	    <List
+100	      isLoading={isLoading || pending}
+101	      searchText={text}
+102	      onSearchTextChange={setText}
+103	      searchBarPlaceholder="Type text to translate…"
+104	      isShowingDetail={!!data}
+105	      searchBarAccessory={
+106	        <List.Dropdown
+107	          tooltip="Target language"
+108	          storeValue
+109	          value={to}
+110	          onChange={setTo}
+111	        >
+112	          {LANGS.map((l) => (
+113	            <List.Dropdown.Item key={l.value} title={l.title} value={l.value} />
+114	          ))}
+115	        </List.Dropdown>
+116	      }
+117	    >
+118	      {error ? (
+119	        isBinaryMissing(error) ? (
+120	          <BinaryNotFound />
+121	        ) : (
+122	          <List.EmptyView
+123	            icon={Icon.Warning}
+124	            title="Translation failed"
+125	            description={String(error.message ?? error)}
+126	          />
+127	        )
+128	      ) : !data ? (
+129	        <List.EmptyView
+130	          icon={Icon.Globe}
+131	          title="Translate"
+132	          description="Enter text above and pick a language."
+133	        />
+134	      ) : (
+135	        <List.Item
+136	          title={data.translation}
+137	          subtitle={data.engine}
+138	          detail={
+139	            <List.Item.Detail
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:41Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to refine the conditional logic here. First, I'm updating the detail visibility check to only show when there's an actual translation present. Then I'm adding a computed value that determines whether to display suggestions—this should be true when we have data but no translation yet, and there are suggestions available. Finally, I'm restructuring the render branch to use this new condition, so it shows suggestions when appropriate instead of falling through to the default case. Making targeted edits to the JSX...
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:41Z)**_
+
+Let me see the end of the `List.Item` block to wire the branches correctly.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:41Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./raycast/extension/src/translate.tsx`
+
+```text
+134	      ) : (
+135	        <List.Item
+136	          title={data.translation}
+137	          subtitle={data.engine}
+138	          detail={
+139	            <List.Item.Detail
+140	              markdown={renderMarkdown(data)}
+141	              metadata={renderMetadata(data)}
+142	            />
+143	          }
+144	          actions={
+145	            <ActionPanel>
+146	              <Action.CopyToClipboard
+147	                title="Copy Translation"
+148	                content={data.translation}
+149	              />
+150	              <Action.Paste
+151	                title="Paste Translation"
+152	                content={data.translation}
+153	              />
+154	              <Action.Push
+155	                title="Translate (streaming)"
+156	                icon={Icon.Text}
+157	                shortcut={{ modifiers: ["cmd"], key: "return" }}
+158	                target={
+159	                  <StreamView
+160	                    text={debouncedText.trim()}
+161	                    to={to}
+162	                    engine={engine}
+163	                  />
+164	                }
+165	              />
+166	              <Action.CopyToClipboard
+167	                title="Copy Source Text"
+168	                content={debouncedText.trim()}
+169	                shortcut={{ modifiers: ["cmd"], key: "i" }}
+170	              />
+171	              <Action
+172	                title="Speak"
+173	                icon={Icon.SpeakerHigh}
+174	                onAction={async () => {
+175	                  speak(debouncedText.trim(), to);
+176	                  await showHUD("Speaking…");
+177	                }}
+178	              />
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:47Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm scanning through the code to locate where the List.Item component closes.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:06:47Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./raycast/extension/src/translate.tsx`
+
+```text
+178	              />
+179	              <ActionPanel.Submenu
+180	                title="Engine"
+181	                icon={Icon.Gear}
+182	                shortcut={{ modifiers: ["cmd"], key: "e" }}
+183	              >
+184	                {ENGINES.map((e) => (
+185	                  <Action
+186	                    key={e.value || "auto"}
+187	                    title={e.title}
+188	                    icon={engine === e.value ? Icon.CheckCircle : Icon.Circle}
+189	                    onAction={() => setEngine(e.value)}
+190	                  />
+191	                ))}
+192	              </ActionPanel.Submenu>
+193	            </ActionPanel>
+194	          }
+195	        />
+196	      )}
+197	    </List>
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:11Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm identifying the exact line boundaries for the List.Item component and planning the edits needed: creating the DidYouMean component, importing it, adding the suggestions computation, and updating the conditional logic for showing details. Finalizing the edits to close the List.Item and add the empty state fallback, then I'll create the DidYouMean component and update the imports. I also need to refactor the Define component to use this new component instead of its inline suggestions section.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:11Z)**_
+
+Now I have the full structure. Let me build the "did you mean" solution: a shared component, wire it into Translate, refactor Define to reuse it, and flip the Translate prefill default so the plain command doesn't auto-grab.
+
+First the shared component:
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:12Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```tsx
+import { ActionPanel, Action, Icon, List } from "@raycast/api";
+
+/**
+ * A Google-style "did you mean?" section built from the engine's fuzzy dictionary
+ * suggestions — returned (in `TranslateResult.suggestions`) when a single-word
+ * lookup/translation has no exact match, e.g. "cononical" → ["canonical", …].
+ * Picking one re-runs the search with the corrected term. Full sentences skip this
+ * (they go to the LLM, which corrects typos implicitly).
+ */
+export function DidYouMean({ suggestions, onPick }: { suggestions: string[]; onPick: (s: string) => void }) {
+  const [best, ...rest] = suggestions;
+  return (
+    <List.Section title="Did you mean?">
+      {[best, ...rest].map((s, i) => (
+        <List.Item
+          key={s}
+          title={s}
+          icon={i === 0 ? Icon.Checkmark : Icon.MagnifyingGlass}
+          accessories={i === 0 ? [{ text: "closest" }] : undefined}
+          actions={
+            <ActionPanel>
+              <Action title="Use This" icon={Icon.ArrowRight} onAction={() => onPick(s)} />
+            </ActionPanel>
+          }
+        />
+      ))}
+    </List.Section>
+  );
+}
+
+```
+
+```text
+File created successfully at: /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/lib/did-you-mean.tsx (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:18Z)**_
+
+Now wire it into Translate — import, `showSuggestions`, detail guard, and the render branches.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:19Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:24Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:31Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:32Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:52Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to refactor the Define component to use the shared DidYouMean component instead of its current suggestions section, and also update the prefill default setting in package.json. Now I'm replacing the suggestions section in define.tsx with the DidYouMean component and updating the import. I also need to change the prefill preference default from "selection" to "none" in package.json. Making the edits now...
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:52Z)**_
+
+Now refactor Define to reuse the shared component, and flip the Translate prefill default to `none` (so the plain command doesn't surprise-grab — clipboard stays with Translate Selection).
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:55Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/define.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:57Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/define.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:07:59Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/package.json has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:08:09Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to run the build and lint checks now. Looking at the imports in define.tsx, I should verify which Icon variants are actually being used—Icon.Warning and Icon.Book appear in EmptyView, Icon.SpeakerHigh is in the speak action, and Icon.MagnifyingGlass was only in the section I removed, so that one can be cleaned up.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:08:09Z)**_
+
+Build + lint the "did you mean" wiring and prefill change.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:08:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Build and lint did-you-mean changes
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension
+npm run build 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'ready|error' | head
+npm run fix-lint 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'error' | head
+npm run build >/dev/null 2>&1 && echo "build OK" || { echo "build FAIL"; npm run build 2>&1 | tail -15; }
+npm run lint >/dev/null 2>&1 && echo "lint PASS" || echo "lint FAIL"
+```
+
+```text
+ready  - built extension successfully
+build OK
+lint PASS
+[This command modified 1 file you've previously read: src/lib/did-you-mean.tsx. Call Read before editing.]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:09Z)**_
+
+<think><details><summary>Thought Process</summary>
+The build and linting are passing, and I've verified the end-to-end behavior by testing the binary path the extension uses—the JSON suggestions are working correctly. I'm ready to commit these changes: removing the default prefill in the first part so Translate doesn't auto-grab, and adding the did-you-mean feature to Translate along with a shared component and refactoring Define.
+
+I'm debating whether to split this into two commits for clarity—one for the did-you-mean feature and one for the prefill default change—since they're independent concerns affecting the Translate command's UX. The prefill change is minimal (just the package.json configuration), while the did-you-mean spans multiple files. I think two commits makes sense for history clarity, even though they're both small changes.
+
+Let me stage them precisely: the first commit includes the new did-you-mean utility, the suggestions rendering in translate.tsx, and the refactored define.tsx component. The second commit is just the package.json prefill default update. Since translate.tsx's prefill logic itself wasn't modified (only the default in package.json changed), the split is clean.
+
+I should also consider updating the docs to mention that Translate now shows did-you-mean suggestions, similar to how Define already does. I need to update the docs to reflect that selection/clipboard prefill is now opt-in by default, and make sure both the translate and define commands mention their "did you mean" suggestions feature. Let me revise the "How ours is built" section to clarify these details. I'll commit the code changes first in a couple of commits, then handle the documentation updates.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:09Z)**_
+
+Build + lint clean. Let me quickly sanity-check the actual data path the UI relies on, then commit.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:10Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify suggestions data path with another typo
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== typo word → suggestions (Translate will now show these) ==="; ./translate "recieve" --to zh-TW --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('translation:',repr(d.get('translation')),'| suggestions:',d.get('suggestions'))"
+echo "=== correct word → translation (Translate shows result) ==="; ./translate "receive" --to zh-TW --json --no-history 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('translation:',repr(d.get('translation'))[:60])"
+```
+
+```text
+=== typo word → suggestions (Translate will now show these) ===
+translation: '' | suggestions: ['relieve', 'believe', 'reachieve', 'recarve', 'recede', 'receive', 'recidive']
+=== correct word → translation (Translate shows result) ===
+translation: 'vt. 收到, 接到, 得到, 接待, 迎接, 承受'
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:40Z)**_
+
+<think><details><summary>Thought Process</summary>
+The spell-checker is catching "recieve" and suggesting "receive" through the "Did you mean?" feature, though it's ranking lower in the suggestions list due to pure edit-distance calculations favoring "relieve" instead. While this isn't ideal ranking compared to frequency-based approaches, showing all options lets users find the correct spelling themselves.
+
+I'm recognizing this as a limitation worth addressing later—maybe with frequency weighting or keyboard-distance awareness—but for now the v1 implementation is solid. Time to commit the changes: the did-you-mean feature across the relevant files, then the default prefill update, and finally wrap up with documentation.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:40Z)**_
+
+"recieve" → suggestions include "receive" — the "did you mean" now surfaces in Translate too. Committing (did-you-mean, then the prefill default change).
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:41Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit did-you-mean and prefill default
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add raycast/extension/src/lib/did-you-mean.tsx raycast/extension/src/translate.tsx raycast/extension/src/define.tsx
+git commit -q -F - <<'MSG'
+feat(raycast): "did you mean?" typo suggestions in Translate
+
+A single-word typo routes to the offline dictionary and returns an empty
+translation + fuzzy `suggestions[]` (e.g. "cononical" → canonical, "recieve" →
+receive). Translate now renders these as a Google-style "Did you mean?" section
+(picking one re-runs), instead of showing a blank result. Full sentences still go
+to the LLM, which corrects typos implicitly, so this only triggers for word lookups.
+
+Extracts the suggestion UI into a shared src/lib/did-you-mean.tsx and reuses it in
+both Translate and Define (replacing Define's inline copy). No CLI change — the
+engine already computes the suggestions.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+git add raycast/extension/package.json
+git commit -q -F - <<'MSG'
+fix(raycast): plain Translate no longer auto-grabs input (default "Nothing")
+
+Auto-seeding the Translate box from the clipboard on every open felt surprising.
+Default the "Prefill input from" preference to Nothing so plain Translate starts
+empty/predictable; selection/clipboard capture stays the job of Translate Selection
+(which opens Translate prefilled). Users who want auto-prefill can still opt in.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "exit=$?"; git log --oneline -4
+```
+
+```text
+exit=0
+e87db06 fix(raycast): plain Translate no longer auto-grabs input (default "Nothing")
+5ae3b77 feat(raycast): "did you mean?" typo suggestions in Translate
+ec3693e docs: document translate serve + mcp; mark api-server shipped
+89730f3 feat(mcp): translate mcp — MCP server over stdio
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:57Z)**_
+
+<think><details><summary>Thought Process</summary>
+I can see the parallel commits are in the history now. I'm reconsidering whether to update the docs for the did-you-mean and prefill changes — Translate now has did-you-mean too, and the prefill default has shifted to none, so the "How ours is built" section in the Raycast extension docs might need adjusting.
+
+Let me search for the exact text in the docs, then I'll summarize the design I've implemented: the typo/did-you-mean solution with its current limitation (edit-distance ranking places "receive" at 6th) and potential enhancements like frequency-aware or keyboard-aware ranking, or an LLM-based corrected field for the translate path. I can offer to add the ranking improvement as a backlog item or implement it now.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:57Z)**_
+
+Both in. Let me refresh the docs bullet to reflect the did-you-mean + opt-in prefill.
+
+_**Agent (claude-opus-4-8 2026-07-24 01:09:57Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find docs strings to update
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+grep -n "selection/clipboard prefill\|did you mean\|did-you-mean" docs/raycast-extension.md
+```
+
+```text
+121:  Copy/Paste/Speak, selection/clipboard prefill), `translate-selection` (no-view:
+124:  LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:10:03Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./docs/raycast-extension.md`
+
+```text
+118	  `just raycast-scripts`, then add the directory in Raycast once.
+119	- **TS extension** — [`../raycast/extension/`](../raycast/extension/): commands
+120	  `translate` (view: type-to-translate, language dropdown, engine-override submenu,
+121	  Copy/Paste/Speak, selection/clipboard prefill), `translate-selection` (no-view:
+122	  grabs the selection/clipboard and opens Translate prefilled via `launchCommand` —
+123	  editable, not blind-paste), `define` (view: dictionary lookup +
+124	  LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
+125	  past translations). All share `src/lib/translate.ts` (binary resolve + typed
+126	  `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).
+127	  Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
+128	  debounced + abortable to avoid an LLM call per keystroke, with an opt-in `⌘↵`
+129	  streaming view (`spawnTranslateStream` → `translate … --stream` → live `Detail`).
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:10:17Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/docs/raycast-extension.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:10:25Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit docs touch-up
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add docs/raycast-extension.md
+git commit -q -F - <<'MSG'
+docs(raycast): note Translate typo suggestions + opt-in prefill
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "exit=$?"; git log --oneline -1
+```
+
+```text
+exit=0
+04e0ac3 docs(raycast): note Translate typo suggestions + opt-in prefill
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:11:00Z)**_
+
+<think><details><summary>Thought Process</summary>
+Now I'm ready to walk through the design summary: the prefill behavior defaults to "Nothing" to avoid unexpected clipboard interference, while Translate Selection provides the explicit path for clipboard-based edits. The did-you-mean feature leverages the CLI engine's existing fuzzy matching through the suggestions array.
+
+The implementation required no CLI changes—single-word typos route through the offline dictionary to surface fuzzy suggestions as "Did you mean?" options (shared with Define), full sentences get implicit correction via the LLM path, and Google API calls for single words are already caught by the dictionary layer first. The main tradeoff I'm seeing is that edit-distance ranking doesn't account for word frequency, so "recieve" might surface "relieve" or "believe" before "receive" even though they're all equally close by edit distance—Google would rank by frequency, but our approach shows all candidates and lets the user choose.
+
+I'm thinking through three potential enhancements: adding frequency or keyboard-adjacency awareness to the dictionary ranking (a Go-side change that'd be backlog-worthy), having the LLM return a corrected field with context-aware suggestions for the translate path (more powerful but costs an LLM call), or exposing the edit distance in the JSON response so Translate can auto-run the top suggestion when confidence is high (a small CLI change). I should present the design clearly, note what shipped and the limitation, then offer these as backlog options matching the user's pattern. I'll wrap up by summarizing the design, what's shipped, the limitation around ranking, and offer a frequency-aware ranking enhancement as a backlog item or immediate implementation depending on what the user prefers. I don't need to record any memory since this work is already captured in the repo.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 01:11:04Z)**_
+
+Both points are done and committed. Here's the design and what shipped.
+
+## Part 1 — prefill: plain Translate no longer auto-grabs
+`fix` `e87db06`: the "Prefill input from" preference now defaults to **Nothing**, so opening **Translate** starts empty/predictable (no surprise clipboard content). Selection/clipboard capture stays the job of **Translate Selection** (which opens Translate prefilled). Opt back in via the preference if you ever want it.
+
+## Part 2 — "did you mean?" design
+
+The neat part: your CLI **already computes** fuzzy suggestions, so this needed **no engine change** — just surfacing them.
+
+**How the coverage falls out by path:**
+| Input | Routes to | Typo handling |
+|---|---|---|
+| single word (`cononical`) | offline **dictionary** | returns empty translation + fuzzy `suggestions[]` → now shown as **"Did you mean?"** |
+| full sentence (`this is a cononical example`) | **LLM** | corrected **implicitly** ("典型範例") — no prompt needed |
+| Google API | — | single words never reach it (dict catches them first); sentences go to LLM/Google |
+
+`feat` `5ae3b77`: **Translate** now renders a Google-style "Did you mean?" section (was showing a blank result before), extracted into a shared `did-you-mean.tsx` that **Define** reuses too. Verified: `recieve` → offers `receive`, `cononical` → `canonical`.
+
+## One honest limitation (+ how to fix it)
+The dict ranks suggestions by **edit distance only**, not frequency — so for `recieve` the list is `relieve, believe, …, receive` (receive is 6th, though all are shown and pickable). Google ranks `receive` first because it's frequency-weighted. Three ways to make the *top* pick smarter, in order of effort:
+
+1. **Frequency-aware ranking** (best value) — ECDICT ships `frq`/`bnc` frequency columns; re-rank suggestions by `editDistance` *then* frequency in the dict engine. Makes "receive"/"canonical" surface first. Small Go change.
+2. **Expose `SuggestDistance` in `--json`** (currently `json:"-"`) so the extension can auto-run the top suggestion when the correction is confident ("Showing results for X · search instead for Y"), truly matching your Google screenshot.
+3. **LLM "corrected" field** for context-aware correction — most powerful, but costs a call + prompt/engine work.
+
+These are CLI/engine changes (and there's parallel work happening in the repo), so I'd suggest capturing #1+#2 as a backlog item rather than editing the engine mid-stream. Want me to write `backlog/suggestion-ranking.md` + a TODO entry — or, if you'd rather, I can implement the frequency-aware re-rank now?
+
+---
+
+_**User (2026-07-24 03:16:58Z)**_
+
+可以先做 backlog/suggestion-ranking.md + TODO 就好 是說 Raycast的Translate能否去讀我們的config file 這樣翻譯語言的default target language能夠提前被指定？ (還是這是CLI/server side的work？)
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-24 03:17:48Z)**_
+
+<think><details><summary>Thought Process</summary>
+The user wants me to create a backlog entry for suggestion ranking and also explore whether Raycast's Translate extension can read our config file to pre-set the default target language, or if that's something requiring CLI or server-side changes. Let me think through the config question first since it's a design consideration, then I'll document the backlog item.
+
+For the config file approach: the CLI config at `~/.config/translate/config.toml` already has target language settings in the `[general]` section with CLI/TUI-specific overrides. Currently, the extension always passes `--to <lang>` from the Raycast preference, which overrides whatever the config specifies. The key insight is that if the extension omitted the `--to` flag when the user hasn't explicitly selected a language, the CLI binary would automatically resolve the target from its config file without the extension needing to parse TOML directly. However, this creates a UI problem—the extension's dropdown needs to display what the current target actually is, so we'd need some way to either read the config or query the binary for its resolved default.
+
+The cleanest solution would be to have the extension read the config's default target to initialize the dropdown, then let the user override it. This could work two ways: either parse the TOML file directly in the extension using a library, or call a `translate config show` command (if it exists) that outputs the resolved configuration, ideally in JSON format so the extension can extract the target language without parsing TOML itself. The extension's default target comes from the Raycast preference, which initializes the dropdown and gets passed to the binary via `--to`. I need to check whether the CLI's `config show` command supports `--json` output and whether it exposes the resolved effective target, so the extension can read the binary's own config default instead of relying solely on the Raycast preference. the binary to report its resolved default target via a command like `translate config show --json`, then have the extension call that on mount to seed the dropdown's initial value if the Raycast preference is empty. Since `storeValue` already persists the user's last selection across sessions, this only matters for first use, so reading the config once is sufficient.
+
+Let me check what `translate config show` currently outputs and whether it supports JSON formatting.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:17:48Z)**_
+
+On it — I'll write the backlog. First let me check the config question properly by seeing what the CLI already exposes.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:17:48Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect config command output and JSON support
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== config --help ==="; ./translate config --help 2>&1 | sed -n '1,30p'
+echo "=== config show (head) ==="; ./translate config show 2>&1 | head -25
+echo "=== does config show have --json? ==="; ./translate config show --json 2>&1 | head -20
+```
+
+```text
+=== config --help ===
+Show or locate the configuration
+
+Usage:
+  translate config [command]
+
+Available Commands:
+  path        Print the config file path
+  show        Print the effective configuration as TOML
+
+Flags:
+  -h, --help   help for config
+
+Global Flags:
+  -2, --bilingual               bilingual pipe mode: keep original (with color) + translation beneath (stdin only)
+      --bilingual-mode string   bilingual strategy: doc (context-aware, one LLM call) | blocks (per-block) (default "doc")
+      --debug                   log intermediate decisions (routing, engine choice, dict hit/miss)
+      --engine string           engine: auto|<provider>|google|dict
+  -f, --from string             source language ("auto" to detect)
+      --instructions string     extra system-prompt guidance (domain focus, etc.)
+      --json                    emit the full result as JSON
+      --learn                   learning mode: teach (native→foreign) or grammar-correct (foreign→native)
+      --model string            LLM model id override
+      --no-history              do not record this translation in history
+      --pair                    bidirectional mode: home-language input → --pair-with, else → --to
+      --pair-with string        the other language for --pair (e.g. en)
+      --preset string           LLM prompt style: concise|contextual|dictionary
+      --provider string         provider name (e.g. copilot, ollama)
+  -s, --speak                   speak the foreign side of the result aloud (free TTS)
+      --speak-lang string       force the spoken language (e.g. en, zh-TW)
+      --stream                  force token streaming to stdout even when it is not a TTY (for piped consumers, e.g. the Raycast extension)
+=== config show (head) ===
+version = '(devel)'
+schema = 2
+
+[general]
+default_target = 'zh-TW'
+default_source = 'auto'
+pair = true
+pair_with = 'en'
+learn = false
+remember_last_pair = true
+live_translate = false
+debounce_ms = 400
+engine = 'smartauto'
+tier = 'default'
+preset = 'concise'
+instructions = 'domain focus: quantitative finance + computer science'
+alternatives_count = 3
+stream = true
+color = 'auto'
+debug = false
+
+[chain]
+order = ['copilot', 'ollama', 'google', 'dict']
+
+[[provider]]
+=== does config show have --json? ===
+version = '(devel)'
+schema = 2
+
+[general]
+default_target = 'zh-TW'
+default_source = 'auto'
+pair = true
+pair_with = 'en'
+learn = false
+remember_last_pair = true
+live_translate = false
+debounce_ms = 400
+engine = 'smartauto'
+tier = 'default'
+preset = 'concise'
+instructions = 'domain focus: quantitative finance + computer science'
+alternatives_count = 3
+stream = true
+color = 'auto'
+debug = false
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:18:53Z)**_
+
+<think><details><summary>Thought Process</summary>
+Looking at the config output, `config show` displays the effective TOML configuration, and the `--json` flag doesn't actually work with it—it still outputs TOML. The config includes the user's default target of 'zh-TW' along with settings like `debounce_ms = 400`, `live_translate`, and `stream`, with potential overrides in the `[cli]` and `[tui]` sections.
+
+For the Raycast extension to read the config, there are a couple of approaches: it could parse the TOML output from `config show` directly (which gives the resolved effective config rather than the raw file), but that requires adding a TOML parser dependency. Alternatively, the CLI could offer a JSON output option to make integration cleaner for the extension.
+
+There's also a design question about which config section the extension should honor—`[general]`, `[tui]`, or `[cli]`—since the extension is neither a pure CLI nor TUI. A third option is to let the extension omit the `--to` flag entirely and let the binary use its configured default, with the dropdown showing a "Config default" sentinel value that triggers this behavior.
+
+The cleanest approach is Option B: add `--json` support to `config show` so the extension can parse the resolved config directly and seed the dropdown from `general.default_target` when the Raycast preference is empty. This keeps config as the single source of truth while giving users the ability to override it manually, and the dropdown remembers their last choice. So my plan for this turn is to write out the backlog document for suggestion-ranking with a TODO list and index, then address their config question directly — explaining that it's CLI and extension work, recommending the `config show --json` approach, and offering to either implement it now or add it to the backlog.
+
+Writing the suggestion-ranking backlog... uggestions across all frontends (CLI, Raycast, MCP, server). I'm also considering exposing the edit distance value in JSON output so frontends can implement Google-style auto-correct prompts ("Showing results for X") rather than just listing alternatives. I'm weighing three approaches: keeping the current edit-distance-only ranking (simple but often wrong), re-ranking by distance then frequency from ECDICT (best improvement with minimal engine changes), or exposing the distance metric to let frontends decide how to present corrections.
+
+The main unknowns are whether ECDICT's frequency data is populated for enough words, how to handle Chinese prefix matches that lack distance metrics, and what distance threshold to use for showing suggestions. I'm deferring this to July 2026 since the current implementation already shows the full list and is usable—I'll polish the did-you-mean UX later by implementing frequency-weighted ranking, and optionally exposing the distance so Translate and Define can auto-apply the top suggestion. I need to figure out where to place this entry in the backlog index. The `suggestion-ranking` item should go alphabetically after `release-binaries`, which appears to be the last entry currently. But I should verify the current index state first since the parallel work might have already updated it, particularly around the api-server entry that was marked as shipped.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:18:53Z)**_
+
+Confirmed the config picture. `config show` prints the **effective** config as TOML (your `default_target = 'zh-TW'` is right there), but it does **not** honor `--json` — it still emits TOML. That's the crux of your question. Let me write the suggestion-ranking backlog first, then answer the config question.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:18:54Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# Frequency-aware "did you mean" suggestion ranking
+
+**Status**: P? — needs a spike
+**Effort**: S–M
+**Related**: `TODO.md` P? · `internal/engine/{smartdict,ecdict}.go` · `raycast/extension/src/lib/did-you-mean.tsx` · [../docs/raycast-extension.md](../docs/raycast-extension.md)
+
+## Context
+
+2026-07, surfaced while adding the Raycast "did you mean?" UX. The dictionary engine
+returns fuzzy `suggestions[]` for single-word typos (consumed by Raycast
+Translate/Define, and the CLI `define`). Ranking is **edit-distance only**, so the
+obvious correction doesn't always surface first:
+
+- `recieve` → `[relieve, believe, reachieve, recarve, recede, receive, recidive]`
+  (`receive` is 6th)
+- `cononical` → `[canonical, acanonical, canonicals, …]` (`canonical` happens to be 1st)
+
+Google ranks by frequency ("Showing results for **canonical**"). We want the common
+word on top.
+
+## Investigation
+
+- **ECDICT has frequency data** — `frq`, `bnc` columns (+ collins/oxford flags). A
+  re-rank by `(editDistance asc, frequency desc)` would float common words up.
+- Suggestions are produced in `internal/engine` (smart-dict / ecdict fuzzy lookup), so
+  re-ranking there benefits **all** frontends at once — CLI `define`, Raycast, and the
+  new `serve` / `mcp` adapters.
+- `TranslateResult.SuggestDistance` exists but is `json:"-"` (not serialized). Exposing
+  it (e.g. `suggest_distance`) would let a frontend auto-apply a confident correction
+  ("Showing results for X · search instead for Y", Google-style) instead of only listing.
+
+## Options considered
+
+| Option | What | Verdict |
+|---|---|---|
+| A. Edit-distance only (current) | fuzzy by Levenshtein | simple; the right word is often not on top |
+| B. Frequency-weighted re-rank | sort by (distance, then ECDICT `frq`/`bnc`) | best value; small change in the dict engine; helps every frontend |
+| C. Expose `SuggestDistance` in `--json` | frontend decides auto-correct vs. list | pairs with B for a Google-style "showing results for X" |
+| D. Keyboard-adjacency (qwerty) weighting | typo model | marginal over B; more complex |
+
+## Current blocker / open questions
+
+- Does the bundled ECDICT actually populate `frq`/`bnc` for enough headwords? (verify)
+- Chinese suggestions are prefix matches with no distance/frequency — leave as-is, or
+  pinyin/stroke rank?
+- Threshold/cap: only show suggestions within distance N; how many to return.
+
+## Decision (if any)
+
+`2026-07 deferred` — the extension already surfaces the full list (usable, just not
+ideally ordered). Do **B** (and optionally **C**) when polishing the did-you-mean UX.
+Frontends need no change for B; C would let Translate/Define auto-apply the top
+correction.
+
+## References
+
+- ECDICT schema (`frq`/`bnc`/collins/oxford): https://github.com/skywind3000/ECDICT
+- Raycast did-you-mean component: `raycast/extension/src/lib/did-you-mean.tsx`
+
+```
+
+```text
+File created successfully at: /Users/david/src/tries/2026-07-09-translate-cli-tui/backlog/suggestion-ranking.md (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:01Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to add the TODO P? entry and update the backlog/README.md index, but first I should check what's currently in that file since other work might have modified it.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:01Z)**_
+
+Now wire it into TODO and the backlog index. Let me check the current index first (parallel work may have changed it).
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Read current backlog index table
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== backlog/README.md index ==="; sed -n '/^| Slug/,/^$/p' backlog/README.md 2>/dev/null; grep -n '| \`' backlog/README.md | tail -12
+```
+
+```text
+=== backlog/README.md index ===
+| Slug | Status | TODO entry |
+|---|---|---|
+| `api-server` | P? — deferred (2026-07) | P? "Local HTTP API server + OpenAPI/Swagger…" |
+| `bilingual-immersive-mode` | shipped (2026-07) | Done "Bilingual `--bilingual`/`-2` pipe mode…" |
+| `chezmoi-go-tool-integration` | spike done, paused on scope (2026-07) | P? "Wire `translate` into chezmoi…" |
+| `dict-bundling` | deferred (2026-07) | P? "Bundle or prebuild the dictionary…" |
+| `homebrew-distribution` | shipped (2026-07) | Done "Homebrew tap distribution…" |
+| `raycast-extension` | P? — local dev shipped, publish deferred (2026-07) | P? "Publish the Raycast extension to the store…" |
+| `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |
+53:| `api-server` | P? — deferred (2026-07) | P? "Local HTTP API server + OpenAPI/Swagger…" |
+54:| `bilingual-immersive-mode` | shipped (2026-07) | Done "Bilingual `--bilingual`/`-2` pipe mode…" |
+55:| `chezmoi-go-tool-integration` | spike done, paused on scope (2026-07) | P? "Wire `translate` into chezmoi…" |
+56:| `dict-bundling` | deferred (2026-07) | P? "Bundle or prebuild the dictionary…" |
+57:| `homebrew-distribution` | shipped (2026-07) | Done "Homebrew tap distribution…" |
+58:| `raycast-extension` | P? — local dev shipped, publish deferred (2026-07) | P? "Publish the Raycast extension to the store…" |
+59:| `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:21Z)**_
+
+<think><details><summary>Thought Process</summary>
+I notice the api-server index row is out of sync with its backlog file, which shows it's already shipped. While updating the index to reflect that, I should also add the new suggestion-ranking row since both are index maintenance tasks. Updating the markdown table with two edits: fixing the api-server row to show shipped status and updating its TODO entry, then adding the suggestion-ranking row at the end in alphabetical order.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:21Z)**_
+
+The index has `api-server` stale (the file says shipped, TODO shows Done) — I'll fix that while adding the new row. Then the TODO entry.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:22Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/backlog/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:24Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/backlog/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:29Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/TODO.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:37Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm going to commit the changes I've made to the backlog, TODO list, and index files, then I'll address the config question.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:37Z)**_
+
+Committing the backlog + TODO/index.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:19:38Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit suggestion-ranking backlog
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add backlog/suggestion-ranking.md TODO.md backlog/README.md
+git commit -q -F - <<'MSG'
+docs(backlog): frequency-aware "did you mean" ranking as a P? spike
+
+The dict engine ranks fuzzy suggestions by edit distance only, so common
+corrections aren't first (recieve → receive is 6th). Capture the plan to re-rank by
+(distance, then ECDICT frq/bnc) in internal/engine so all frontends benefit, plus
+optionally exposing SuggestDistance in --json for a Google-style auto-correct.
+Also fix the stale api-server index row (shipped, not deferred).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "exit=$?"; git log --oneline -1
+```
+
+```text
+exit=0
+d4d3361 docs(backlog): frequency-aware "did you mean" ranking as a P? spike
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:20:10Z)**_
+
+<think><details><summary>Thought Process</summary>
+用户想知道Raycast的Translate扩展是否能读取配置文件来预先指定默认目标语言，还是这需要在CLI或服务器端处理。我发现扩展目前使用Raycast的`defaultTarget`偏好设置（默认为"en"）作为初始目标，但配置文件的支持似乎还在探索中。
+
+我现在看到了一个可行的解决方案：首先让CLI的`config show`命令支持`--json`输出（目前被忽略了），然后修改扩展在首次使用时，如果用户没有手动设置偏好，就调用`translate config show --json`来读取配置文件中的`general.default_target`值并初始化下拉菜单。这样用户只需在`config.toml`中设置一次目标语言，扩展就能自动使用这个配置。
+
+另一个选项是让扩展在用户没有明确选择语言时省略`--to`参数，让二进制文件使用其配置的默认值，然后从结果的`target`字段读取实际使用的语言来更新UI显示。还需要决定扩展应该遵循哪个配置表——由于扩展既像CLI又像TUI，最简单的方案是直接使用`[general].default_target`，或者添加一个专门的命令如`translate lang default`来查询特定"模式"的有效目标语言。
+
+最小化且最干净的方案是在CLI中添加`config show --json`，然后让扩展在Raycast偏好设置为空时读取`general.default_target`。这样两边的改动都很小。还值得注意的是，扩展目前将其他配置值（如engine、tier、debounce_ms）复制为Raycast偏好设置，一旦`config show --json`存在，扩展就可以从配置中读取这些值，减少重复配置——这是个不错的统一方案，但可能超出当前范围。
+
+我可以实现这个改动，因为它很小且显然有价值，但我想先确认你是否想让我现在就做，还是先记录下来。
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:20:15Z)**_
+
+Committed (`d4d3361`). Now your config question — good instinct, and here's the straight answer.
+
+## Can Raycast's Translate read your config's default target? Yes — small work on **both** sides (not server-side)
+
+**Today:** the extension uses its own Raycast `defaultTarget` preference (default `en`) and always passes `--to`, so it *overrides* your config. Your `config.toml` already has `[general].default_target = 'zh-TW'`, but the extension never looks at it.
+
+**The blocker I found:** `translate config show` prints the effective config, but only as **TOML** — it ignores `--json`. So the extension can't cleanly read it yet.
+
+**Cleanest fix = tiny CLI affordance + tiny extension read:**
+1. **CLI (~few lines):** make `config show` honor `--json` (emit the resolved config as JSON). Touches `cmd/config.go` only.
+2. **Extension:** make the Raycast `defaultTarget` preference *optional* (empty = "use CLI config"). On mount, if empty and the dropdown has no stored pick, run `translate config show --json`, read `general.default_target`, seed the dropdown. `List.Dropdown storeValue` still remembers your last manual choice, so this only drives the *first* use.
+
+Then you set the language once in `config.toml` and both CLI and Raycast honor it.
+
+**Works today without the CLI change** (less clean): the extension could grep the `default_target = '…'` line out of `config show`'s TOML, or omit `--to` so the binary uses its config default and read the `target` back from the result — but both are more fragile than a JSON field.
+
+**Whose work:** **CLI + extension** — a small bit of each. Definitely *not* the `serve`/`mcp` side.
+
+**Two design notes:**
+- The config has per-front-end `[cli]`/`[tui]` overlays; the extension is neither exactly. Simplest is to honor `[general].default_target`. (A `config get default_target` command could resolve it precisely if we want.)
+- Bonus: once `config show --json` exists, the extension could also read `debounce_ms`, `engine`, `tier` from config instead of duplicating them as Raycast prefs — a nice unification, but that's scope creep.
+
+It's a genuinely small, high-value change. Want me to **implement it** (add `config show --json` + the extension read, default target from config), or **park it in backlog** for now?
+
+---
+
+_**User (2026-07-24 03:34:48Z)**_
+
+好 那就都做吧
+
+---
+
+_**Agent (claude-opus-4-8 2026-07-24 03:35:14Z)**_
+
+<think><details><summary>Thought Process</summary>
+The user wants me to implement the full config-reading feature: add a `config show --json` command to the CLI, have the extension read `general.default_target` from config when the Raycast preference is empty, and also unify the reading of `debounce_ms`, `engine`, and `tier` from config as part of the complete implementation.
+
+Now I need to check how the config show command currently works in cmd/config.go and understand the config structure in internal/config/config.go to see if it's printing the raw or resolved configuration. I'm leaning toward keeping this simple: `config show --json` outputs the raw Config struct marshaled to JSON, same as the TOML version. The extension reads `general.default_target` from that JSON. This ignores the [cli] and [tui] overlays, but since [general] is the base default, it's what users expect for "default target language" anyway. Let me check the actual struct definitions to see what tags are in place.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:35:14Z)**_
+
+On it — implementing the whole thing. Let me look at how `config show` works and the config struct's tags.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:35:14Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Read config command and struct tags
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== cmd/config.go ==="; cat cmd/config.go
+echo "=== config struct tags (General) ==="; grep -n 'json:\|toml:' internal/config/config.go | head -40
+```
+
+```text
+=== cmd/config.go ===
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/pelletier/go-toml/v2"
+	"github.com/spf13/cobra"
+
+	"github.com/daviddwlee84/translate/internal/config"
+)
+
+func newConfigCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "config",
+		Short: "Show or locate the configuration",
+	}
+	c.AddCommand(
+		&cobra.Command{
+			Use:   "path",
+			Short: "Print the config file path",
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				fmt.Println(config.Path())
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "show",
+			Short: "Print the effective configuration as TOML",
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				cfg, _, err := config.Load()
+				if err != nil {
+					return err
+				}
+				b, err := toml.Marshal(cfg)
+				if err != nil {
+					return err
+				}
+				_, err = os.Stdout.Write(b)
+				return err
+			},
+		},
+	)
+	return c
+}
+=== config struct tags (General) ===
+23:	Version string `toml:"version,omitempty"`
+24:	Schema  int    `toml:"schema"`
+26:	General   General    `toml:"general"`
+27:	CLI       *Overlay   `toml:"cli,omitempty"` // per-front-end overrides on [general]
+28:	TUI       *Overlay   `toml:"tui,omitempty"` // (nil unless the user adds the table)
+29:	Chain     Chain      `toml:"chain"`
+30:	Providers []Provider `toml:"provider"` // array-of-tables: [[provider]]
+31:	Google    Google     `toml:"google"`
+32:	Dict      Dict       `toml:"dict"`
+33:	SmartDict SmartDict  `toml:"smartdict"`
+34:	TTS       TTS        `toml:"tts"`
+35:	History   History    `toml:"history"`
+36:	Server    Server     `toml:"server"`
+57:	Engine        *string `toml:"engine,omitempty"`
+58:	Tier          *string `toml:"tier,omitempty"`
+59:	Preset        *string `toml:"preset,omitempty"`
+60:	Instructions  *string `toml:"instructions,omitempty"`
+61:	Model         *string `toml:"model,omitempty"`
+62:	DefaultTarget *string `toml:"default_target,omitempty"`
+63:	DefaultSource *string `toml:"default_source,omitempty"`
+64:	Pair          *bool   `toml:"pair,omitempty"`
+65:	PairWith      *string `toml:"pair_with,omitempty"`
+66:	Learn         *bool   `toml:"learn,omitempty"`
+67:	Stream        *bool   `toml:"stream,omitempty"`
+68:	LiveTranslate *bool   `toml:"live_translate,omitempty"`
+69:	DebounceMs    *int    `toml:"debounce_ms,omitempty"`
+70:	Debug         *bool   `toml:"debug,omitempty"`
+75:	DefaultTarget     string `toml:"default_target"`
+76:	DefaultSource     string `toml:"default_source"`      // "auto" or a fixed code
+77:	Pair              bool   `toml:"pair"`                // bidirectional: home-language input → pair_with, else → default_target
+78:	PairWith          string `toml:"pair_with,omitempty"` // the "away" language for pair mode
+79:	Learn             bool   `toml:"learn"`               // learning mode: teach (native→foreign) or grammar-correct (foreign→native)
+80:	RememberLastPair  bool   `toml:"remember_last_pair"`
+81:	LiveTranslate     bool   `toml:"live_translate"`
+82:	DebounceMs        int    `toml:"debounce_ms"`
+83:	Engine            string `toml:"engine"`                 // auto | smartauto | llm | google | <provider>
+84:	Tier              string `toml:"tier"`                   // default | fast | max
+85:	Preset            string `toml:"preset"`                 // concise | contextual | dictionary
+86:	Instructions      string `toml:"instructions,omitempty"` // extra system-prompt guidance (domain focus, etc.)
+87:	AlternativesCount int    `toml:"alternatives_count"`
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:36:51Z)**_
+
+<think><details><summary>Thought Process</summary>
+The config structs only have `toml:` tags, so marshaling to JSON would use the capitalized Go field names like `General` and `DefaultTarget`, which works but isn't ideal. I could either add `json:` tags to match the TOML structure or marshal to a map for cleaner output when using `config show --json`.
+
+The best approach is to round-trip through TOML: marshal the config to TOML bytes, then unmarshal into a generic map, and finally marshal that map to JSON. This gives me snake_case keys matching what users already see in the TOML file without touching the struct definitions. I'm implementing this by converting the config through TOML as an intermediate format to preserve the key naming.
+
+Writing the JSON marshaling logic... Finishing the config show command with JSON output handling — I'm using a JSON encoder to write indented output, then falling back to TOML marshaling for the default case. I need to make sure the encoding/json package is imported, and I'm verifying that the TOML structure converts properly to a nested map when unmarshaled for JSON output.
+
+On the extension side, I'm reconsidering the `defaultTarget` preference — if I change its default from "en" to empty, users can leave it blank to fall back to the CLI config's setting, but existing users already have "en" stored. I'm thinking through how to handle this transition and what the preference description should say.
+
+I also need to create a helper function that checks the preference first, and if it's empty, spawns a process to read the config file and extract the `default_target` value. The tricky part is that the extension initializes the `to` state synchronously from preferences, but fetching the config requires an async operation, so I'll need to update the state after the async call completes.
+
+For the dropdown component, I'm using `storeValue` to persist the user's selection, but since `value={to}` is a controlled prop, it should take precedence. The interaction between `storeValue` and the controlled value is a bit subtle, so I need to think through how they interact when the initial value is empty and then gets updated asynchronously.
+
+The real issue is that I'm trying to handle multiple sources for the target value: preferences, launch context, and async config defaults. Rather than fighting `storeValue`, I should simplify the whole target-resolution logic.
+
+I'll set up the initial `to` with a clear precedence: launch context takes priority, then the Raycast preference, then fall back to an empty string. Then in an effect, if `to` is still empty, I'll fetch the CLI config default asynchronously and set it, defaulting to "en" if nothing's found. This way the dropdown won't show an unmatched value on mount.
+
+The tradeoff is a brief flash where the dropdown appears empty before the effect populates it, but that's acceptable. Now the real question is whether to use `storeValue` on the dropdown—if I do, it'll persist the user's manual selection across sessions, but that conflicts with letting the config drive the default. If the config says zh-TW but the user previously picked French, which should win? I'm leaning toward dropping `storeValue` and letting config be the source of truth for the default, accepting that manual picks within a session won't persist. The issue is that storeValue persists the user's manual pick across sessions, which overrides the config default after the first selection — that contradicts what the user wants. The simplest fix is to remove storeValue entirely so the dropdown always defaults to the config value on each open, with the initial `to` pulling from the context or preference. So I'll stick with a clean precedence: launch context's `to` field takes priority, then the Raycast `defaultTarget` pref if it's set, then the CLI config's `default_target`, and finally fall back to English. I'm dropping `storeValue` entirely so the config becomes the actual source of truth for defaults rather than relying on session memory—this directly addresses the request for config-driven defaults. Now I should also check what other settings like `engine` and `tier` need to be read from config.
+
+For `debounceMs`, I'll use the Raycast pref if it's set, otherwise pull from the config's `debounce_ms` value. With `engine` and `tier`, the extension already has the right behavior—it only passes them to the binary if they're explicitly set, which means the binary falls back to config values automatically when the extension doesn't override them.
+
+So the key things to read from config are `default_target` for the dropdown display and `debounce_ms` for the local debounce calculation. I'm sketching out a TypeScript interface for the config structure and starting to define a function that reads and caches it.
+
+Writing config reader... Setting up a useEffect to load the config on mount and initialize the target language and debounce timing from it, falling back to sensible defaults if the config isn't available. I'm thinking through how to handle the debounceMs initialization properly when it's now stateful instead of just computed from preferences. The core request is really just default target from config, so I should keep the scope tight and avoid over-engineering. I'll implement the CLI command to show config as JSON, then handle default_target in the extension with a clear precedence: context.to > preference > config > fallback to "en". The debounce-from-config is nice to have but secondary, so I'll focus on getting the main feature solid first. I'm making `liveDebounceMs` default to empty so it falls back to the config's `debounce_ms` value (400ms) instead of always using 700ms, which aligns with respecting the user's config settings.
+
+I'm also reconsidering the Raycast preferences — keeping them as empty-defaults-to-config overrides makes sense, but I notice the `tier` preference has a hardcoded default of "default", which means it always overrides the config's tier setting even when the user doesn't explicitly set it. That's inconsistent with the config-driven approach.
+
+The `engine` preference works correctly — it has no default, so it stays empty and lets the config take over. I need to remove the tier default so it behaves the same way, but I'm wondering if removing the default from a dropdown preference will cause issues with `getPreferenceValues`.
+
+Actually, I should add a "Use config default" option to the tier dropdown with an empty value and set that as the default. That way the dropdown always has a valid selection, but passing an empty string means the config tier gets used instead.
+
+Now I need to implement this systematically: add the `config show --json` command to the CLI, make the defaultTarget pref default to empty so it falls back to config, do the same for debounce_ms, and fix the tier override issue by defaulting to "use config". Let me work through these changes carefully and test as I go.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:36:51Z)**_
+
+Config structs have only `toml:` tags, so I'll round-trip TOML→map→JSON to keep clean snake_case keys (no need to add `json:` tags everywhere). Let me add the `--json` branch to `config show`.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:36:53Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/cmd/config.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:36:58Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/cmd/config.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:37:06Z)**_
+
+Build and verify the JSON config output.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:37:15Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Build and test config show --json
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+go build -o translate . 2>&1 | tail -5 && echo "built"
+echo "=== config show --json (general keys) ==="; ./translate config show --json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);g=d.get('general',{});print({k:g.get(k) for k in ('default_target','default_source','debounce_ms','engine','tier','live_translate')})"
+echo "=== plain config show still TOML? ==="; ./translate config show 2>/dev/null | head -2
+```
+
+```text
+built
+=== config show --json (general keys) ===
+{'default_target': 'zh-TW', 'default_source': 'auto', 'debounce_ms': 400, 'engine': 'smartauto', 'tier': 'default', 'live_translate': False}
+=== plain config show still TOML? ===
+version = '(devel)'
+schema = 2
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:12Z)**_
+
+<think><details><summary>Thought Process</summary>
+The config command outputs clean JSON with snake_case keys like `general.default_target` and `debounce_ms`, while the plain TOML format still works. On the extension side, I need to add a `readConfig()` function and CliConfig interface to lib/translate.ts, then update translate.tsx to initialize the `to` field from context or preferences and asynchronously populate it from config, plus handle the debounceMs value the same way.
+
+For package.json, I'll add defaultTarget and liveDebounceMs fields with empty string defaults and descriptions, and add a "Use config default" option to the tier setting. Now I'm setting up the CliConfig interface and readConfig function in the lib—defining the config structure with optional fields for target, source, debounce timing, engine, tier, and live translation, then implementing a cached config reader that shells out to the CLI's config command.
+
+Writing config reader... Writing component state setup... it stays that way. The fallback to "en" only kicks in if nothing was set earlier. So the logic handles all three cases: preference takes priority, then config, then the default.
+
+Let me refactor this more cleanly — I want to separate the concerns of inheriting the default target from config versus applying debounce settings. I'll check if we already have a target and debounce value set, and only read config if we're missing either one.
+
+Refactoring the effect... Since the rule isn't defined, I can safely use an empty dependency array without triggering any linting errors. I'll remove `storeValue` from the dropdown to stop persisting the language selection, keeping just the `value` and `onChange` props. The debounce timing will now pull from state and automatically adjust when the config loads, so that's handled by the hook's dependency tracking. Now I need to update the package.json preferences section.
+
+Updating the config schema: removing the default value from `defaultTarget` and clarifying its description, clearing the default from `liveDebounceMs` to let it stay empty, and adding an empty string option to the `tier` dropdown so users can fall back to the config default.
+
+Modifying package.json... Updating the tier field configuration...
+
+I'm reconsidering whether an empty string value works in a dropdown for ray lint validation. The safer approach might be to omit the "Use config" option entirely and only pass the `--tier` flag when the user explicitly selects default, fast, or max, rather than always passing it with a default value.
+
+Actually, I'll use a sentinel value like "inherit" to represent "don't pass the flag" — this avoids potential issues with empty strings in dropdown data. So the tier options become "Use config default" (value: "inherit"), "Default", "Fast", and "Max", with "inherit" as the default. Then in the translate code, I'll check if tier equals "inherit" and skip passing the `--tier` argument in that case. With "" as the tier value, the `if (tier)` check naturally skips pushing the argument, letting the config default apply. Now I need to implement the changes: update translate.tsx to add the debounce state and config effect, remove the storeValue call, and update package.json to include the new default options with tier set to "".
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:12Z)**_
+
+`config show --json` works cleanly (`general.default_target = 'zh-TW'`, `debounce_ms = 400`). Now the extension side. First, a `readConfig()` helper in the lib.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:13Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/lib/translate.ts has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:23Z)**_
+
+<think><details><summary>Thought Process</summary>
+I accidentally wiped out the speak function body when I replaced it with just the signature, so I need to restore the full function and add the readConfig call before it. Let me reconsider what the current state actually contains and fix this properly.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:23Z)**_
+
+That edit truncated `speak`. Let me view and fix it properly.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:23Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./raycast/extension/src/lib/translate.ts`
+
+```text
+185	  });
+186	  const parsed = JSON.parse(stdout);
+187	  return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+188	}
+189	
+190	/** Fire-and-forget TTS via `translate <text> --to <lang> --speak`. */
+191	export function speak(text: string, to: string): void {
+192	
+193	export interface StreamHandlers {
+194	  onData: (chunk: string) => void;
+195	  onDone: (code: number | null) => void;
+196	  onError: (err: Error) => void;
+197	}
+198	
+199	/**
+200	 * Spawn `translate <text> --to <lang> [--engine] --stream` and stream plain-text
+201	 * stdout chunks (the `--stream` flag forces streaming over a pipe). Returns a
+202	 * cancel function that kills the child (call it on unmount). Whether output arrives
+203	 * progressively depends on the provider — ollama streams; copilot-proxy buffers its
+204	 * claude responses. `--no-history` avoids duplicating a history row the live view
+205	 * may already have recorded.
+206	 */
+207	export function spawnTranslateStream(
+208	  text: string,
+209	  opts: TranslateOptions,
+210	  h: StreamHandlers,
+211	): () => void {
+212	  const bin = resolveBinary();
+213	  const args = [text, "--to", opts.to ?? "en", "--stream", "--no-history"];
+214	  if (opts.engine) args.push("--engine", opts.engine);
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:29Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to restore the `speak` function body that got corrupted—it should read the config and then call speak, so I'm replacing those broken lines with the proper implementation.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:29Z)**_
+
+Confirmed — `speak`'s body was lost. Let me restore it and add `readConfig` in the same fix.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:38:34Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/lib/translate.ts has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:12Z)**_
+
+<think><details><summary>Thought Process</summary>
+Now I need to update translate.tsx by importing readConfig, converting `to` and `debounceMs` into state variables that fall back to config values, adding the config effect hook, and removing the storeValue function. Let me check the current imports and function signature to make sure I'm working with the right structure. Refactoring the component initialization...
+
+I'm adding a config effect that reads from the CLI config file to inherit default settings—specifically the target language and debounce timing—but only if those values aren't already set through Raycast preferences or launch context. I'm breaking this down into four surgical edits: first I'll import readConfig, then replace the state initialization block to pull debounceMs and the initial `to` value from config, add a new useEffect that runs on mount to read the config and set defaults, and finally remove storeValue from the dropdown. Let me start with the state initialization replacement. Setting up a useEffect hook that reads the config file to populate the target language and debounce settings if they weren't already set from preferences or launch context, with fallbacks to "en" and 700ms respectively.
+
+Then the prefill effect runs, and I need to remove the `storeValue` prop from the dropdown component...
+
+Actually, I'm wondering about the initial state behavior here — when `to` starts as an empty string and the dropdown value doesn't match any item in the list, it might display the first item visually or show blank. Once the config updates `to` to the actual language code, it'll sync up. There could be a brief visual flicker, but that's probably acceptable since the controlled dropdown won't fire onChange on its own.
+
+To minimize this, I could initialize `to` to `prefs.defaultTarget || ""` so if the preference is already set, it displays immediately without waiting for config. If the preference is empty, the dropdown shows blank briefly until config fills it in. Either way the flash is negligible, so I'll keep the simpler logic and move forward with the package.json edits for the new settings.
+
+Now I'm updating translate.tsx with the import, state initialization, and dropdown changes, then moving to package.json.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:12Z)**_
+
+Now wire it into the Translate view — import `readConfig`, make `to`/`debounceMs` inherit from config when the Raycast prefs are empty, and drop `storeValue` (config is now the default source).
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:17Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:19Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:21Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/src/translate.tsx has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:35Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm updating the package.json preferences for defaultTarget, liveDebounceMs, and tier, modifying their configurations to adjust defaults and add new options where needed. Updating the tier dropdown to include an empty option that inherits from the config default, then I'll run the build and linter to check if that empty value is accepted or if I need to use a sentinel value instead.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:35Z)**_
+
+Now the manifest prefs — make `defaultTarget`, `liveDebounceMs`, and `tier` default to "inherit from config".
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:42Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+<tool_use_error>String to replace not found in file.
+String:     {
+      "name": "defaultTarget",
+      "title": "Default target language",
+      "description": "Language code used when none is picked (e.g. en, zh-TW, ja).",
+      "type": "textfield",
+      "required": false,
+      "default": "en"
+    },
+    {
+      "name": "engine",
+      "title": "Engine",
+      "description": "Engine override: auto, google, dict, or a provider name. Empty = CLI default.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "auto"
+    },
+    {
+      "name": "tier",
+      "title": "Model tier",
+      "description": "LLM model tier when an LLM engine is used.",
+      "type": "dropdown",
+      "required": false,
+      "default": "default",
+      "data": [
+        { "title": "Default", "value": "default" },
+        { "title": "Fast", "value": "fast" },
+        { "title": "Max", "value": "max" }
+      ]
+    },
+    {
+      "name": "liveDebounceMs",
+      "title": "Live translate debounce (ms)",
+      "description": "How long to wait after you stop typing before translating (min 250). Higher = fewer LLM calls while typing.",
+      "type": "textfield",
+      "required": false,
+      "default": "700"
+    },</tool_use_error>
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:49Z)**_
+
+<think><details><summary>Thought Process</summary>
+The package.json structure doesn't match what I expected — there's a new prefill preference and the defaultTarget description may have shifted. I need to check the current preferences section to understand what's actually there.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:49Z)**_
+
+Let me read the current preferences block to match exactly.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:39:50Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Dump current preferences array
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension
+python3 -c "import json;d=json.load(open('package.json'));print(json.dumps(d['preferences'],indent=2,ensure_ascii=False))"
+```
+
+```text
+[
+  {
+    "name": "binaryPath",
+    "title": "translate binary path",
+    "description": "Absolute path to the translate CLI. Empty = auto-probe ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/go/bin.",
+    "type": "textfield",
+    "required": false,
+    "placeholder": "/Users/you/.local/bin/translate"
+  },
+  {
+    "name": "defaultTarget",
+    "title": "Default target language",
+    "description": "Language code used when none is picked (e.g. en, zh-TW, ja).",
+    "type": "textfield",
+    "required": false,
+    "default": "en"
+  },
+  {
+    "name": "engine",
+    "title": "Engine",
+    "description": "Engine override: auto, google, dict, or a provider name. Empty = CLI default.",
+    "type": "textfield",
+    "required": false,
+    "placeholder": "auto"
+  },
+  {
+    "name": "tier",
+    "title": "Model tier",
+    "description": "LLM model tier when an LLM engine is used.",
+    "type": "dropdown",
+    "required": false,
+    "default": "default",
+    "data": [
+      {
+        "title": "Default",
+        "value": "default"
+      },
+      {
+        "title": "Fast",
+        "value": "fast"
+      },
+      {
+        "title": "Max",
+        "value": "max"
+      }
+    ]
+  },
+  {
+    "name": "liveDebounceMs",
+    "title": "Live translate debounce (ms)",
+    "description": "How long to wait after you stop typing before translating (min 250). Higher = fewer LLM calls while typing.",
+    "type": "textfield",
+    "required": false,
+    "default": "700"
+  }
+]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:03Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm noticing a mismatch between the indentation in my old_string and what's actually in the file — I used 4-space indentation for the array items, but I need to check the raw formatting of the preferences array in the actual package.json to match it correctly.
+
+Rather than trying to replace the entire block, I should make smaller, targeted edits on individual fields like the description and default values for defaultTarget, using their unique strings to avoid indentation issues.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:03Z)**_
+
+Let me see the raw indentation to match precisely.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:03Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./raycast/extension/package.json`
+
+```text
+63	      "mode": "view"
+64	    },
+65	    {
+66	      "name": "history",
+67	      "title": "History",
+68	      "description": "Browse and search translation history.",
+69	      "mode": "view"
+70	    }
+71	  ],
+72	  "preferences": [
+73	    {
+74	      "name": "binaryPath",
+75	      "title": "translate binary path",
+76	      "description": "Absolute path to the translate CLI. Empty = auto-probe ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/go/bin.",
+77	      "type": "textfield",
+78	      "required": false,
+79	      "placeholder": "/Users/you/.local/bin/translate"
+80	    },
+81	    {
+82	      "name": "defaultTarget",
+83	      "title": "Default target language",
+84	      "description": "Language code used when none is picked (e.g. en, zh-TW, ja).",
+85	      "type": "textfield",
+86	      "required": false,
+87	      "default": "en"
+88	    },
+89	    {
+90	      "name": "engine",
+91	      "title": "Engine",
+92	      "description": "Engine override: auto, google, dict, or a provider name. Empty = CLI default.",
+93	      "type": "textfield",
+94	      "required": false,
+95	      "placeholder": "auto"
+96	    },
+97	    {
+98	      "name": "tier",
+99	      "title": "Model tier",
+100	      "description": "LLM model tier when an LLM engine is used.",
+101	      "type": "dropdown",
+102	      "required": false,
+103	      "default": "default",
+104	      "data": [
+105	        { "title": "Default", "value": "default" },
+106	        { "title": "Fast", "value": "fast" },
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:23Z)**_
+
+<think><details><summary>Thought Process</summary>
+I need to correct the indentation in the configuration block—it should be 6 spaces, not 4—and I'm making targeted edits to the defaultTarget field definition.
+
+Updating the tier block to change the default value from "default" to an empty string, and renaming the first option to "Use config default" so it inherits from the translate config's tier setting.
+
+Continuing with edits...
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:23Z)**_
+
+Now the three targeted edits with correct indentation.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:24Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/package.json has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:26Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/package.json has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:29Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/package.json has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:40:40Z)**_
+
+Now build + lint (watch for whether ray lint accepts the empty-string tier option), plus run Go checks for the CLI change.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:41:11Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Go checks + extension build/lint
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== Go checks (CLI --json change) ==="; just check 2>&1 | tail -4; go test ./cmd/... ./internal/config/... 2>&1 | tail -6
+echo "=== extension build ==="; cd raycast/extension && npm run build 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'ready|error' | head
+echo "=== extension lint (empty tier value ok?) ==="; npm run fix-lint 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'error|ready|value|preferences' | head
+npm run lint >/dev/null 2>&1 && echo "lint PASS" || { echo "lint FAIL"; npm run lint 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -iE 'error|value' | head; }
+```
+
+```text
+=== Go checks (CLI --json change) ===
+gofmt -w cmd internal main.go
+go vet . ./cmd/... ./internal/...
+go build -o translate .
+?   	github.com/daviddwlee84/translate/cmd	[no test files]
+ok  	github.com/daviddwlee84/translate/internal/config	(cached)
+=== extension build ===
+ready  - built extension successfully
+=== extension lint (empty tier value ok?) ===
+ready  - validate package.json file
+ready  - validate extension icons
+ready  - run ESLint
+ready  - run Prettier 3.9.6
+lint PASS
+[This command modified 1 file you've previously read: src/translate.tsx. Call Read before editing.]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:41:50Z)**_
+
+<think><details><summary>Thought Process</summary>
+All the checks are passing—Go formatting and linting are good, the config tests work, and the extension builds and lints without issues. The translate.tsx component looks right with the config effect, prefill logic, did-you-mean feature, and dropdown handling all in place. Now I'm running through an end-to-end verification of how the config gets read from the CLI to make sure everything works as expected.
+
+I'm checking the tier behavior specifically—when the extension passes an empty string for tier, it shouldn't get pushed to the args, so the binary will fall back to using the config tier value instead. That's working correctly. Since the CLI flag and extension changes are tightly coupled, I'm planning to commit this as a single feature rather than splitting it into separate commits. I'm skipping the dedicated test since the JSON round-trip is straightforward and already verified manually, plus cmd has no existing test files. Now I need to update the documentation — I'll add notes to the raycast extension README about how target, debounce, and tier inherit from the CLI config when not explicitly set, and mention this in the main raycast extension docs as well.
+
+I'm planning three commits: one for the CLI changes, one for the extension code, and one for the documentation updates. Let me verify the end-to-end behavior once more by simulating what the extension does — calling the config show command with JSON output and confirming the fields match. That's already done, so I'm ready to commit.
+
+Writing commit message... Now I'm identifying the files to stage: the config command in the CLI and the translate view components plus package config in the extension. Let me verify the formatting is correct after gofmt ran, then commit both parts separately.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:41:50Z)**_
+
+Everything passes — Go checks/tests, extension build, and `ray lint` accepts the empty-string "Use config default" tier option. Let me verify the end-to-end data path once, then commit (CLI, then extension).
+
+_**Agent (claude-opus-4-8 2026-07-24 03:41:53Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify data path and commit CLI + extension
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+echo "=== what the extension will read on open (pref empty → config) ==="
+./translate config show --json 2>/dev/null | python3 -c "import sys,json;g=json.load(sys.stdin).get('general',{});print('dropdown default →',g.get('default_target'),'| debounce →',g.get('debounce_ms'),'ms | tier(config) →',g.get('tier'))"
+echo "=== commit CLI ==="
+git add cmd/config.go
+git commit -q -F - <<'MSG'
+feat(cli): config show --json for programmatic config reads
+
+`config show` now honors --json, emitting the effective config as JSON. Keys match
+the TOML (via a TOML→map→JSON round-trip, so e.g. general.default_target) without
+adding json tags to every struct. Lets front-ends like the Raycast extension inherit
+the config's default target / debounce instead of duplicating them.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "cli exit=$?"
+git add raycast/extension/src/lib/translate.ts raycast/extension/src/translate.tsx raycast/extension/package.json
+git commit -q -F - <<'MSG'
+feat(raycast): inherit default target / debounce / tier from the CLI config
+
+The Translate view reads `translate config show --json` and uses
+general.default_target (dropdown default) and general.debounce_ms (live debounce)
+whenever the matching Raycast preference is empty; the tier preference gains a
+"Use config default" option (engine already passes through). So you set the target
+once in ~/.config/translate and Raycast honors it. Dropped the dropdown's storeValue
+so the config default drives each open (manual picks stay per-session); Raycast prefs
+still override config when set.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "ext exit=$?"; git log --oneline -3
+```
+
+```text
+=== what the extension will read on open (pref empty → config) ===
+dropdown default → zh-TW | debounce → 400 ms | tier(config) → default
+=== commit CLI ===
+cli exit=0
+ext exit=0
+448f194 feat(raycast): inherit default target / debounce / tier from the CLI config
+3f61d62 feat(cli): config show --json for programmatic config reads
+d4d3361 docs(backlog): frequency-aware "did you mean" ranking as a P? spike
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:09Z)**_
+
+<think><details><summary>Thought Process</summary>
+Now I'm updating the documentation to reflect config inheritance. I need to revise the Preferences section in the extension README to mention how configuration is inherited, and add notes about config inheritance and the `config show --json` command to the main raycast extension docs.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:09Z)**_
+
+Both committed (`3f61d62` CLI, `448f194` extension). Now document the inheritance.
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:11Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/extension/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:13Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/docs/raycast-extension.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:20Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit docs for config inheritance
+
+```bash
+cd /Users/david/src/tries/2026-07-09-translate-cli-tui
+git add raycast/extension/README.md docs/raycast-extension.md
+git commit -q -F - <<'MSG'
+docs(raycast): note config inheritance for target/tier/debounce
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+MSG
+echo "exit=$?"; git log --oneline -7
+```
+
+```text
+exit=0
+fc18d93 docs(raycast): note config inheritance for target/tier/debounce
+448f194 feat(raycast): inherit default target / debounce / tier from the CLI config
+3f61d62 feat(cli): config show --json for programmatic config reads
+d4d3361 docs(backlog): frequency-aware "did you mean" ranking as a P? spike
+04e0ac3 docs(raycast): note Translate typo suggestions + opt-in prefill
+e87db06 fix(raycast): plain Translate no longer auto-grabs input (default "Nothing")
+5ae3b77 feat(raycast): "did you mean?" typo suggestions in Translate
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:40Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've wrapped up both tasks for this session. First, I added the suggestion-ranking backlog document with its TODO and index entries, plus fixed an outdated API server reference. For the config inheritance question, I implemented the full solution across both the CLI tool to display JSON config output and the extension to properly inherit default target and deb settings.
+
+The key behavior to verify: when Raycast preferences are empty, the extension now defaults to whatever's in your config file—so if you set `default_target=zh-TW`, the dropdown will show Chinese (Traditional) on each open instead of English. Raycast prefs still override if you explicitly set them. One UX change worth noting: I removed the stored preference memory, so the dropdown no longer remembers your last manual selection across sessions—it resets to the config default each time, which keeps things consistent with your configuration.
+</details></think>
+
+_**Agent (claude-opus-4-8 2026-07-24 03:42:46Z)**_
+
+Both done for this turn.
+
+## 1. Suggestion-ranking → backlog (`d4d3361`)
+`backlog/suggestion-ranking.md` (frequency-aware re-rank by ECDICT `frq`/`bnc` so "receive" beats "relieve"; optional `SuggestDistance`-in-JSON for Google-style auto-correct) + `TODO.md` P? + index row. Also fixed a stale `api-server` index row (it's shipped, not deferred).
+
+## 2. Config-as-default — implemented (你的問題 + 都做了)
+
+**Answer to "whose work":** it was a small bit of **CLI + extension** (not server-side), exactly as expected:
+- **`3f61d62` CLI** — `config show --json` now emits the effective config as JSON (snake_case keys via a TOML→map→JSON round-trip, no struct-tag churn).
+- **`448f194` extension** — the Translate view reads it and **inherits from your `config.toml`** whenever the matching Raycast preference is left empty:
+
+| Setting | Inherited from | Verified now |
+|---|---|---|
+| dropdown default target | `general.default_target` | **zh-TW** |
+| live debounce | `general.debounce_ms` | **400 ms** |
+| tier ("Use config default") | `general.tier` | **default** |
+| engine | (already passed through) | config's `smartauto` |
+
+So you configure the target once in `~/.config/translate/config.toml` and Raycast honors it. A Raycast preference still **overrides** config when you set one.
+
+**One behavior change to note:** I dropped the dropdown's `storeValue`, so it no longer remembers your last manual pick across opens — each open starts from the config/pref default (which is the point of "config specifies the default"). Mid-session changes still apply.
+
+**Test it:** since this hot-reloads, reopen **Translate** — the language dropdown should now start on **Chinese (Traditional)** (from your `default_target = 'zh-TW'`) instead of English.
+
+Eight commits this turn's span; all builds/lints/Go checks green. Good stopping point — want to keep going on anything (e.g. the frequency-rank spike, or wiring the extension to talk to `translate serve`)?
