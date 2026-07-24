@@ -18,10 +18,10 @@
         {
           "name": "prefill",
           "title": "Prefill input from",
-          "description": "When opening Translate, seed the input box from the current selection or the clipboard (empty when there is nothing to grab, so you can also just type).",
+          "description": "When opening Translate, seed the input box from the current selection or the clipboard (empty when there is nothing to grab, so you can also just type). Defaults to Nothing — use Translate Selection to act on the selection/clipboard.",
           "type": "dropdown",
           "required": false,
-          "default": "selection",
+          "default": "none",
           "data": [
             { "title": "Selected text", "value": "selection" },
             { "title": "Clipboard", "value": "clipboard" },
