@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -26,7 +27,7 @@ func newConfigCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "show",
-			Short: "Print the effective configuration as TOML",
+			Short: "Print the effective configuration as TOML (or JSON with --json)",
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				cfg, _, err := config.Load()
 				if err != nil {
@@ -35,6 +36,19 @@ func newConfigCmd() *cobra.Command {
 				b, err := toml.Marshal(cfg)
 				if err != nil {
 					return err
+				}
+				if flagJSON {
+					// Round-trip TOML → map → JSON so the JSON keys match the TOML
+					// (snake_case, e.g. general.default_target) without adding json
+					// tags to every config struct. Lets other front-ends (the Raycast
+					// extension) read the effective config.
+					var m map[string]any
+					if err := toml.Unmarshal(b, &m); err != nil {
+						return err
+					}
+					enc := json.NewEncoder(os.Stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(m)
 				}
 				_, err = os.Stdout.Write(b)
 				return err
