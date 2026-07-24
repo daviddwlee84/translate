@@ -81,10 +81,9 @@
     {
       "name": "defaultTarget",
       "title": "Default target language",
-      "description": "Language code used when none is picked (e.g. en, zh-TW, ja).",
+      "description": "Language code (e.g. en, zh-TW, ja). Leave empty to inherit the translate config's default_target.",
       "type": "textfield",
-      "required": false,
-      "default": "en"
+      "required": false
     },
     {
       "name": "engine",
@@ -97,11 +96,12 @@
     {
       "name": "tier",
       "title": "Model tier",
-      "description": "LLM model tier when an LLM engine is used.",
+      "description": "LLM model tier. \"Use config default\" inherits the translate config's tier.",
       "type": "dropdown",
       "required": false,
-      "default": "default",
+      "default": "",
       "data": [
+        { "title": "Use config default", "value": "" },
         { "title": "Default", "value": "default" },
         { "title": "Fast", "value": "fast" },
         { "title": "Max", "value": "max" }
@@ -110,10 +110,9 @@
     {
       "name": "liveDebounceMs",
       "title": "Live translate debounce (ms)",
-      "description": "How long to wait after you stop typing before translating (min 250). Higher = fewer LLM calls while typing.",
+      "description": "How long to wait after you stop typing before translating (min 250). Leave empty to inherit the translate config's debounce_ms (falls back to 700).",
       "type": "textfield",
-      "required": false,
-      "default": "700"
+      "required": false
     }
   ],
   "dependencies": {

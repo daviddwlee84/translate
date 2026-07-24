@@ -14,6 +14,7 @@ import { usePromise } from "@raycast/utils";
 import {
   runTranslate,
   speak,
+  readConfig,
   LANGS,
   isBinaryMissing,
   TranslateResult,
@@ -41,11 +42,31 @@ export default function Command(
   props: LaunchProps<{ launchContext?: { seed?: string; to?: string } }>,
 ) {
   const prefs = getPreferenceValues<Prefs>();
-  const debounceMs = Math.max(250, Number(prefs.liveDebounceMs) || 700);
   const ctx = props.launchContext;
+  const prefDebounce = Number(prefs.liveDebounceMs);
+  const [debounceMs, setDebounceMs] = useState(
+    prefDebounce > 0 ? Math.max(250, prefDebounce) : 700,
+  );
   const [text, setText] = useState(ctx?.seed ?? "");
-  const [to, setTo] = useState(ctx?.to || prefs.defaultTarget || "en");
+  const [to, setTo] = useState(ctx?.to || prefs.defaultTarget || "");
   const [engine, setEngine] = useState("");
+
+  // Inherit the default target + debounce from the CLI config (~/.config/translate)
+  // when the matching Raycast preference is empty. Falls back to "en"/700ms.
+  useEffect(() => {
+    if (to && prefs.liveDebounceMs) return; // nothing to inherit
+    readConfig()
+      .then((cfg) => {
+        if (!to && cfg.general?.default_target)
+          setTo(cfg.general.default_target);
+        if (!prefs.liveDebounceMs && cfg.general?.debounce_ms)
+          setDebounceMs(Math.max(250, cfg.general.debounce_ms));
+      })
+      .catch(() => {
+        /* fall back to defaults */
+      })
+      .finally(() => setTo((t) => t || "en"));
+  }, []);
 
   // On first open, seed the input from the current selection (or clipboard), per the
   // "Prefill input from" preference — unless we were launched with a seed (from
@@ -109,12 +130,7 @@ export default function Command(
       searchBarPlaceholder="Type text to translate…"
       isShowingDetail={!!data?.translation}
       searchBarAccessory={
-        <List.Dropdown
-          tooltip="Target language"
-          storeValue
-          value={to}
-          onChange={setTo}
-        >
+        <List.Dropdown tooltip="Target language" value={to} onChange={setTo}>
           {LANGS.map((l) => (
             <List.Dropdown.Item key={l.value} title={l.title} value={l.value} />
           ))}

@@ -195,6 +195,37 @@ export function speak(text: string, to: string): void {
   });
 }
 
+/** The effective CLI config (subset we care about) from `config show --json`. */
+export interface CliConfig {
+  general?: {
+    default_target?: string;
+    default_source?: string;
+    debounce_ms?: number;
+    engine?: string;
+    tier?: string;
+    live_translate?: boolean;
+  };
+}
+
+let cachedConfig: CliConfig | undefined;
+
+/**
+ * Read the CLI's effective config via `translate config show --json` (cached per
+ * command run). Lets the extension inherit the default target / debounce from
+ * ~/.config/translate/config.toml when the Raycast preferences are left empty.
+ */
+export async function readConfig(): Promise<CliConfig> {
+  if (cachedConfig) return cachedConfig;
+  const bin = resolveBinary();
+  const { stdout } = await pexecFile(bin, ["config", "show", "--json"], {
+    timeout: 10_000,
+    maxBuffer: 4 * 1024 * 1024,
+    env: baseEnv(),
+  });
+  cachedConfig = JSON.parse(stdout) as CliConfig;
+  return cachedConfig;
+}
+
 export interface StreamHandlers {
   onData: (chunk: string) => void;
   onDone: (code: number | null) => void;
