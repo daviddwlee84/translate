@@ -143,6 +143,89 @@ function baseEnv(): NodeJS.ProcessEnv {
   return { ...process.env, HOME: process.env.HOME ?? homedir() };
 }
 
+/**
+ * Above this many UTF-8 bytes, text goes to the CLI on stdin instead of argv.
+ *
+ * macOS caps a whole argument list at ARG_MAX (1 MiB) and fails the spawn with
+ * E2BIG — measured: 900 KB via argv works, 1.1 MB is "argument list too long".
+ * The CLI reads stdin when it gets no text argument, and the pipe has no such
+ * limit, so long documents take that route. The threshold leaves plenty of room
+ * for multi-byte text (a CJK character is 3 bytes).
+ */
+const ARGV_SAFE_BYTES = 128 * 1024;
+
+function needsStdin(text: string): boolean {
+  return Buffer.byteLength(text, "utf8") > ARGV_SAFE_BYTES;
+}
+
+/**
+ * Run the CLI with `input` written to stdin and no text argument, resolving with
+ * stdout. Mirrors pexecFile's rejection shape (message + `stderr`) so callers
+ * can keep inspecting stderr the same way.
+ */
+function execWithStdin(
+  bin: string,
+  args: string[],
+  input: string,
+  opts: { timeout?: number; signal?: AbortSignal } = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { env: baseEnv() });
+    let out = "";
+    let err = "";
+    let settled = false;
+
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const kill = (reason: string) =>
+      finish(() => {
+        if (!child.killed) child.kill("SIGTERM");
+        reject(Object.assign(new Error(reason), { stderr: err }));
+      });
+    const onAbort = () => kill("aborted");
+    const timer = opts.timeout
+      ? setTimeout(
+          () => kill(`timed out after ${opts.timeout}ms`),
+          opts.timeout,
+        )
+      : (undefined as unknown as NodeJS.Timeout);
+
+    opts.signal?.addEventListener("abort", onAbort, { once: true });
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (d: string) => (out += d));
+    child.stderr?.on("data", (d: string) => (err += d));
+    child.on("error", (e) =>
+      finish(() => reject(Object.assign(e, { stderr: err }))),
+    );
+    child.on("close", (code) =>
+      finish(() =>
+        code === 0
+          ? resolve(out)
+          : reject(
+              Object.assign(
+                new Error(`translate exited ${code}: ${err.trim()}`),
+                {
+                  stderr: err,
+                },
+              ),
+            ),
+      ),
+    );
+
+    child.stdin?.on("error", () => {
+      /* the child may exit before we finish writing — the close handler reports it */
+    });
+    child.stdin?.end(input, "utf8");
+  });
+}
+
 export interface TranslateOptions {
   to?: string;
   from?: string;
@@ -158,7 +241,10 @@ export async function runTranslate(
 ): Promise<TranslateResult> {
   const prefs = getPreferenceValues<Prefs>();
   const bin = resolveBinary();
-  const args = [text, "--to", opts.to ?? prefs.defaultTarget ?? "en", "--json"];
+  const viaStdin = needsStdin(text);
+  // With no text argument the CLI reads stdin, which sidesteps ARG_MAX.
+  const args = viaStdin ? [] : [text];
+  args.push("--to", opts.to ?? prefs.defaultTarget ?? "en", "--json");
   if (opts.from) args.push("--from", opts.from);
   const engine = opts.engine ?? prefs.engine;
   if (engine) args.push("--engine", engine);
@@ -166,6 +252,13 @@ export async function runTranslate(
   if (tier) args.push("--tier", tier);
   if (opts.noHistory) args.push("--no-history");
 
+  if (viaStdin) {
+    const stdout = await execWithStdin(bin, args, text, {
+      timeout: 120_000, // a long document is a long call
+      signal: opts.signal,
+    });
+    return JSON.parse(stdout) as TranslateResult;
+  }
   const { stdout } = await pexecFile(bin, args, {
     timeout: 60_000, // LLM engines routinely exceed useExec's 10s default
     maxBuffer: 16 * 1024 * 1024,
@@ -397,7 +490,9 @@ export function spawnTranslateStream(
   h: StreamHandlers,
 ): () => void {
   const bin = resolveBinary();
-  const args = [text, "--to", opts.to ?? "en", "--stream", "--no-history"];
+  const viaStdin = needsStdin(text);
+  const args = viaStdin ? [] : [text];
+  args.push("--to", opts.to ?? "en", "--stream", "--no-history");
   if (opts.engine) args.push("--engine", opts.engine);
   if (opts.from) args.push("--from", opts.from);
   if (opts.tier) args.push("--tier", opts.tier);
@@ -407,6 +502,12 @@ export function spawnTranslateStream(
   child.stdout?.on("data", (d: Buffer | string) => h.onData(d.toString()));
   child.on("close", (code) => h.onDone(code));
   child.on("error", (err) => h.onError(err));
+  if (viaStdin) {
+    child.stdin?.on("error", () => {
+      /* reported via the close/error handlers above */
+    });
+    child.stdin?.end(text, "utf8");
+  }
   return () => {
     if (!child.killed) child.kill("SIGTERM");
   };

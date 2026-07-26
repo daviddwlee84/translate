@@ -1,0 +1,192 @@
+import { useEffect, useState } from "react";
+import {
+  ActionPanel,
+  Action,
+  Clipboard,
+  Form,
+  Icon,
+  LaunchProps,
+  getPreferenceValues,
+  getSelectedText,
+  showToast,
+  Toast,
+  useNavigation,
+} from "@raycast/api";
+import { readConfig } from "./lib/translate";
+import { useLanguages } from "./lib/language-dropdown";
+import { TranslationDetail } from "./lib/translation-detail";
+import { StreamView } from "./lib/stream-view";
+
+const ENGINES = [
+  { title: "Auto (fallback chain)", value: "" },
+  { title: "Google", value: "google" },
+  { title: "Dictionary (offline)", value: "dict" },
+  { title: "Copilot", value: "copilot" },
+  { title: "Ollama", value: "ollama" },
+];
+
+/**
+ * Translate a long passage.
+ *
+ * The other commands take their input in the search bar, which Raycast caps —
+ * pasting a long passage there is refused with "The text you are trying to paste
+ * is too long". That guard lives in the Raycast app, not in the extension API,
+ * so it can't be raised or caught; the only way around it is to not use the
+ * search bar. A Form.TextArea takes as much text as you like, and the shell-out
+ * layer switches to stdin past 128 KB so ARG_MAX isn't the next wall.
+ *
+ * Nothing is prefilled automatically — loading the selection or the clipboard is
+ * an explicit action, so opening the command is never surprising.
+ */
+export default function Command(
+  props: LaunchProps<{ arguments: Arguments.TranslateText }>,
+) {
+  const prefs = getPreferenceValues<Preferences.TranslateText>();
+  const { push } = useNavigation();
+  const langs = useLanguages();
+
+  const [text, setText] = useState("");
+  const [to, setTo] = useState(
+    props.arguments?.to || prefs.defaultTarget || "",
+  );
+  const [engine, setEngine] = useState(prefs.engine ?? "");
+
+  // Same inheritance as the other commands: argument → Raycast preference →
+  // the CLI config's default_target → "en".
+  useEffect(() => {
+    if (to) return;
+    readConfig()
+      .then((cfg) => {
+        if (cfg.general?.default_target) setTo(cfg.general.default_target);
+      })
+      .catch(() => {
+        /* fall back below */
+      })
+      .finally(() => setTo((t) => t || "en"));
+  }, []);
+
+  const submit = (streaming: boolean) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      showToast({ style: Toast.Style.Failure, title: "Nothing to translate" });
+      return;
+    }
+    push(
+      streaming ? (
+        <StreamView text={trimmed} to={to} engine={engine || undefined} />
+      ) : (
+        <TranslationDetail
+          text={trimmed}
+          to={to}
+          engine={engine || undefined}
+        />
+      ),
+    );
+  };
+
+  const load = async (from: "selection" | "clipboard") => {
+    try {
+      const got =
+        from === "selection"
+          ? await getSelectedText()
+          : ((await Clipboard.readText()) ?? "");
+      if (!got.trim()) {
+        showToast({
+          style: Toast.Style.Failure,
+          title: `Nothing in the ${from}`,
+        });
+        return;
+      }
+      setText(got);
+    } catch {
+      showToast({
+        style: Toast.Style.Failure,
+        title: `Couldn't read the ${from}`,
+        message:
+          from === "selection"
+            ? "Grant Raycast Accessibility permission, or copy the text instead."
+            : undefined,
+      });
+    }
+  };
+
+  return (
+    <Form
+      actions={
+        <ActionPanel>
+          <Action
+            title="Translate"
+            icon={Icon.Text}
+            onAction={() => submit(false)}
+          />
+          <Action
+            title="Translate (streaming)"
+            icon={Icon.Bolt}
+            shortcut={{ modifiers: ["cmd"], key: "return" }}
+            onAction={() => submit(true)}
+          />
+          <Action
+            title="Load Selection"
+            icon={Icon.TextCursor}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
+            onAction={() => load("selection")}
+          />
+          <Action
+            title="Load Clipboard"
+            icon={Icon.Clipboard}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "v" }}
+            onAction={() => load("clipboard")}
+          />
+          <Action
+            title="Clear"
+            icon={Icon.Trash}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "x" }}
+            onAction={() => setText("")}
+          />
+        </ActionPanel>
+      }
+    >
+      <Form.TextArea
+        id="text"
+        title="Text"
+        placeholder="Paste or type as much as you like — this box has no search-bar limit."
+        value={text}
+        onChange={setText}
+      />
+      <Form.Description
+        title=""
+        text={
+          text
+            ? `${text.length.toLocaleString()} characters`
+            : "⌘⇧S loads the selection · ⌘⇧V loads the clipboard"
+        }
+      />
+      <Form.Separator />
+      <Form.Dropdown
+        id="to"
+        title="Target"
+        value={to}
+        onChange={setTo}
+        storeValue={false}
+      >
+        {langs.map((l) => (
+          <Form.Dropdown.Item
+            key={l.code}
+            value={l.code}
+            title={`${l.name} (${l.code})`}
+          />
+        ))}
+      </Form.Dropdown>
+      <Form.Dropdown
+        id="engine"
+        title="Engine"
+        value={engine}
+        onChange={setEngine}
+      >
+        {ENGINES.map((e) => (
+          <Form.Dropdown.Item key={e.value} value={e.value} title={e.title} />
+        ))}
+      </Form.Dropdown>
+    </Form>
+  );
+}
