@@ -185,3 +185,59 @@ func TestServiceDefineNotRecorded(t *testing.T) {
 		t.Fatalf("history = %+v, want empty (define is not recorded)", recent)
 	}
 }
+
+// stubSearcher is a canned engine.Searcher for the SearchDict wiring test.
+type stubSearcher struct {
+	got   string
+	limit int
+	res   *engine.SearchResult
+	err   error
+}
+
+func (s *stubSearcher) Search(_ context.Context, q string, limit int) (*engine.SearchResult, error) {
+	s.got, s.limit = q, limit
+	return s.res, s.err
+}
+
+func TestServiceSearchDict(t *testing.T) {
+	svc := newTestService(t, config.Default(), &stubEngine{name: "stub"}, &stubEngine{name: "dict"}, true)
+	sr := &stubSearcher{res: &engine.SearchResult{
+		Query:      "tes",
+		Source:     "ecdict",
+		Candidates: []engine.Candidate{{Word: "test", Match: engine.MatchPrefix}},
+	}}
+	svc.search = sr
+
+	got, err := svc.SearchDict(context.Background(), "tes", 5)
+	if err != nil {
+		t.Fatalf("SearchDict: %v", err)
+	}
+	if sr.got != "tes" || sr.limit != 5 {
+		t.Fatalf("query/limit not forwarded: %q / %d", sr.got, sr.limit)
+	}
+	if len(got.Candidates) != 1 || got.Candidates[0].Word != "test" {
+		t.Fatalf("result not passed through: %+v", got)
+	}
+	// Searching must never write history — a keystroke is not a lookup.
+	if recs, _ := svc.HistoryRecent(context.Background(), 10); len(recs) != 0 {
+		t.Fatalf("SearchDict wrote %d history rows", len(recs))
+	}
+}
+
+// With no local dictionary there is nothing to search, but that is an empty
+// answer rather than a failure — callers can always render a result.
+func TestServiceSearchDictWithoutSearcher(t *testing.T) {
+	svc := newTestService(t, config.Default(), &stubEngine{name: "stub"}, &stubEngine{name: "dict"}, false)
+	svc.search = nil
+
+	got, err := svc.SearchDict(context.Background(), "tes", 5)
+	if err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+	if got.Source != "none" || got.Notes == "" {
+		t.Fatalf("want source=none with a hint, got %+v", got)
+	}
+	if got.Candidates == nil || len(got.Candidates) != 0 {
+		t.Fatalf("want a non-nil empty slice, got %v", got.Candidates)
+	}
+}

@@ -21,6 +21,7 @@ type Service interface {
 	Translate(ctx context.Context, p appcore.Params) (*engine.TranslateResult, error)
 	TranslateStream(ctx context.Context, p appcore.Params, onToken func(string)) (*engine.TranslateResult, error)
 	Define(ctx context.Context, word string) (*engine.TranslateResult, error)
+	SearchDict(ctx context.Context, q string, limit int) (*engine.SearchResult, error)
 	HistoryRecent(ctx context.Context, limit int) ([]store.Record, error)
 	HistorySearch(ctx context.Context, query string, limit int) ([]store.Record, error)
 }
@@ -62,6 +63,9 @@ func newMux(h *handlers) *http.ServeMux {
 	mux.HandleFunc("POST /v1/translate", h.translate)
 	mux.HandleFunc("GET /v1/translate/stream", h.translateStream)
 	mux.HandleFunc("POST /v1/define", h.define)
+	// Not token-guarded: dictionary headwords are public reference data, unlike
+	// /v1/history which is the user's own text.
+	mux.HandleFunc("GET /v1/dict/search", h.dictSearch)
 	mux.HandleFunc("GET /v1/history", h.requireToken(h.history))
 	mux.HandleFunc("GET /healthz", h.healthz)
 	registerDocs(mux)

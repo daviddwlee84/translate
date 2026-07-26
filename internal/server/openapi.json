@@ -89,6 +89,25 @@
         }
       }
     },
+    "/v1/dict/search": {
+      "get": {
+        "tags": ["dictionary"],
+        "summary": "Search dictionary headwords by prefix",
+        "description": "Ranked headword candidates with one-line definition previews, for a type-ahead picker. Reads local dictionary data only (no network, no LLM) and never records history. An empty or unmatched query is 200 with an empty candidate list, not an error.",
+        "operationId": "dictSearch",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "What the user has typed so far" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 12, "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked candidates (possibly empty)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResult" } } }
+          },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
     "/v1/history": {
       "get": {
         "tags": ["history"],
@@ -191,6 +210,29 @@
           "phonetic": { "type": "string" },
           "meanings": { "type": "array", "items": { "$ref": "#/components/schemas/Meaning" } },
           "source_url": { "type": "string" }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "description": "Ranked dictionary headword candidates for a partially-typed query.",
+        "properties": {
+          "query": { "type": "string" },
+          "script": { "type": "string", "enum": ["latin", "han"] },
+          "source": { "type": "string", "enum": ["ecdict", "cedict", "wordlist", "none"], "description": "Which local data source answered." },
+          "candidates": { "type": "array", "items": { "$ref": "#/components/schemas/Candidate" } },
+          "notes": { "type": "string", "description": "Why the answer may be degraded, e.g. a dictionary that is not installed or indexed." }
+        }
+      },
+      "Candidate": {
+        "type": "object",
+        "properties": {
+          "word": { "type": "string" },
+          "phonetic": { "type": "string" },
+          "preview": { "type": "string", "description": "One-line definition preview, already truncated." },
+          "pos": { "type": "string" },
+          "rank": { "type": "integer", "description": "ECDICT frequency RANK: 1 is the most common word; absent means unranked." },
+          "match": { "type": "string", "enum": ["exact", "prefix", "fuzzy"] },
+          "distance": { "type": "integer", "description": "Edit distance from the query; present only when match is fuzzy." }
         }
       },
       "Meaning": {

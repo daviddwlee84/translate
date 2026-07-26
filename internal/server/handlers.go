@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/daviddwlee84/translate/internal/appcore"
+	"github.com/daviddwlee84/translate/internal/engine"
 	"github.com/daviddwlee84/translate/internal/store"
 )
 
@@ -77,6 +78,26 @@ func (h *handlers) define(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeEngineError(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// dictSearch serves GET /v1/dict/search?q=&limit= — ranked dictionary headwords
+// with definition previews, for a type-ahead picker.
+//
+// Unlike /v1/define, an empty or unmatched query is 200 with an empty candidate
+// list rather than 422: this endpoint is called on every keystroke, and "nothing
+// yet" is a normal answer, not a client error.
+func (h *handlers) dictSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := parseLimit(r.URL.Query().Get("limit"), 12)
+	res, err := h.svc.SearchDict(r.Context(), q, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dict_error", err.Error())
+		return
+	}
+	if res.Candidates == nil {
+		res.Candidates = []engine.Candidate{} // encode [] not null
 	}
 	writeJSON(w, http.StatusOK, res)
 }

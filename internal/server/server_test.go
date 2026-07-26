@@ -18,10 +18,13 @@ import (
 type fakeService struct {
 	result     *engine.TranslateResult
 	defineRes  *engine.TranslateResult
+	searchRes  *engine.SearchResult
 	err        error
 	recent     []store.Record
 	lastParams appcore.Params
 	lastSearch string
+	lastDictQ  string
+	lastDictN  int
 	streamTok  []string
 	// streamFn, when set, overrides TranslateStream (used to test cancellation).
 	streamFn func(ctx context.Context, onToken func(string)) (*engine.TranslateResult, error)
@@ -47,6 +50,11 @@ func (f *fakeService) TranslateStream(ctx context.Context, p appcore.Params, onT
 
 func (f *fakeService) Define(_ context.Context, _ string) (*engine.TranslateResult, error) {
 	return f.defineRes, f.err
+}
+
+func (f *fakeService) SearchDict(_ context.Context, q string, limit int) (*engine.SearchResult, error) {
+	f.lastDictQ, f.lastDictN = q, limit
+	return f.searchRes, f.err
 }
 
 func (f *fakeService) HistoryRecent(_ context.Context, _ int) ([]store.Record, error) {
@@ -230,5 +238,69 @@ func assertErrorCode(t *testing.T, body []byte, want string) {
 	}
 	if env.Error.Code != want {
 		t.Fatalf("error code = %q, want %q", env.Error.Code, want)
+	}
+}
+
+func TestDictSearchHappyPath(t *testing.T) {
+	fake := &fakeService{searchRes: &engine.SearchResult{
+		Query:  "tes",
+		Script: "latin",
+		Source: "ecdict",
+		Candidates: []engine.Candidate{
+			{Word: "test", Match: engine.MatchPrefix, Preview: "n. 测试", Rank: 575},
+		},
+	}}
+	rec := do(t, &handlers{svc: fake}, "GET", "/v1/dict/search?q=tes&limit=5", "", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	if fake.lastDictQ != "tes" || fake.lastDictN != 5 {
+		t.Fatalf("query/limit not forwarded: %q / %d", fake.lastDictQ, fake.lastDictN)
+	}
+	var got engine.SearchResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Candidates) != 1 || got.Candidates[0].Word != "test" {
+		t.Fatalf("body = %s", rec.Body)
+	}
+}
+
+// Unlike /v1/define, an empty query is a normal answer: this endpoint is called
+// on every keystroke, so "nothing typed yet" must not be a client error. The
+// candidate list must serialize as [] rather than null.
+func TestDictSearchEmptyQuery(t *testing.T) {
+	fake := &fakeService{searchRes: &engine.SearchResult{Source: "none"}}
+	rec := do(t, &handlers{svc: fake}, "GET", "/v1/dict/search?q=", "", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	// Decoding into a map keeps this independent of the encoder's indentation,
+	// while still distinguishing [] from null.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := strings.TrimSpace(string(raw["candidates"])); got != "[]" {
+		t.Fatalf("candidates = %q, want [] (not null)", got)
+	}
+}
+
+// Dictionary data is public reference material, so unlike /v1/history this route
+// is reachable without the bearer token.
+func TestDictSearchNeedsNoToken(t *testing.T) {
+	fake := &fakeService{searchRes: &engine.SearchResult{Source: "ecdict"}}
+	rec := do(t, &handlers{svc: fake, token: "s3cret"}, "GET", "/v1/dict/search?q=tes", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+}
+
+func TestDictSearchWrongMethod(t *testing.T) {
+	rec := do(t, &handlers{svc: &fakeService{}}, "POST", "/v1/dict/search?q=tes", "", nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }

@@ -21,10 +21,11 @@ import (
 type Service struct {
 	cfg      *config.Config
 	res      config.Resolved
-	trans    engine.Engine // warm translate engine
-	define   engine.Engine // warm define engine
-	store    store.Store   // shared history; nil when disabled / NoHistory
-	provider string        // resolved provider name (for per-request model overrides)
+	trans    engine.Engine   // warm translate engine
+	define   engine.Engine   // warm define engine
+	search   engine.Searcher // headword search; nil when the dictionary is remote
+	store    store.Store     // shared history; nil when disabled / NoHistory
+	provider string          // resolved provider name (for per-request model overrides)
 
 	source string // resolved default source (usually "auto")
 	home   string // resolved home target
@@ -75,8 +76,12 @@ func newService(cfg *config.Config, res config.Resolved, trans, def engine.Engin
 	if res.Provider != nil {
 		provider = res.Provider.Name
 	}
+	// The headword searcher is a capability of the offline dictionary, not of the
+	// resolved translate engine — build it from config so it works even when the
+	// engine is a plain LLM.
+	search, _ := DictSearcher(cfg)
 	return &Service{
-		cfg: cfg, res: res, trans: trans, define: def, store: st,
+		cfg: cfg, res: res, trans: trans, define: def, search: search, store: st,
 		provider: provider, source: source, home: home, away: away, pair: pair,
 	}
 }
@@ -163,6 +168,25 @@ func (s *Service) Define(ctx context.Context, word string) (*engine.TranslateRes
 	return engine.Drain(ch, nil)
 }
 
+// SearchDict returns ranked dictionary headword candidates for a partially-typed
+// query. It reads local data only (no network, no LLM) and never records history
+// — it is meant to back a type-ahead picker, where a keystroke must not become a
+// history row.
+//
+// "Nothing found" is not an error; when no local dictionary is configured the
+// result carries Source "none" plus a Notes hint.
+func (s *Service) SearchDict(ctx context.Context, q string, limit int) (*engine.SearchResult, error) {
+	if s.search == nil {
+		return &engine.SearchResult{
+			Query:      q,
+			Candidates: []engine.Candidate{},
+			Source:     "none",
+			Notes:      `headword search needs the offline dictionary ([dict] source = "local")`,
+		}, nil
+	}
+	return s.search.Search(ctx, q, limit)
+}
+
 // HistoryRecent returns up to limit history records, newest first (empty when
 // history is disabled).
 func (s *Service) HistoryRecent(ctx context.Context, limit int) ([]store.Record, error) {
@@ -189,9 +213,10 @@ func (s *Service) Close() error {
 }
 
 // record persists a successful, complete result. Truncated results (a stream cut
-// short) are never recorded, so a partial translation is never cached as complete.
+// short) and empty-output results (a dictionary miss) are never recorded, so
+// neither a partial translation nor a "did you mean" is cached as an answer.
 func (s *Service) record(ctx context.Context, res *engine.TranslateResult, input, source, target string) {
-	if s.store == nil || res == nil || res.Truncated {
+	if s.store == nil || !Recordable(res) {
 		return
 	}
 	_, _ = s.store.Add(ctx, ToRecord(res, input, source, target))
