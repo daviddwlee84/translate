@@ -86,9 +86,14 @@ Raycast offers four ways to surface functionality. We ship the middle two.
   Corollary: read preferences through the generated `Preferences.<Command>` type,
   not a hand-written interface — the generated one makes the field required, so a
   code default that drifts from the manifest becomes a compile error.
-- **Command arguments are static manifest data** and can't be populated at
-  runtime, so a language argument is necessarily a hand-synced subset. In-view
-  `List.Dropdown`s can call `translate lang list --json` for the full table.
+- **The extension runs the *installed* binary, not your working tree.**
+  `resolveBinary()` probes `~/.local/bin` → `/opt/homebrew/bin` → `/usr/local/bin`
+  → `~/go/bin`, so `just raycast-dev` alone never picks up a CLI change. When a
+  change spans both, the loop is `just check && just install && just raycast-dev`.
+  Worse, an old binary fails *silently*: `translate` takes free text as its first
+  argument, so an unknown subcommand gets translated and exits 0
+  (`translate models` → "n. 模型…"). Never probe capability by exit status. See
+  [`../pitfalls/raycast-extension-uses-installed-binary-not-working-tree.md`](../pitfalls/raycast-extension-uses-installed-binary-not-working-tree.md).
 - **The search bar refuses a long paste** ("The text you are trying to paste is
   too long"). That guard is in the Raycast app binary, not `@raycast/api`, so it
   can't be raised or caught, and it applies to every search-bar command. Long
@@ -96,6 +101,9 @@ Raycast offers four ways to surface functionality. We ship the middle two.
   Behind it, argv caps at `ARG_MAX` (1 MiB), so `src/lib/translate.ts` pipes to
   stdin above 128 KB. See
   [`../pitfalls/raycast-search-bar-refuses-long-paste.md`](../pitfalls/raycast-search-bar-refuses-long-paste.md).
+- **Command arguments are static manifest data** and can't be populated at
+  runtime, so a language argument is necessarily a hand-synced subset. In-view
+  `List.Dropdown`s can call `translate lang list --json` for the full table.
 
 ## Competitive landscape (2026)
 

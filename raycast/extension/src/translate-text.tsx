@@ -227,25 +227,36 @@ export default function Command(
               />
             ))}
           </Form.Dropdown>
-          <Form.Dropdown
-            id="model"
-            title="Model"
-            value={model}
-            onChange={setModel}
-            info="Models declared by the configured providers. Leave on the default to let the engine and tier decide."
-          >
-            <Form.Dropdown.Item
-              value={MODEL_DEFAULT}
-              title="Default (engine + tier)"
+          {models.length === 0 ? (
+            // An empty list almost always means the *installed* CLI predates
+            // `translate models`, not that no providers are configured — the
+            // extension resolves a binary from ~/.local/bin, which is easy to
+            // leave behind while iterating on the repo.
+            <Form.Description
+              title="Model"
+              text="No models listed — the installed translate CLI is probably older than `translate models`. Run `just install` (or brew upgrade) and reopen."
             />
-            {models.map((m) => (
+          ) : (
+            <Form.Dropdown
+              id="model"
+              title="Model"
+              value={model}
+              onChange={setModel}
+              info="Models declared by the configured providers. Leave on the default to let the engine and tier decide."
+            >
               <Form.Dropdown.Item
-                key={`${m.provider}:${m.model}`}
-                value={m.model}
-                title={`${m.model} — ${m.provider} ${m.tier}${m.default ? " ★" : ""}`}
+                value={MODEL_DEFAULT}
+                title="Default (engine + tier)"
               />
-            ))}
-          </Form.Dropdown>
+              {models.map((m) => (
+                <Form.Dropdown.Item
+                  key={`${m.provider}:${m.model}`}
+                  value={m.model}
+                  title={`${m.model} — ${m.provider} ${m.tier}${m.default ? " ★" : ""}`}
+                />
+              ))}
+            </Form.Dropdown>
+          )}
         </>
       ) : null}
     </Form>
