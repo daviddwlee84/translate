@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daviddwlee84/translate/internal/lang"
 )
@@ -20,11 +21,14 @@ import (
 // LLMConfig parameterizes an OpenAI-compatible backend (copilot-proxy, Ollama,
 // OpenRouter, LiteLLM, or a generic base_url+key endpoint).
 type LLMConfig struct {
-	Name      string        // "copilot", "ollama", "openrouter", ...
-	BaseURL   string        // e.g. "http://localhost:4141/v1"
-	Model     string        // e.g. "claude-sonnet-5"
-	APIKeyEnv string        // env var holding the key; "" => no Authorization header
-	Timeout   time.Duration // per-request timeout (0 => 60s)
+	Name      string // "copilot", "ollama", "openrouter", ...
+	BaseURL   string // e.g. "http://localhost:4141/v1"
+	Model     string // e.g. "claude-sonnet-5"
+	APIKeyEnv string // env var holding the key; "" => no Authorization header
+	// Timeout is the whole-request ceiling (0 => 10m). It exists to stop a wedged
+	// connection hanging a front-end, NOT to bound generation: a document-sized
+	// translation legitimately runs for minutes.
+	Timeout time.Duration
 }
 
 // LLMEngine talks to any OpenAI-compatible /chat/completions endpoint.
@@ -34,16 +38,33 @@ type LLMEngine struct {
 	http *http.Client
 }
 
+// defaultRequestTimeout is the whole-request ceiling when the config sets none.
+// Generous on purpose: it is a backstop for a wedged connection, and a
+// document-sized translation legitimately takes minutes.
+const defaultRequestTimeout = 10 * time.Minute
+
 // NewLLM builds an LLM engine, resolving the API key once from the environment.
 func NewLLM(cfg LLMConfig) *LLMEngine {
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
+		cfg.Timeout = defaultRequestTimeout
 	}
 	key := ""
 	if cfg.APIKeyEnv != "" {
 		key = strings.TrimSpace(os.Getenv(cfg.APIKeyEnv))
 	}
-	return &LLMEngine{cfg: cfg, key: key, http: &http.Client{Timeout: cfg.Timeout}}
+	// No http.Client.Timeout, and no Transport.ResponseHeaderTimeout either.
+	//
+	// Client.Timeout covers the *entire* request including reading the body, so a
+	// streamed translation was cut off at exactly that deadline mid-sentence (see
+	// pitfalls/llm-stream-truncation-silently-rendered-as-complete.md).
+	// ResponseHeaderTimeout looks like the right replacement and is not:
+	// copilot-proxy buffers Claude /v1/messages responses and sends no headers
+	// until generation finishes, so a header deadline fails exactly the long
+	// documents this is meant to fix.
+	//
+	// The bound is the per-request context in Translate instead. Probes set their
+	// own short deadlines (Available 800ms, Models 4s) and are unaffected.
+	return &LLMEngine{cfg: cfg, key: key, http: &http.Client{}}
 }
 
 // Name returns the provider name (e.g. "copilot").
@@ -129,11 +150,37 @@ type streamDelta struct {
 
 // --- Anthropic Messages API wire types (/v1/messages) ---
 
+// anthropicMaxTokens is the *floor* for the output cap, enough for any short
+// translation. Long input scales above it — see outputTokenBudget.
 const anthropicMaxTokens = 4096
 
 // learnMaxTokens is a larger cap for learn mode: a gloss-rich structured JSON reply
 // can exceed the terse-translation budget, and a truncated JSON body fails to parse.
 const learnMaxTokens = 8192
+
+// maxOutputTokens caps the scaled budget. Well inside any current Claude model's
+// output limit, while still covering a document-sized translation.
+const maxOutputTokens = 32768
+
+// outputTokenBudget sizes max_tokens for the input rather than using one fixed
+// cap. A translation is roughly as long as its source, so a fixed 4096 silently
+// truncated anything past a few thousand characters — measured: 10 KB of English
+// prose produced 5368 Chinese characters and was cut off mid-document.
+//
+// The estimate is deliberately generous: max_tokens is only a ceiling, so
+// over-estimating costs nothing, while under-estimating loses the tail of the
+// answer. 1.5 tokens per input rune covers en→CJK, the expensive direction (CJK
+// output runs close to one token per character).
+func outputTokenBudget(text string, floor int) int {
+	want := utf8.RuneCountInString(text) * 3 / 2
+	if want < floor {
+		return floor
+	}
+	if want > maxOutputTokens {
+		return maxOutputTokens
+	}
+	return want
+}
 
 type anthropicRequest struct {
 	Model     string             `json:"model"`
@@ -196,10 +243,14 @@ func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, e
 	if req.Model != "" && (req.ModelProvider == "" || req.ModelProvider == e.cfg.Name) {
 		model = NormalizeModelID(req.Model)
 	}
+	// A backstop for a wedged connection. The goroutines below own the cancel:
+	// they run past this function's return, so cancelling here would kill the
+	// stream immediately.
+	ctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	if isAnthropicModel(model) {
-		return e.translateAnthropic(ctx, req, model)
+		return e.translateAnthropic(ctx, req, cancel, model)
 	}
-	return e.translateOpenAI(ctx, req, model)
+	return e.translateOpenAI(ctx, req, cancel, model)
 }
 
 // ModelLister is implemented by engines that can enumerate their models.
@@ -417,7 +468,15 @@ func markTruncated(res *TranslateResult) {
 }
 
 // translateOpenAI uses the OpenAI /chat/completions endpoint.
-func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
+func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, cancel context.CancelFunc, model string) (<-chan Chunk, error) {
+	// Any early return here abandons the context, so release it now; the
+	// success path hands ownership to the goroutine below.
+	ok := false
+	defer func() {
+		if !ok {
+			cancel()
+		}
+	}()
 	system, user := promptFor(req)
 	stream := req.Stream && !req.Learn && !req.Bilingual // structured JSON output: parse at done
 	body := chatRequest{
@@ -443,7 +502,9 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 	e.auth(httpReq)
 
 	ch := make(chan Chunk, 32) // buffered so a fast stream doesn't block on renders
+	ok = true
 	go func() {
+		defer cancel()
 		defer close(ch)
 		resp, err := e.http.Do(httpReq)
 		if err != nil {
@@ -492,16 +553,24 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, model stri
 }
 
 // translateAnthropic uses the Anthropic Messages API (/v1/messages).
-func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model string) (<-chan Chunk, error) {
+func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, cancel context.CancelFunc, model string) (<-chan Chunk, error) {
+	// Any early return here abandons the context, so release it now; the
+	// success path hands ownership to the goroutine below.
+	ok := false
+	defer func() {
+		if !ok {
+			cancel()
+		}
+	}()
 	system, user := promptFor(req)
 	stream := req.Stream && !req.Learn && !req.Bilingual // structured JSON output: parse at done
-	maxTokens := anthropicMaxTokens
+	floor := anthropicMaxTokens
 	if req.Learn || req.Bilingual {
-		maxTokens = learnMaxTokens
+		floor = learnMaxTokens
 	}
 	body := anthropicRequest{
 		Model:     model,
-		MaxTokens: maxTokens,
+		MaxTokens: outputTokenBudget(user, floor),
 		System:    system,
 		Messages:  []anthropicMessage{{Role: "user", Content: user}},
 		Stream:    stream,
@@ -522,7 +591,9 @@ func (e *LLMEngine) translateAnthropic(ctx context.Context, req Request, model s
 	e.anthropicAuth(httpReq)
 
 	ch := make(chan Chunk, 32)
+	ok = true
 	go func() {
+		defer cancel()
 		defer close(ch)
 		resp, err := e.http.Do(httpReq)
 		if err != nil {

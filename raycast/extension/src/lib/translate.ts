@@ -176,6 +176,18 @@ function needsStdin(text: string): boolean {
 }
 
 /**
+ * How long to let a translation run, scaled to the input.
+ *
+ * A document-sized translation legitimately takes minutes — measured against
+ * copilot-proxy: 10 KB of prose took 61 s, 20 KB took 96 s. A flat 60 s killed
+ * exactly the long inputs Translate Text exists for. ~10 ms per character with a
+ * 1-minute floor and a 10-minute ceiling (matching the CLI's own backstop).
+ */
+function requestTimeout(text: string): number {
+  return Math.min(600_000, Math.max(60_000, text.length * 10));
+}
+
+/**
  * Run the CLI with `input` written to stdin and no text argument, resolving with
  * stdout. Mirrors pexecFile's rejection shape (message + `stderr`) so callers
  * can keep inspecting stderr the same way.
@@ -304,15 +316,16 @@ export async function runTranslate(
   if (opts.model) args.push("--model", opts.model);
   if (opts.noHistory) args.push("--no-history");
 
+  const timeout = requestTimeout(text);
   if (viaStdin) {
     const stdout = await execWithStdin(bin, args, text, {
-      timeout: 120_000, // a long document is a long call
+      timeout,
       signal: opts.signal,
     });
     return JSON.parse(stdout) as TranslateResult;
   }
   const { stdout } = await pexecFile(bin, args, {
-    timeout: 60_000, // LLM engines routinely exceed useExec's 10s default
+    timeout, // LLM engines routinely exceed useExec's 10s default
     maxBuffer: 16 * 1024 * 1024,
     env: baseEnv(),
     signal: opts.signal, // cancel a superseded call when the user keeps typing

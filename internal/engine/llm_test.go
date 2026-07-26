@@ -237,3 +237,54 @@ func TestNonStreamCompleteness(t *testing.T) {
 		})
 	}
 }
+
+// outputTokenBudget sizes max_tokens for the input instead of using one fixed
+// cap. A flat 4096 silently truncated long documents: 10 KB of English prose
+// produced 5368 Chinese characters and was cut off mid-document.
+func TestOutputTokenBudget(t *testing.T) {
+	const floor = anthropicMaxTokens
+
+	if got := outputTokenBudget("", floor); got != floor {
+		t.Fatalf("empty input should get the floor, got %d", got)
+	}
+	if got := outputTokenBudget("hello", floor); got != floor {
+		t.Fatalf("short input should get the floor, got %d", got)
+	}
+
+	// The case that used to truncate: 10k runes needs more than the old 4096.
+	long := strings.Repeat("a", 10_000)
+	if got := outputTokenBudget(long, floor); got <= floor {
+		t.Fatalf("10k runes should scale above the floor, got %d", got)
+	}
+
+	// Never above the ceiling, however big the input.
+	huge := strings.Repeat("a", 10_000_000)
+	if got := outputTokenBudget(huge, floor); got != maxOutputTokens {
+		t.Fatalf("want the ceiling %d, got %d", maxOutputTokens, got)
+	}
+
+	// Runes, not bytes: CJK is 3 bytes per character and is the direction that
+	// needs the most output tokens, so counting bytes would over-scale wildly
+	// while counting runes tracks the real cost.
+	cjk := strings.Repeat("貓", 10_000)
+	if got, want := outputTokenBudget(cjk, floor), outputTokenBudget(long, floor); got != want {
+		t.Fatalf("10k CJK runes = %d, 10k ASCII runes = %d; should match", got, want)
+	}
+
+	// A larger floor (learn/bilingual) is respected.
+	if got := outputTokenBudget("hi", learnMaxTokens); got != learnMaxTokens {
+		t.Fatalf("learn floor not honored, got %d", got)
+	}
+}
+
+// The HTTP client must carry no whole-request deadline: Go's Client.Timeout also
+// caps reading a streamed body, which cut long translations off mid-sentence.
+func TestNewLLMHasNoClientTimeout(t *testing.T) {
+	e := NewLLM(LLMConfig{Name: "x", BaseURL: "http://127.0.0.1:1", Model: "claude-sonnet-5"})
+	if e.http.Timeout != 0 {
+		t.Fatalf("http.Client.Timeout = %v, want 0 (it would truncate streams)", e.http.Timeout)
+	}
+	if e.cfg.Timeout != defaultRequestTimeout {
+		t.Fatalf("cfg.Timeout = %v, want the %v default", e.cfg.Timeout, defaultRequestTimeout)
+	}
+}

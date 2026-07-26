@@ -97,6 +97,39 @@ curl -N -s http://localhost:4141/v1/messages \
 If that prints nothing, the proxy stopped sending terminal markers and the completeness
 rule would flag every stream — revisit before trusting the `⚠`.
 
+## Why a long document still truncated afterwards (2026-07-26)
+
+Detecting truncation was only half the job — the `⚠` was firing correctly, but two
+*causes* remained, and both bite in the same size range (~6–10 KB of prose):
+
+**1. `max_tokens` was a flat 4096.** A translation is roughly as long as its
+source, so anything past a few thousand characters ran out of budget and came back
+with `stop_reason: "max_tokens"`. Measured: 10 KB of English prose produced 5368
+Chinese characters and stopped mid-document. `outputTokenBudget` now scales the cap
+with the input (1.5 tokens per input rune, floor 4096, ceiling 32768). Same input
+now completes at 6492 characters with no warning.
+
+**2. `http.Client{Timeout: 60s}` capped the streamed read.** Go applies
+`Client.Timeout` to the *entire* request including reading the body, so a long
+translation was cut at exactly 60 s. The 10 KB case takes 61 s — right on the line.
+
+The obvious replacement, `Transport.ResponseHeaderTimeout`, is **wrong here** and
+was tried first: copilot-proxy buffers Claude `/v1/messages` responses and sends no
+headers until generation finishes, so a 60 s header deadline failed *exactly* the
+long documents the change was meant to fix:
+
+```
+copilot: Post "http://localhost:4141/v1/messages": net/http: timeout awaiting response headers
+```
+
+The bound is now the per-request **context** (`LLMConfig.Timeout`, default 10 min)
+with no HTTP-level deadline at all. Probes keep their own short ctx deadlines
+(`Available` 800 ms, `Models` 4 s). 20 KB now translates in 96 s, clean.
+
+Front-ends need matching budgets: the Raycast extension scaled its `execFile`
+timeout the same way (~10 ms/char, 1 min floor, 10 min ceiling), since a flat 60 s
+there would have killed the call regardless of what the CLI does.
+
 ## Prevention
 
 - Never treat a streamed response as complete on EOF alone — require the protocol's
@@ -107,13 +140,15 @@ rule would flag every stream — revisit before trusting the `⚠`.
   any long-lived TUI — a stale process masks the fix.
 - Regression coverage: `internal/engine/llm_test.go` feeds canned complete / dropped /
   `max_tokens` / `length` bodies (streaming and non-streaming) and asserts `Truncated` +
-  preserved partial text.
+  preserved partial text, and pins `outputTokenBudget` scaling plus
+  `http.Client.Timeout == 0`.
+- Any deadline you add to an LLM call must bound a *connection*, not *generation*.
+  Generation time scales with output length and legitimately runs for minutes.
 
 ## Related
 
 - Sibling reference: the `copilot-proxy-model-availability` agent memory note — Claude
   models route via `/v1/messages`; the same proxy is the truncation source.
-- Follow-up: `TODO.md` P3 — the streaming path still uses `http.Client{Timeout: 60s}`,
-  which caps the *entire* streamed read; a long translation is cut at 60s via this same
-  path (now visible as `⚠ truncated`, but better fixed by relying on `ctx` deadlines).
+- The `http.Client{Timeout: 60s}` follow-up is now done — see "Why a long document
+  still truncated afterwards" above for why `ResponseHeaderTimeout` is not the fix.
 - Anthropic streaming events: https://docs.anthropic.com/en/api/messages-streaming
