@@ -34,7 +34,7 @@ isn’t found, the extension shows an install-instructions screen instead of fai
 - **Translate Text** — a multi-line box for whole paragraphs. Raycast's search bar
   refuses a long paste ("the text you are trying to paste is too long"), and that
   limit is the app's, not ours — so long text gets its own form. ⌘⇧S loads the
-  selection, ⌘⇧V the clipboard, ⌘↵ streams.
+  selection, ⌘⇧V the clipboard, ⌘↵ streams, ⌘⇧A reveals engine + model.
 - **Translate Selection** — grabs your selection (or clipboard) and opens Translate
   prefilled and editable.
 - **Look up Word** — a dictionary picker: an empty search bar lists your recent
@@ -51,6 +51,10 @@ For the best **Look up Word** experience run `translate dict update all` once
 (offline CC-CEDICT + ECDICT); existing installs should also run
 `translate dict reindex`, which makes Chinese lookups ~20× faster without
 re-downloading anything.
+
+Every target dropdown leads with **Auto**, which follows the bidirectional pair
+configured in `translate` (`pair` + `pair_with`) — the equivalent of `^g` in the
+TUI. Picking a specific language instead always translates *into* it.
 
 ## Preferences
 

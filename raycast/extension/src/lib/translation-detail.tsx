@@ -13,17 +13,24 @@ import {
  * The List-based Translate command shows its result in a detail pane, which is
  * cramped once the input is a paragraph rather than a phrase — this is what
  * Translate Text pushes after submitting.
+ *
+ * Engine/model/direction go in a footer line at the end of the scroll rather
+ * than a Detail.Metadata sidebar: the sidebar is a fixed third of the window,
+ * which is a lot of width to spend permanently on five short labels when the
+ * point of this view is reading room.
  */
 export function TranslationDetail(props: {
   text: string;
-  to: string;
+  to?: string;
   engine?: string;
+  model?: string;
+  pair?: boolean;
 }) {
-  const { text, to, engine } = props;
+  const { text, to, engine, model, pair } = props;
   const { data, isLoading, error } = usePromise(
-    async (t: string, target: string, eng?: string): Promise<TranslateResult> =>
-      runTranslate(t, { to: target, engine: eng || undefined }),
-    [text, to, engine],
+    async (): Promise<TranslateResult> =>
+      runTranslate(text, { to, engine, model, pair }),
+    [text, to, engine, model, pair],
   );
 
   const markdown = error
@@ -35,9 +42,10 @@ export function TranslationDetail(props: {
   return (
     <Detail
       isLoading={isLoading}
-      navigationTitle={`Translate → ${to}`}
+      navigationTitle={
+        data?.target ? `Translate → ${data.target}` : "Translate"
+      }
       markdown={markdown}
-      metadata={data ? <Metadata result={data} /> : undefined}
       actions={
         <ActionPanel>
           {data ? (
@@ -59,7 +67,7 @@ export function TranslationDetail(props: {
                 title="Speak"
                 icon={Icon.SpeakerHigh}
                 onAction={async () => {
-                  speak(text, data.target || to);
+                  speak(text, data.target || to || "en");
                   await showHUD("Speaking…");
                 }}
               />
@@ -94,26 +102,19 @@ export function renderTranslation(r: TranslateResult): string {
   if (r.notes) lines.push("## Notes", r.notes, "");
   if (r.warnings?.length)
     lines.push("## Warnings", ...r.warnings.map((w) => `> ${w}`), "");
+  lines.push("---", footer(r));
   return lines.join("\n");
 }
 
-function Metadata(props: { result: TranslateResult }) {
-  const r = props.result;
-  return (
-    <Detail.Metadata>
-      <Detail.Metadata.Label title="Engine" text={r.engine ?? "—"} />
-      {r.model ? <Detail.Metadata.Label title="Model" text={r.model} /> : null}
-      <Detail.Metadata.Label
-        title="Source"
-        text={r.detected_source ?? "auto"}
-      />
-      <Detail.Metadata.Label title="Target" text={r.target} />
-      {typeof r.confidence === "number" ? (
-        <Detail.Metadata.Label
-          title="Confidence"
-          text={r.confidence.toFixed(2)}
-        />
-      ) : null}
-    </Detail.Metadata>
-  );
+/** One dim line at the end of the scroll, in place of a metadata sidebar. */
+function footer(r: TranslateResult): string {
+  const bits = [
+    `${r.detected_source ?? "auto"} → ${r.target}`,
+    r.engine ?? "—",
+    r.model,
+    typeof r.confidence === "number"
+      ? `confidence ${r.confidence.toFixed(2)}`
+      : undefined,
+  ].filter(Boolean);
+  return `*${bits.join(" · ")}*`;
 }

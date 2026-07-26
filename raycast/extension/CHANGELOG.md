@@ -9,7 +9,7 @@
   Translate prefilled, so you can review/edit before copying.
 - **Translate Text** — a multi-line form for whole paragraphs, since Raycast's
   search bar refuses a long paste. Load the selection or clipboard explicitly,
-  translate to a full page, or stream with ⌘↵.
+  translate to a full page, or stream with ⌘↵. ⌘⇧A reveals engine and model.
 - **Look up Word** — a Define Word-style dictionary picker: recent lookups when the
   search bar is empty, ranked headword candidates with definition previews as you
   type, and a full definition page on ↵ (which is what records the lookup). The
@@ -18,5 +18,8 @@
 - **Define** — dictionary lookup (offline CC-CEDICT / ECDICT) with an LLM fallback
   and "did you mean" suggestions.
 - **History** — browse and search past translations.
+- Target dropdowns lead with **Auto**, following the CLI's configured
+  bidirectional pair (like `^g` in the TUI); picking a language always translates
+  into it.
 - Backed by the local `translate` CLI: multi-engine auto-fallback (local LLM via
   copilot-proxy/Ollama, keyless Google, offline dictionaries) and free TTS.

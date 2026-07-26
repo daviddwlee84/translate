@@ -12,8 +12,8 @@ import {
   Toast,
   useNavigation,
 } from "@raycast/api";
-import { readConfig } from "./lib/translate";
-import { useLanguages } from "./lib/language-dropdown";
+import { readConfig, runModels, AUTO_TARGET, ModelInfo } from "./lib/translate";
+import { autoLabel, usePair, useLanguages } from "./lib/language-dropdown";
 import { TranslationDetail } from "./lib/translation-detail";
 import { StreamView } from "./lib/stream-view";
 
@@ -24,6 +24,9 @@ const ENGINES = [
   { title: "Copilot", value: "copilot" },
   { title: "Ollama", value: "ollama" },
 ];
+
+/** "Use the engine's tier default" — no --model flag. */
+const MODEL_DEFAULT = "";
 
 /**
  * Translate a long passage.
@@ -44,12 +47,22 @@ export default function Command(
   const prefs = getPreferenceValues<Preferences.TranslateText>();
   const { push } = useNavigation();
   const langs = useLanguages();
+  const pair = usePair();
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [text, setText] = useState("");
   const [to, setTo] = useState(
     props.arguments?.to || prefs.defaultTarget || "",
   );
   const [engine, setEngine] = useState(prefs.engine ?? "");
+  const [model, setModel] = useState(MODEL_DEFAULT);
+
+  useEffect(() => {
+    runModels()
+      .then(setModels)
+      .catch(() => setModels([]));
+  }, []);
 
   // Same inheritance as the other commands: argument → Raycast preference →
   // the CLI config's default_target → "en".
@@ -71,15 +84,24 @@ export default function Command(
       showToast({ style: Toast.Style.Failure, title: "Nothing to translate" });
       return;
     }
+    // Picking a concrete language means "translate into this", so pair routing
+    // is turned off explicitly — otherwise [general] pair would reroute
+    // home-language input and the chosen target would be quietly ignored.
+    //
+    // A picked model also implies its provider: "llama3.2:3b" belongs to ollama,
+    // not to whatever the chain would have reached first.
+    const picked = models.find((m) => m.model === model);
+    const opts = {
+      to,
+      pair: to === AUTO_TARGET ? undefined : false,
+      engine: engine || picked?.provider || undefined,
+      model: model || undefined,
+    };
     push(
       streaming ? (
-        <StreamView text={trimmed} to={to} engine={engine || undefined} />
+        <StreamView {...opts} text={trimmed} />
       ) : (
-        <TranslationDetail
-          text={trimmed}
-          to={to}
-          engine={engine || undefined}
-        />
+        <TranslationDetail {...opts} text={trimmed} />
       ),
     );
   };
@@ -143,6 +165,12 @@ export default function Command(
             shortcut={{ modifiers: ["cmd", "shift"], key: "x" }}
             onAction={() => setText("")}
           />
+          <Action
+            title={showAdvanced ? "Hide Advanced" : "Show Advanced"}
+            icon={Icon.Cog}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "a" }}
+            onAction={() => setShowAdvanced((v) => !v)}
+          />
         </ActionPanel>
       }
     >
@@ -158,7 +186,7 @@ export default function Command(
         text={
           text
             ? `${text.length.toLocaleString()} characters`
-            : "⌘⇧S loads the selection · ⌘⇧V loads the clipboard"
+            : "⌘⇧S loads the selection · ⌘⇧V loads the clipboard · ⌘⇧A advanced"
         }
       />
       <Form.Separator />
@@ -168,7 +196,13 @@ export default function Command(
         value={to}
         onChange={setTo}
         storeValue={false}
+        info={
+          pair
+            ? `Auto follows the configured pair (${pair.home} ⇄ ${pair.away}), like ^g in the TUI. Picking a language always translates into it.`
+            : "Picking a language always translates into it."
+        }
       >
+        <Form.Dropdown.Item value={AUTO_TARGET} title={autoLabel(pair)} />
         {langs.map((l) => (
           <Form.Dropdown.Item
             key={l.code}
@@ -177,16 +211,43 @@ export default function Command(
           />
         ))}
       </Form.Dropdown>
-      <Form.Dropdown
-        id="engine"
-        title="Engine"
-        value={engine}
-        onChange={setEngine}
-      >
-        {ENGINES.map((e) => (
-          <Form.Dropdown.Item key={e.value} value={e.value} title={e.title} />
-        ))}
-      </Form.Dropdown>
+      {showAdvanced ? (
+        <>
+          <Form.Dropdown
+            id="engine"
+            title="Engine"
+            value={engine}
+            onChange={setEngine}
+          >
+            {ENGINES.map((e) => (
+              <Form.Dropdown.Item
+                key={e.value}
+                value={e.value}
+                title={e.title}
+              />
+            ))}
+          </Form.Dropdown>
+          <Form.Dropdown
+            id="model"
+            title="Model"
+            value={model}
+            onChange={setModel}
+            info="Models declared by the configured providers. Leave on the default to let the engine and tier decide."
+          >
+            <Form.Dropdown.Item
+              value={MODEL_DEFAULT}
+              title="Default (engine + tier)"
+            />
+            {models.map((m) => (
+              <Form.Dropdown.Item
+                key={`${m.provider}:${m.model}`}
+                value={m.model}
+                title={`${m.model} — ${m.provider} ${m.tier}${m.default ? " ★" : ""}`}
+              />
+            ))}
+          </Form.Dropdown>
+        </>
+      ) : null}
     </Form>
   );
 }

@@ -15,10 +15,11 @@ import {
   runTranslate,
   speak,
   readConfig,
-  LANGS,
+  AUTO_TARGET,
   isBinaryMissing,
   TranslateResult,
 } from "./lib/translate";
+import { LanguageDropdown, usePair } from "./lib/language-dropdown";
 import { useDebouncedValue } from "./lib/hooks";
 import { StreamView } from "./lib/stream-view";
 import { BinaryNotFound } from "./lib/binary-not-found";
@@ -47,6 +48,7 @@ export default function Command(
   const [text, setText] = useState(ctx?.seed ?? "");
   const [to, setTo] = useState(ctx?.to || prefs.defaultTarget || "");
   const [engine, setEngine] = useState("");
+  const pair = usePair();
 
   // Inherit the default target + debounce from the CLI config (~/.config/translate)
   // when the matching Raycast preference is empty. Falls back to "en"/700ms.
@@ -106,6 +108,9 @@ export default function Command(
       if (!trimmed) return undefined;
       return runTranslate(trimmed, {
         to: target,
+        // A concrete language means "translate into this": without --no-pair,
+        // [general] pair reroutes home-language input and quietly ignores it.
+        pair: target === AUTO_TARGET ? undefined : false,
         engine: eng || undefined,
         signal: abortable.current?.signal,
       });
@@ -131,11 +136,7 @@ export default function Command(
       searchBarPlaceholder="Type text to translate…"
       isShowingDetail={!!data?.translation}
       searchBarAccessory={
-        <List.Dropdown tooltip="Target language" value={to} onChange={setTo}>
-          {LANGS.map((l) => (
-            <List.Dropdown.Item key={l.value} title={l.title} value={l.value} />
-          ))}
-        </List.Dropdown>
+        <LanguageDropdown value={to} onChange={setTo} auto={pair} />
       }
     >
       {error ? (
@@ -184,6 +185,7 @@ export default function Command(
                   <StreamView
                     text={debouncedText.trim()}
                     to={to}
+                    pair={to === AUTO_TARGET ? undefined : false}
                     engine={engine}
                   />
                 }

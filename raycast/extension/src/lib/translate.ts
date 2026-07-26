@@ -96,6 +96,23 @@ export interface LangInfo {
   aliases?: string[];
 }
 
+/** One entry of `translate models --json`. */
+export interface ModelInfo {
+  provider: string;
+  /** "fast" | "default" | "max" */
+  tier: string;
+  model: string;
+  /** True for the model this config uses with no override. */
+  default?: boolean;
+}
+
+/**
+ * Sentinel target meaning "let pair mode pick the direction" — the dropdown
+ * equivalent of the TUI's ^g. It is not a language code, so it never reaches
+ * --to; runTranslate turns it into --pair instead.
+ */
+export const AUTO_TARGET = "__auto__";
+
 interface Prefs {
   binaryPath?: string;
   defaultTarget?: string;
@@ -231,8 +248,36 @@ export interface TranslateOptions {
   from?: string;
   engine?: string;
   tier?: string;
+  /** Exact model id, overriding engine/tier selection. */
+  model?: string;
+  /**
+   * Direction. Tri-state on purpose:
+   *   undefined → leave it to the config ([general] pair)
+   *   true      → --pair: detect and route between the pair languages
+   *   false     → --no-pair: always translate into `to`
+   *
+   * This matters because [general] pair = true silently overrides --to for
+   * home-language input, so "translate into X" is only true with --no-pair.
+   */
+  pair?: boolean;
   noHistory?: boolean;
   signal?: AbortSignal;
+}
+
+/**
+ * Turns a target + pair choice into CLI flags.
+ *
+ * AUTO_TARGET means "no --to at all": the CLI's own home target and pair_with
+ * decide the direction. Anything else falls back to the Raycast preference, and
+ * finally to nothing (letting the CLI config's default_target apply).
+ */
+function directionArgs(
+  to: string | undefined,
+  pair: boolean | undefined,
+  prefTarget: string | undefined,
+): { to?: string; pair?: boolean } {
+  if (to === AUTO_TARGET) return { to: undefined, pair: true };
+  return { to: to || prefTarget || undefined, pair };
 }
 
 export async function runTranslate(
@@ -241,15 +286,22 @@ export async function runTranslate(
 ): Promise<TranslateResult> {
   const prefs = getPreferenceValues<Prefs>();
   const bin = resolveBinary();
+  const dir = directionArgs(opts.to, opts.pair, prefs.defaultTarget);
   const viaStdin = needsStdin(text);
   // With no text argument the CLI reads stdin, which sidesteps ARG_MAX.
   const args = viaStdin ? [] : [text];
-  args.push("--to", opts.to ?? prefs.defaultTarget ?? "en", "--json");
+  // In auto/pair mode we deliberately send no --to: the CLI's own home target
+  // plus [general] pair_with decide the direction.
+  if (dir.to) args.push("--to", dir.to);
+  args.push("--json");
+  if (dir.pair === true) args.push("--pair");
+  if (dir.pair === false) args.push("--no-pair");
   if (opts.from) args.push("--from", opts.from);
   const engine = opts.engine ?? prefs.engine;
   if (engine) args.push("--engine", engine);
   const tier = opts.tier ?? prefs.tier;
   if (tier) args.push("--tier", tier);
+  if (opts.model) args.push("--model", opts.model);
   if (opts.noHistory) args.push("--no-history");
 
   if (viaStdin) {
@@ -266,6 +318,31 @@ export async function runTranslate(
     signal: opts.signal, // cancel a superseded call when the user keeps typing
   });
   return JSON.parse(stdout) as TranslateResult;
+}
+
+let cachedModels: ModelInfo[] | undefined;
+
+/**
+ * `translate models --json` — the models the configured providers declare, one
+ * per tier, cached per command run. Deliberately not a live /v1/models probe:
+ * copilot-proxy advertises ids it then refuses to serve, so a probed list would
+ * offer choices that fail at request time. Empty on an older CLI.
+ */
+export async function runModels(): Promise<ModelInfo[]> {
+  if (cachedModels) return cachedModels;
+  try {
+    const bin = resolveBinary();
+    const { stdout } = await pexecFile(bin, ["models", "--json"], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+      env: baseEnv(),
+    });
+    const parsed = JSON.parse(stdout) as ModelInfo[];
+    cachedModels = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    cachedModels = []; // older CLI without `models`, or no binary
+  }
+  return cachedModels;
 }
 
 export interface DefineOptions {
@@ -448,6 +525,9 @@ export interface CliConfig {
     engine?: string;
     tier?: string;
     live_translate?: boolean;
+    /** Bidirectional mode: home-language input goes to pair_with instead. */
+    pair?: boolean;
+    pair_with?: string;
   };
 }
 
@@ -490,12 +570,17 @@ export function spawnTranslateStream(
   h: StreamHandlers,
 ): () => void {
   const bin = resolveBinary();
+  const dir = directionArgs(opts.to, opts.pair, undefined);
   const viaStdin = needsStdin(text);
   const args = viaStdin ? [] : [text];
-  args.push("--to", opts.to ?? "en", "--stream", "--no-history");
+  if (dir.to) args.push("--to", dir.to);
+  args.push("--stream", "--no-history");
+  if (dir.pair === true) args.push("--pair");
+  if (dir.pair === false) args.push("--no-pair");
   if (opts.engine) args.push("--engine", opts.engine);
   if (opts.from) args.push("--from", opts.from);
   if (opts.tier) args.push("--tier", opts.tier);
+  if (opts.model) args.push("--model", opts.model);
 
   const child = spawn(bin, args, { env: baseEnv() });
   child.stdout?.setEncoding("utf8");

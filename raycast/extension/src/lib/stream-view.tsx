@@ -9,10 +9,14 @@ export function StreamView({
   text,
   to,
   engine,
+  model,
+  pair,
 }: {
   text: string;
-  to: string;
+  to?: string;
   engine?: string;
+  model?: string;
+  pair?: boolean;
 }) {
   const [md, setMd] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -24,7 +28,7 @@ export function StreamView({
     setIsLoading(true);
     const cancel = spawnTranslateStream(
       text,
-      { to, engine: engine || undefined },
+      { to, engine: engine || undefined, model, pair },
       {
         onData: (chunk) => {
           acc.current += chunk;
@@ -39,13 +43,13 @@ export function StreamView({
       },
     );
     return cancel;
-  }, [text, to, engine]);
+  }, [text, to, engine, model, pair]);
 
   return (
     <Detail
       isLoading={isLoading}
       markdown={md || "…"}
-      navigationTitle={`Translate → ${to}`}
+      navigationTitle={to ? `Translate → ${to}` : "Translate"}
       actions={
         <ActionPanel>
           <Action.CopyToClipboard title="Copy Translation" content={md} />
