@@ -49,6 +49,9 @@ func NewLLM(cfg LLMConfig) *LLMEngine {
 // Name returns the provider name (e.g. "copilot").
 func (e *LLMEngine) Name() string { return e.cfg.Name }
 
+// Model returns the model id this engine was built with (e.g. "claude-sonnet-5").
+func (e *LLMEngine) Model() string { return e.cfg.Model }
+
 // Supports reports that LLM engines translate. (Dictionary lookups route to the
 // dedicated dictionary engine in v1, so the chain never sends dict mode here.)
 func (e *LLMEngine) Supports(m Mode) bool { return m == ModeTranslate }

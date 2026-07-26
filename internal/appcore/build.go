@@ -53,6 +53,12 @@ func BuildEngine(res config.Resolved) (engine.Engine, error) {
 // BuildAutoChain builds the "auto" fallback Chain over the providers/google named
 // in chain.order. (google/dict engines otherwise join only via smart-auto or the
 // TUI ^e cycle.)
+//
+// An explicit --model applies only to the *resolved* provider: a chain spans
+// several backends, and forcing one id onto all of them would send e.g. a Claude
+// model to Ollama. Every other member keeps its own tier model. Without this the
+// flag was silently dropped on the default (smartauto/auto) engine — it only
+// took effect when the caller also named a provider with --engine.
 func BuildAutoChain(res config.Resolved) (engine.Engine, error) {
 	cfg := res.Cfg
 	var engines []engine.Engine
@@ -60,7 +66,11 @@ func BuildAutoChain(res config.Resolved) (engine.Engine, error) {
 		switch {
 		case cfg.ProviderByName(name) != nil:
 			p := cfg.ProviderByName(name)
-			engines = append(engines, LLMFromProvider(p, p.ModelForTier(res.Tier)))
+			model := p.ModelForTier(res.Tier)
+			if res.Model != "" && res.Provider != nil && p.Name == res.Provider.Name {
+				model = res.Model
+			}
+			engines = append(engines, LLMFromProvider(p, model))
 		case name == "google" && cfg.Google.Enabled:
 			engines = append(engines, GoogleFromConfig(cfg))
 		}

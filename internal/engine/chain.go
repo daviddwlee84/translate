@@ -40,6 +40,9 @@ func NewChain(engines []Engine, ttl time.Duration) *Chain {
 // Name reports the chain as the "auto" engine.
 func (c *Chain) Name() string { return "auto" }
 
+// Engines returns the chain members in fallback order.
+func (c *Chain) Engines() []Engine { return c.engines }
+
 // Supports reports true if any member supports the mode.
 func (c *Chain) Supports(m Mode) bool {
 	for _, e := range c.engines {
