@@ -20,7 +20,12 @@ export default function Command() {
     async (w: string): Promise<TranslateResult | undefined> => {
       const trimmed = w.trim();
       if (!trimmed) return undefined;
-      return runDefine(trimmed, abortable.current?.signal);
+      // Type-to-lookup fires on every debounced keystroke, so it must not record:
+      // history belongs to Look Up Word, where you explicitly open a word.
+      return runDefine(trimmed, {
+        noHistory: true,
+        signal: abortable.current?.signal,
+      });
     },
     [debounced],
     { abortable },

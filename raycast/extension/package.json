@@ -63,6 +63,32 @@
       "mode": "view"
     },
     {
+      "name": "look-up-word",
+      "title": "Look up Word",
+      "description": "Search dictionary headwords, browse recent lookups, and open a full definition page.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "to",
+          "type": "dropdown",
+          "placeholder": "Definition language",
+          "required": false,
+          "data": [
+            { "title": "English", "value": "en" },
+            { "title": "Chinese (Traditional)", "value": "zh-TW" },
+            { "title": "Chinese (Simplified)", "value": "zh-CN" },
+            { "title": "Japanese", "value": "ja" },
+            { "title": "Korean", "value": "ko" },
+            { "title": "Spanish", "value": "es" },
+            { "title": "French", "value": "fr" },
+            { "title": "German", "value": "de" },
+            { "title": "Italian", "value": "it" },
+            { "title": "Portuguese", "value": "pt" }
+          ]
+        }
+      ]
+    },
+    {
       "name": "history",
       "title": "History",
       "description": "Browse and search translation history.",

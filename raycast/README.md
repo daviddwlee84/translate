@@ -49,8 +49,11 @@ Four commands appear in root search and **stay installed after you stop
 **Translate** (type-to-translate, language dropdown, engine-override submenu,
 streaming ⌘↵, Copy/Paste/Speak), **Translate Selection** (grabs the selection or
 clipboard and opens Translate prefilled, with an optional target-language argument),
-**Define** (dictionary lookup + LLM fallback), and **History** (browse/search past
-translations). `just raycast-build` / `just raycast-lint` type-check and lint.
+**Define** (single-result dictionary lookup + LLM fallback), **Look up Word**
+(a Define Word-style picker: recent lookups when empty, ranked headword candidates
+with previews as you type, a full definition page on ↵), and **History**
+(browse/search past translations). `just raycast-build` / `just raycast-lint`
+type-check and lint.
 
 Configure the binary path and defaults in the extension's **Preferences**
 (the binary is auto-probed in `~/.local/bin`, `/opt/homebrew/bin`,
@@ -59,7 +62,15 @@ Translate-as-you-type is **debounced** (default 700 ms, tunable via the
 "Live translate debounce" preference) and cancels superseded in-flight requests,
 so typing a phrase doesn't fire an LLM call per keystroke. Opening **Translate**
 seeds the input from the current selection (or clipboard) per the "Prefill input
-from" preference — set it to "Nothing" to always start empty.
+from" preference — the shipped default is "Nothing", but note that Raycast applies a
+default only when no value is stored yet, so an install that ran an older version
+keeps whatever it saved (change it explicitly in Raycast → Extensions → Translate).
+
+**Look up Word** types against the local dictionary only (`translate dict search`,
+~30 ms), so the LLM is called when you open a word, not per keystroke — and opening
+a word is also what writes the history row. Run `translate dict update all` once for
+the offline dictionaries, plus `translate dict reindex` on an existing install to
+make Chinese lookups ~20× faster without re-downloading.
 
 ## Gotchas (both tracks)
 

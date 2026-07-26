@@ -7,8 +7,10 @@ import { join } from "node:path";
 
 const pexecFile = promisify(execFile);
 
-/** The target languages offered in dropdowns. Keep in sync with the static
- *  dropdowns declared in package.json (command arguments can't read this at runtime). */
+/** The target languages offered in the *static* manifest dropdowns (command
+ *  arguments can't read anything at runtime, so this list is hand-synced with
+ *  package.json). In-view dropdowns should prefer runLangs(), which returns the
+ *  CLI's full language table. */
 export const LANGS = [
   { title: "English", value: "en" },
   { title: "Chinese (Traditional)", value: "zh-TW" },
@@ -63,6 +65,35 @@ export interface HistoryEntry {
   model?: string;
   input: string;
   output: string;
+}
+
+/** Mirrors internal/engine/dictsearch.go Candidate. */
+export interface Candidate {
+  word: string;
+  phonetic?: string;
+  preview?: string;
+  pos?: string;
+  /** ECDICT frequency RANK: 1 is the most common word, absent means unranked. */
+  rank?: number;
+  match: "exact" | "prefix" | "fuzzy";
+  distance?: number;
+}
+
+/** Mirrors internal/engine/dictsearch.go SearchResult. */
+export interface DictSearchResult {
+  query: string;
+  script: string;
+  /** "ecdict" | "cedict" | "wordlist" | "none" */
+  source: string;
+  candidates: Candidate[];
+  notes?: string;
+}
+
+/** One entry of `translate lang list --json`. */
+export interface LangInfo {
+  code: string;
+  name: string;
+  aliases?: string[];
 }
 
 interface Prefs {
@@ -144,23 +175,120 @@ export async function runTranslate(
   return JSON.parse(stdout) as TranslateResult;
 }
 
+export interface DefineOptions {
+  /** Definition language for the LLM fallback. A dictionary hit ignores it — the
+   *  offline tiers are script-fixed (CC-CEDICT zh→en, ECDICT en→zh). */
+  to?: string;
+  /** Force smart-dict, i.e. fall back to the LLM when the dictionary misses. */
+  smart?: boolean;
+  /** Suppress the history row. Browsing must not record; opening a word should. */
+  noHistory?: boolean;
+  signal?: AbortSignal;
+}
+
+const NO_DICT_ENTRY = "no dictionary entry";
+
 /**
  * `translate define <word> --json`. The top-level payload is a TranslateResult
  * whose `.dictionary` holds the entry (on a dict hit); on a miss it falls back
  * to an LLM definition in `.translation` with a `warnings[]` note.
+ *
+ * A *hard* miss (the plain dictionary with no LLM fallback and nothing close
+ * enough to suggest) exits 1 with a bare stderr line and no JSON at all — that
+ * is re-thrown as a tagged error so callers can render it as "no entry" rather
+ * than as a crash. See isNoDictEntry.
+ *
+ * Unless noHistory is set this writes a history row, which is what makes
+ * "opening a word remembers it" true.
  */
 export async function runDefine(
   word: string,
-  signal?: AbortSignal,
+  opts: DefineOptions = {},
 ): Promise<TranslateResult> {
   const bin = resolveBinary();
-  const { stdout } = await pexecFile(bin, ["define", word, "--json"], {
-    timeout: 60_000,
-    maxBuffer: 16 * 1024 * 1024,
-    env: baseEnv(),
-    signal,
-  });
-  return JSON.parse(stdout) as TranslateResult;
+  const args = ["define", word, "--json"];
+  if (opts.smart) args.push("--smart");
+  if (opts.to) args.push("--to", opts.to);
+  if (opts.noHistory) args.push("--no-history");
+  try {
+    const { stdout } = await pexecFile(bin, args, {
+      timeout: 60_000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: baseEnv(),
+      signal: opts.signal,
+    });
+    return JSON.parse(stdout) as TranslateResult;
+  } catch (e) {
+    const stderr = String((e as { stderr?: string }).stderr ?? "");
+    if (stderr.includes(NO_DICT_ENTRY)) {
+      throw new Error(`${NO_DICT_ENTRY}: ${word}`);
+    }
+    throw e;
+  }
+}
+
+/** True when `define` exited on a hard dictionary miss (no JSON was emitted). */
+export function isNoDictEntry(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith(NO_DICT_ENTRY);
+}
+
+/**
+ * `translate dict search <q> --limit N --json` — ranked headword candidates with
+ * one-line definition previews.
+ *
+ * Local data only: no network, no LLM, single-digit milliseconds on an indexed
+ * dictionary. That is the point — it is safe to run on every keystroke, and the
+ * expensive LLM fallback is deferred to the moment a word is actually opened.
+ * It also opens no history store, so typing can never pollute history.
+ *
+ * Finding nothing is not an error: `candidates` comes back empty and exit is 0.
+ */
+export async function runDictSearch(
+  q: string,
+  limit = 12,
+  signal?: AbortSignal,
+): Promise<DictSearchResult> {
+  const bin = resolveBinary();
+  const { stdout } = await pexecFile(
+    bin,
+    ["dict", "search", q, "--limit", String(limit), "--json"],
+    {
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: baseEnv(),
+      signal,
+    },
+  );
+  const parsed = JSON.parse(stdout) as DictSearchResult;
+  return { ...parsed, candidates: parsed.candidates ?? [] };
+}
+
+let cachedLangs: LangInfo[] | undefined;
+
+/**
+ * `translate lang list --json` — the CLI's full language table (35 entries),
+ * cached per command run. Falls back to the hardcoded LANGS subset when the
+ * installed binary predates the subcommand, so an older CLI still works.
+ */
+export async function runLangs(): Promise<LangInfo[]> {
+  if (cachedLangs) return cachedLangs;
+  try {
+    const bin = resolveBinary();
+    const { stdout } = await pexecFile(bin, ["lang", "list", "--json"], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+      env: baseEnv(),
+    });
+    const parsed = JSON.parse(stdout) as LangInfo[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cachedLangs = parsed;
+      return cachedLangs;
+    }
+  } catch {
+    /* older CLI or no binary — fall through to the static list */
+  }
+  cachedLangs = LANGS.map((l) => ({ code: l.value, name: l.title }));
+  return cachedLangs;
 }
 
 /**
@@ -187,10 +315,33 @@ export async function runHistory(
   return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
 }
 
-/** Fire-and-forget TTS via `translate <text> --to <lang> --speak`. */
+/**
+ * Fire-and-forget TTS via `translate <text> --to <lang> --speak`. This runs a
+ * real translation (it speaks the translated side), so it passes --no-history:
+ * pressing Speak is not a lookup and should not add a history row.
+ */
 export function speak(text: string, to: string): void {
   const bin = resolveBinary();
-  execFile(bin, [text, "--to", to, "--speak"], { env: baseEnv() }, () => {
+  execFile(
+    bin,
+    [text, "--to", to, "--speak", "--no-history"],
+    { env: baseEnv() },
+    () => {
+      /* ignore — best-effort audio */
+    },
+  );
+}
+
+/**
+ * Fire-and-forget TTS via `translate speak <text>` — pronounces the text as-is.
+ * Unlike speak() this neither translates nor records, which is what you want for
+ * "how is this word pronounced".
+ */
+export function speakText(text: string, lang?: string): void {
+  const bin = resolveBinary();
+  const args = ["speak", text];
+  if (lang) args.push("--lang", lang);
+  execFile(bin, args, { env: baseEnv() }, () => {
     /* ignore — best-effort audio */
   });
 }
