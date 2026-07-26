@@ -32,16 +32,13 @@ const ENGINES = [
   { title: "Ollama", value: "ollama" },
 ];
 
-interface Prefs {
-  defaultTarget?: string;
-  liveDebounceMs?: string;
-  prefill?: string;
-}
-
 export default function Command(
   props: LaunchProps<{ launchContext?: { seed?: string; to?: string } }>,
 ) {
-  const prefs = getPreferenceValues<Prefs>();
+  // Use the generated manifest type rather than a hand-written interface: there
+  // `prefill` is required, so any future drift between package.json's default and
+  // this file becomes a compile error instead of a silent behaviour change.
+  const prefs = getPreferenceValues<Preferences.Translate>();
   const ctx = props.launchContext;
   const prefDebounce = Number(prefs.liveDebounceMs);
   const [debounceMs, setDebounceMs] = useState(
@@ -71,9 +68,13 @@ export default function Command(
   // On first open, seed the input from the current selection (or clipboard), per the
   // "Prefill input from" preference — unless we were launched with a seed (from
   // Translate Selection). Empty when there's nothing to grab, so you can also type.
+  //
+  // The fallback must match package.json's default ("none"). Note that changing
+  // that default does NOT reach an install that already stored a value — see
+  // pitfalls/raycast-still-prefills-clipboard-after-default-changed-to-nothing.md.
   useEffect(() => {
     if (ctx?.seed) return;
-    const mode = prefs.prefill ?? "selection";
+    const mode = prefs.prefill ?? "none";
     if (mode === "none") return;
     (async () => {
       let seed = "";
