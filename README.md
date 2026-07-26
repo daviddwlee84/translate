@@ -37,9 +37,10 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate dict search <prefix>` | Ranked headword candidates with definition previews (`--limit`, `--json`) |
 | `translate history` / `history search <q>` | Recent history / fuzzy search (`--tsv`, `--json`) |
 | `translate init` | Interactive config wizard (probes providers) |
+| `translate models` | Models declared by the configured providers, per tier (`--json`) |
 | `translate config path\|show` · `lang resolve <q>` · `lang list` | Introspection helpers (all `--json`) |
 
-Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--bilingual`/`-2`, `--no-history`, `--debug`.
+Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--no-pair`/`--pair-with`, `--bilingual`/`-2`, `--no-history`, `--debug`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
 Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
 
@@ -115,6 +116,20 @@ input is in and translates it into the **other** — one box, both directions
 decided by script, so even short input routes correctly; the LLM translate prompt is
 also told to detect-and-route and to **never echo** the input. `pair_with` must differ
 from the target (`translate init` enforces this; a degenerate config warns).
+
+**Pair overrides `--to`.** With `pair = true`, home-language input is rerouted to
+`pair_with` no matter what `--to` says — that is the point of the mode, but it
+means `--to ja` does *not* guarantee Japanese output. Use `--no-pair` for a single
+one-directional run:
+
+```sh
+translate "早安" --to ja                # → en   (pair rerouted it)
+translate "早安" --to ja --no-pair      # → ja   (translate INTO ja, as asked)
+```
+
+Precedence is `--no-pair` > `--pair` > `TRANSLATE_PAIR` > `[general] pair`. Learn
+mode is inherently bidirectional and still implies pair. The TUI toggles the same
+thing with `^g`; the Raycast target dropdowns expose it as an **Auto** entry.
 
 ### Bilingual mode (`--bilingual` / `-2`)
 

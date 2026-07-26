@@ -193,13 +193,42 @@ paste is refused outright, and the extension never even sees it. This command is
 
 Nothing is prefilled — *Load Selection* (`⌘⇧S`) and *Load Clipboard* (`⌘⇧V`) are
 explicit actions, keeping the lesson from `e87db06` that auto-grabbing input on
-open is surprising.
+open is surprising. `⌘⇧A` reveals **Engine** and **Model**; both stay hidden by
+default so the common case is two fields.
+
+The Model list comes from `translate models --json` — the models the configured
+providers *declare*, one per tier. Deliberately not a live `/v1/models` probe:
+copilot-proxy advertises ids it then refuses to serve, so a probed list would
+offer choices that fail at request time. Picking a model also selects its
+provider, since `llama3.2:3b` belongs to ollama regardless of chain order.
 
 Past 128 KB of UTF-8, `src/lib/translate.ts` stops putting the text in argv and
 pipes it to stdin (`execWithStdin`), because macOS caps a whole argument list at
 `ARG_MAX` = 1 MiB. The CLI already reads stdin when given no text argument, so
 this needed no CLI change. The provider is the real ceiling long before either
 limit: Google puts the text in a GET query string and fails around 180 KB.
+
+Result metadata (engine · model · direction) is a dim footer line at the end of
+the markdown rather than a `Detail.Metadata` sidebar: the sidebar is a permanent
+third of the window, which is a lot of width to spend on five short labels when
+the whole point of the view is reading room.
+
+### Target language: the **Auto** entry
+
+Both target dropdowns (`translate`, `translate-text`) lead with
+`Auto — <home> ⇄ <away>`, the dropdown equivalent of the TUI's `^g`. It is not
+cosmetic:
+
+With `[general] pair = true` the CLI reroutes home-language input to `pair_with`
+regardless of `--to`, so before this the dropdown was quietly lying — picking
+"Chinese (Traditional)" and pasting Chinese returned *English*. Making the mode
+explicit lets a concrete choice mean what it says: the extension now sends
+`--no-pair` whenever a specific language is picked, and no `--to` at all for Auto.
+`--no-pair` had to be added to the CLI for this; there was previously no way to
+turn pair off for one run.
+
+`lib/language-dropdown.tsx` reads the pair from `config show --json`, so the entry
+is labelled with the real codes and is omitted when no `pair_with` is configured.
 
 ## Publishing & distribution
 
