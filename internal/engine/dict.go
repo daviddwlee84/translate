@@ -48,7 +48,7 @@ func NewDict(cfg DictConfig) *DictEngine {
 	}
 	path := cfg.Wordlist
 	if path == "" {
-		path = "/usr/share/dict/words"
+		path = defaultWordlist
 	}
 	return &DictEngine{cfg: cfg, wl: &wordIndex{path: path}, http: &http.Client{Timeout: cfg.Timeout}}
 }
@@ -267,4 +267,30 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+// prefixN returns up to n lowercase headwords starting with prefix, shortest
+// first (ties alphabetical). The word list is unsorted, so this is a linear scan
+// — fine at ~236k entries, and it only runs when ECDICT is unavailable.
+func (wi *wordIndex) prefixN(prefix string, n int) []string {
+	wi.load()
+	if prefix == "" || n <= 0 {
+		return nil
+	}
+	var out []string
+	for _, w := range wi.words {
+		if strings.HasPrefix(w, prefix) {
+			out = append(out, w)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i]) != len(out[j]) {
+			return len(out[i]) < len(out[j])
+		}
+		return out[i] < out[j]
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
 }

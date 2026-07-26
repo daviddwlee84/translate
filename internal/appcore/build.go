@@ -124,8 +124,17 @@ func DictFromConfig(cfg *config.Config) engine.Engine {
 		EcdictURL:    cfg.Dict.EcdictURL,
 		AutoDownload: cfg.Dict.AutoDownload,
 		Fuzzy:        cfg.Dict.Fuzzy,
+		Wordlist:     cfg.Dict.Wordlist,
 		APIFallback:  apiFb,
 	})
+}
+
+// DictSearcher returns the headword searcher behind the configured dictionary, or
+// (nil, false) when the source is the remote API — dictionaryapi.dev exposes no
+// headword list, so there is nothing to search locally.
+func DictSearcher(cfg *config.Config) (engine.Searcher, bool) {
+	s, ok := DictFromConfig(cfg).(engine.Searcher)
+	return s, ok
 }
 
 // SmartDictFromConfig builds the smart-dict engine: the plain dictionary plus an

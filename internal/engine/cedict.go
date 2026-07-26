@@ -96,3 +96,54 @@ func (ci *cedictIndex) prefixSuggest(word string, n int) []string {
 	}
 	return out
 }
+
+// cedictHit is one CC-CEDICT headword plus the entries filed under it. Both the
+// in-memory index and the built SQLite index return this shape.
+type cedictHit struct {
+	Key     string
+	Entries []*cedictEntry
+}
+
+// prefixSearch returns up to n headwords beginning with word, the exact match
+// first, then shortest, then alphabetical — unlike prefixSuggest it *includes*
+// the query itself, because a picker wants to show what you typed.
+func (ci *cedictIndex) prefixSearch(word string, n int) []cedictHit {
+	if ci.load() != nil || word == "" || n <= 0 {
+		return nil
+	}
+	// Collect a wider window than n so the ranking below sees more than the first
+	// n keys in raw alphabetical order.
+	window := n * 8
+	var keys []string
+	for i := sort.SearchStrings(ci.keys, word); i < len(ci.keys) && len(keys) < window; i++ {
+		if !strings.HasPrefix(ci.keys[i], word) {
+			break
+		}
+		keys = append(keys, ci.keys[i])
+	}
+	keys = rankCedictKeys(keys, word, n)
+	out := make([]cedictHit, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, cedictHit{Key: k, Entries: ci.byKey[k]})
+	}
+	return out
+}
+
+// rankCedictKeys orders prefix matches: exact first, then by rune length, then
+// alphabetically; capped at n.
+func rankCedictKeys(keys []string, query string, n int) []string {
+	sort.SliceStable(keys, func(i, j int) bool {
+		if (keys[i] == query) != (keys[j] == query) {
+			return keys[i] == query
+		}
+		li, lj := len([]rune(keys[i])), len([]rune(keys[j]))
+		if li != lj {
+			return li < lj
+		}
+		return keys[i] < keys[j]
+	})
+	if len(keys) > n {
+		keys = keys[:n]
+	}
+	return keys
+}

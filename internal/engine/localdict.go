@@ -17,27 +17,38 @@ type LocalDictConfig struct {
 	EcdictURL    string
 	AutoDownload bool        // auto-fetch CC-CEDICT (small) on first Chinese lookup
 	Fuzzy        bool        // emit ranked suggestions on a miss
+	Wordlist     string      // path to a newline word list; "" => /usr/share/dict/words
 	APIFallback  *DictEngine // nil unless configured; used for English when ECDICT is absent
 	Timeout      time.Duration
 }
+
+// defaultWordlist is the English headword list used for "did you mean" when the
+// caller didn't configure one ([dict] wordlist).
+const defaultWordlist = "/usr/share/dict/words"
 
 // LocalDictEngine looks up definitions offline: Chinese → CC-CEDICT (zh→en),
 // English → ECDICT (en→zh). It satisfies the Engine interface and maps results
 // into the same DictEntry/Suggestions shape the TUI already renders.
 type LocalDictEngine struct {
-	cfg LocalDictConfig
-	ce  *cedictIndex
-	ec  *ecdictDB
-	wl  *wordIndex // /usr/share/dict/words, for English "did you mean"
+	cfg  LocalDictConfig
+	ce   *cedictIndex
+	cedb *cedictDB // built CC-CEDICT index; preferred over ce when present
+	ec   *ecdictDB
+	wl   *wordIndex // English "did you mean" headwords ([dict] wordlist)
 }
 
 // NewLocalDict builds a local bilingual dictionary engine.
 func NewLocalDict(cfg LocalDictConfig) *LocalDictEngine {
+	wordlist := cfg.Wordlist
+	if wordlist == "" {
+		wordlist = defaultWordlist
+	}
 	return &LocalDictEngine{
-		cfg: cfg,
-		ce:  newCedictIndex(CedictPath(cfg.Dir)),
-		ec:  newEcdictDB(EcdictDBPath(cfg.Dir)),
-		wl:  &wordIndex{path: "/usr/share/dict/words"},
+		cfg:  cfg,
+		ce:   newCedictIndex(CedictPath(cfg.Dir)),
+		cedb: newCedictDB(CedictDBPath(cfg.Dir)),
+		ec:   newEcdictDB(EcdictDBPath(cfg.Dir)),
+		wl:   &wordIndex{path: wordlist},
 	}
 }
 
@@ -50,7 +61,7 @@ func (e *LocalDictEngine) Detect(ctx context.Context, text string) (string, erro
 
 // Available reports true if at least one data source (or the API fallback) is usable.
 func (e *LocalDictEngine) Available(ctx context.Context) bool {
-	if fileExists(CedictPath(e.cfg.Dir)) || e.ec.available() {
+	if fileExists(CedictPath(e.cfg.Dir)) || e.cedb.available() || e.ec.available() {
 		return true
 	}
 	if e.cfg.APIFallback != nil {
@@ -72,7 +83,7 @@ func (e *LocalDictEngine) Translate(ctx context.Context, req Request) (<-chan Ch
 }
 
 func (e *LocalDictEngine) lookupZh(ctx context.Context, word string, req Request) <-chan Chunk {
-	if !fileExists(CedictPath(e.cfg.Dir)) {
+	if !fileExists(CedictPath(e.cfg.Dir)) && !e.cedb.available() {
 		if e.cfg.AutoDownload {
 			if err := DownloadCedict(ctx, e.cfg.CedictURL, CedictPath(e.cfg.Dir), nil); err != nil {
 				return single(nil, fmt.Errorf("dictionary: %w", err))
@@ -81,16 +92,46 @@ func (e *LocalDictEngine) lookupZh(ctx context.Context, word string, req Request
 			return single(notInstalled(req, "CC-CEDICT not installed — run `translate dict update cedict`"), nil)
 		}
 	}
-	if entries := e.ce.lookup(word); len(entries) > 0 {
-		return single(cedictResult(word, entries, req), nil)
+	if entries := e.lookupCedict(ctx, word); len(entries) > 0 {
+		return single(cedictResult(word, entries), nil)
 	}
 	if e.cfg.Fuzzy {
-		if sugg := e.ce.prefixSuggest(word, suggestLimit); len(sugg) > 0 {
+		if sugg := e.prefixSuggestZh(ctx, word, suggestLimit); len(sugg) > 0 {
 			// CC-CEDICT prefix matches carry no edit distance → 0 (unknown).
 			return single(suggestResult(sugg, req, 0), nil)
 		}
 	}
 	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word))
+}
+
+// lookupCedict prefers the built index (a point query) over the in-memory one
+// (which re-parses the whole 9.8 MB file per process).
+func (e *LocalDictEngine) lookupCedict(ctx context.Context, word string) []*cedictEntry {
+	if e.cedb.available() {
+		if entries, err := e.cedb.lookup(ctx, word); err == nil && len(entries) > 0 {
+			return entries
+		} else if err == nil {
+			return nil // the index answered "no such headword" — trust it
+		}
+		// A broken index falls through to the plain file rather than failing.
+	}
+	return e.ce.lookup(word)
+}
+
+func (e *LocalDictEngine) prefixSuggestZh(ctx context.Context, word string, n int) []string {
+	if e.cedb.available() {
+		hits, err := e.cedb.prefixSearch(ctx, word, n+1)
+		if err == nil {
+			out := make([]string, 0, n)
+			for _, h := range hits {
+				if h.Key != word && len(out) < n {
+					out = append(out, h.Key)
+				}
+			}
+			return out
+		}
+	}
+	return e.ce.prefixSuggest(word, n)
 }
 
 func (e *LocalDictEngine) lookupEn(ctx context.Context, word string, req Request) <-chan Chunk {
@@ -109,7 +150,7 @@ func (e *LocalDictEngine) lookupEn(ctx context.Context, word string, req Request
 		return single(nil, fmt.Errorf("dictionary: %w", err))
 	}
 	if en != nil {
-		return single(ecdictResult(en, req), nil)
+		return single(ecdictResult(en), nil)
 	}
 	if e.cfg.Fuzzy {
 		if sugg, best := e.wl.nearestN(strings.ToLower(word), 2, suggestLimit); len(sugg) > 0 {
@@ -120,8 +161,18 @@ func (e *LocalDictEngine) lookupEn(ctx context.Context, word string, req Request
 }
 
 // --- result mapping into the existing DictEntry / Suggestions shape ---
+//
+// A dictionary hit stamps the language its glosses are actually written in, not
+// the requested --to: the offline tiers are script-fixed (CC-CEDICT is zh→en,
+// ECDICT is en→zh), so echoing the request would make history rows and any
+// text-to-speech voice selection wrong. --to still steers the LLM fallback
+// (see smartdict.go's smartTarget).
+const (
+	cedictGlossLang = "en"    // CC-CEDICT defines Chinese in English
+	ecdictGlossLang = "zh-CN" // ECDICT defines English in Simplified Chinese
+)
 
-func cedictResult(word string, entries []*cedictEntry, req Request) *TranslateResult {
+func cedictResult(word string, entries []*cedictEntry) *TranslateResult {
 	d := &DictEntry{Word: word}
 	if len(entries) > 0 {
 		d.Phonetic = entries[0].Pinyin
@@ -137,10 +188,10 @@ func cedictResult(word string, entries []*cedictEntry, req Request) *TranslateRe
 	if len(entries) > 0 && len(entries[0].Defs) > 0 {
 		gloss = entries[0].Defs[0]
 	}
-	return &TranslateResult{Translation: gloss, Target: req.Target, Engine: "dictionary", Dictionary: d}
+	return &TranslateResult{Translation: gloss, Target: cedictGlossLang, Engine: "dictionary", Dictionary: d}
 }
 
-func ecdictResult(en *ecdictEntry, req Request) *TranslateResult {
+func ecdictResult(en *ecdictEntry) *TranslateResult {
 	d := &DictEntry{Word: en.Word, Phonetic: en.Phonetic}
 	if zh := splitEcdict(en.Translation); len(zh) > 0 {
 		mn := Meaning{PartOfSpeech: "中文"}
@@ -160,7 +211,7 @@ func ecdictResult(en *ecdictEntry, req Request) *TranslateResult {
 	if zh := splitEcdict(en.Translation); len(zh) > 0 {
 		gloss = zh[0]
 	}
-	return &TranslateResult{Translation: gloss, Target: req.Target, Engine: "dictionary", Dictionary: d}
+	return &TranslateResult{Translation: gloss, Target: ecdictGlossLang, Engine: "dictionary", Dictionary: d}
 }
 
 func suggestResult(sugg []string, req Request, bestDist int) *TranslateResult {
