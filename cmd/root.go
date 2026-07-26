@@ -41,6 +41,7 @@ var (
 	flagPreset        string
 	flagInstructions  string
 	flagPair          bool
+	flagNoPair        bool
 	flagPairWith      string
 	flagLearn         bool
 	flagBilingual     bool
@@ -81,6 +82,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagPreset, "preset", "", "LLM prompt style: concise|contextual|dictionary")
 	f.StringVar(&flagInstructions, "instructions", "", "extra system-prompt guidance (domain focus, etc.)")
 	f.BoolVar(&flagPair, "pair", false, "bidirectional mode: home-language input → --pair-with, else → --to")
+	f.BoolVar(&flagNoPair, "no-pair", false, "force one-directional: always translate into --to, ignoring [general] pair")
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagLearn, "learn", false, "learning mode: teach (native→foreign) or grammar-correct (foreign→native)")
 	f.BoolVarP(&flagBilingual, "bilingual", "2", false, "bilingual pipe mode: keep original (with color) + translation beneath (stdin only)")
@@ -93,7 +95,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagSpeakLang, "speak-lang", "", "force the spoken language (e.g. en, zh-TW)")
 
 	root.SuggestionsMinimumDistance = 2
-	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd(), newServeCmd(), newMcpCmd())
+	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newModelsCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd(), newServeCmd(), newMcpCmd())
 	return root
 }
 
@@ -116,6 +118,7 @@ func overrides() config.Overrides {
 		Preset:       flagPreset,
 		Instructions: flagInstructions,
 		Pair:         flagPair,
+		NoPair:       flagNoPair,
 		PairWith:     flagPairWith,
 		Learn:        flagLearn,
 		Debug:        flagDebug,

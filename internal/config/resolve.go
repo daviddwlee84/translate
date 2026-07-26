@@ -16,6 +16,7 @@ type Overrides struct {
 	Preset       string
 	Instructions string
 	Pair         bool // --pair forces pair mode on
+	NoPair       bool // --no-pair forces pair mode off (beats --pair and the config)
 	PairWith     string
 	Learn        bool // --learn forces learning mode on (implies pair)
 	Debug        bool // --debug forces verbose logging on
@@ -145,7 +146,7 @@ func (c *Config) Resolve(o Overrides, mode Mode) Resolved {
 		Tier:          pick(o.Tier, "TRANSLATE_TIER", g.Tier),
 		Preset:        pick(o.Preset, "TRANSLATE_PRESET", g.Preset),
 		Instructions:  pick(o.Instructions, "TRANSLATE_INSTRUCTIONS", g.Instructions),
-		Pair:          o.Pair || g.Pair || envVal("TRANSLATE_PAIR") != "",
+		Pair:          !o.NoPair && (o.Pair || g.Pair || envVal("TRANSLATE_PAIR") != ""),
 		PairWith:      pick(o.PairWith, "TRANSLATE_PAIR_WITH", g.PairWith),
 		Learn:         o.Learn || g.Learn || envVal("TRANSLATE_LEARN") != "",
 		Color:         g.Color,

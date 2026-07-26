@@ -95,3 +95,41 @@ func TestResolveOverlayLiveTranslate(t *testing.T) {
 
 func boolptr(b bool) *bool { return &b }
 func intptr(i int) *int    { return &i }
+
+// TestResolveNoPair: --no-pair is the only way to get one-directional translation
+// when [general] pair is on. Without it, a picked --to is silently overridden for
+// home-language input, which is what the Raycast target dropdown ran into.
+func TestResolveNoPair(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfgPair bool
+		ov      Overrides
+		want    bool
+	}{
+		{"config on", true, Overrides{}, true},
+		{"config off", false, Overrides{}, false},
+		{"--pair forces on", false, Overrides{Pair: true}, true},
+		{"--no-pair beats the config", true, Overrides{NoPair: true}, false},
+		{"--no-pair beats --pair", true, Overrides{Pair: true, NoPair: true}, false},
+		{"--no-pair with pair already off", false, Overrides{NoPair: true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			c.General.Pair = tc.cfgPair
+			if got := c.Resolve(tc.ov, ModeCLI).Pair; got != tc.want {
+				t.Fatalf("Pair = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Learn is inherently bidirectional, so it still turns pair on — --no-pair is
+// about the plain translate path, not about breaking learn mode.
+func TestResolveNoPairDoesNotBreakLearn(t *testing.T) {
+	c := Default()
+	c.General.Pair = false
+	if got := c.Resolve(Overrides{Learn: true, NoPair: true}, ModeCLI); !got.Pair {
+		t.Fatal("learn must still imply pair even with --no-pair")
+	}
+}
