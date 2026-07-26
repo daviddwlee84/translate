@@ -90,10 +90,12 @@ Pitfalls owned by this folder. Keep alphabetical.
 | Slug | Symptom keywords | Status |
 |---|---|---|
 | `duplicate-translate-on-path-dotfiles-bin-shadows-local-bin` | two `translate` on PATH, `command -v -a`, reinstall has no effect, `~/.dotfiles/bin` shadows `~/.local/bin` | workaround; fix in TODO P2 |
+| `ecdict-prefix-search-ranks-obscure-words-first` | dictionary suggestions ranked worst-first, `ORDER BY frq DESC`, `frq` is a rank not a count, `LIKE 'x%'` does a full `SCAN entries`, 400 ms prefix query | fixed (range predicate + ascending rank) |
 | `go-install-module-path-mismatch` | `module declares its path as: translate`, `but was required as`, `parsing go.mod` | fixed (module renamed) |
 | `gobin-points-at-mise-toolchain-dir` | binary vanishes after Go upgrade, `go env GOBIN` = `.../mise/installs/go/<ver>/bin` | workaround (pin GOBIN) |
 | `llm-stream-truncation-silently-rendered-as-complete` | translation cut mid-word / half output, no error, `detected:` line still shown, streamed result truncated, copilot-proxy SSE dropped | fixed (assert stream completeness) |
 | `raycast-launchd-path-translate-not-found` | `spawn translate ENOENT`, `translate: command not found` in Raycast, works in terminal not Raycast, launchd PATH not inherited from shell | prevented (absolute-path probe) |
+| `raycast-still-prefills-clipboard-after-default-changed-to-nothing` | Raycast command ignores a changed `package.json` preference `default`, still prefills clipboard/selection, stored preference wins, stale `ray develop` bundle | workaround (reset the stored value) |
 | `tui-lipgloss-block-padding-inflates-blank-lines-in-viewport` | TUI shows many blank lines / big gaps between paragraphs, excess vertical whitespace, but `^y` copy is clean, gap grows with paragraph length / narrow width / CJK | fixed (per-line styling) |
 | `tui-viewport-clips-long-translation-no-softwrap` | TUI translation cut mid-sentence but CLI/curl shows full text, no `⚠`, long/multi-line results clipped, viewport SoftWrap | fixed (SoftWrap=true) |
 

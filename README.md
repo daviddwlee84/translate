@@ -33,10 +33,11 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate --to <lang> --from <lang>` | Language override; both are fuzzy (`chinees` → `zh`) |
 | `translate --json` | Emit the full structured result |
 | `… \| translate --bilingual` (`-2`) | Bilingual pipe view: keep the original (with color) + translation beneath (stdin only) |
-| `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API) |
+| `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API); records history |
+| `translate dict search <prefix>` | Ranked headword candidates with definition previews (`--limit`, `--json`) |
 | `translate history` / `history search <q>` | Recent history / fuzzy search (`--tsv`, `--json`) |
 | `translate init` | Interactive config wizard (probes providers) |
-| `translate config path\|show` · `lang resolve <q>` | Introspection helpers |
+| `translate config path\|show` · `lang resolve <q>` · `lang list` | Introspection helpers (all `--json`) |
 
 Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--pair-with`, `--bilingual`/`-2`, `--no-history`, `--debug`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
@@ -163,11 +164,35 @@ hit/miss, and chain fallback. The one-shot CLI logs to **stderr**; the TUI logs 
 
 ```sh
 translate dict update all      # one-time ~67 MB download/build into ~/.local/share/translate/dict
+translate dict reindex         # rebuild the CC-CEDICT search index from an existing download (no network)
 ```
 
 Until then, English lookups fall back to dictionaryapi.dev (`[dict] api_fallback`),
 and Chinese lookups prompt you to run the update. Misses show a ranked "did you
 mean" list. Set `[dict] source = "api"` to use only dictionaryapi.dev.
+
+`dict update cedict` also builds `cedict.db`, a SQLite index beside the plain
+`cedict_ts.u8`. Without it every process re-parses the whole 9.8 MB file (~1.7 s per
+Chinese lookup); with it a lookup is ~30 ms. Installs that predate the index get it
+from `translate dict reindex` — no re-download.
+
+### Headword search (`translate dict search`)
+
+Ranked candidates for a partially-typed word, each with a one-line definition
+preview — the data behind a type-ahead picker (the Raycast **Look up Word**
+command uses it):
+
+```sh
+translate dict search test              # test, testing, testimony, testify, tester, …
+translate dict search recieve --json    # typo → fuzzy candidates with an edit distance
+translate dict search 貓 --limit 20     # CC-CEDICT prefix matches
+```
+
+Ranking is exact match → prefix, ordered by ECDICT frequency (`frq` is a **rank**:
+1 is the most common word, 0 means unranked) → edit-distance candidates, themselves
+re-ranked by frequency. It reads local data only — no network, no LLM — so it is
+cheap enough to run on every keystroke, and it never touches history. Finding
+nothing is not an error: you get an empty `candidates` array and exit status 0.
 
 ### Smart dictionary (`smart-dict`)
 
@@ -182,7 +207,13 @@ translate define serendipity        # exact ECDICT entry
 translate define zzzznotaword       # miss → LLM definition (⚠ warning on stderr)
 translate define helllo             # distance-1 typo → "did you mean: hello, …"
 translate define --plain <word>     # force the offline dictionary, no LLM fallback
+translate define <word> --no-history  # look up without recording it
 ```
+
+A successful lookup is written to history (suppress with `--no-history`). A hit
+reports the language its glosses are *actually* in — `zh-CN` for ECDICT, `en` for
+CC-CEDICT — since the offline tiers are script-fixed; `--to` steers the LLM
+fallback's definition language. Suggestion-only misses are never recorded.
 
 `translate define` uses smart-dict whenever an LLM provider is reachable
 (`[smartdict] define_default`, `--smart`/`--plain` to force); in the TUI, `^e`
@@ -214,6 +245,7 @@ Endpoints (JSON in, JSON out — same shape the CLI emits with `--json`):
 ```sh
 curl -s localhost:4155/v1/translate -d '{"text":"hello","target":"zh-TW"}'
 curl -s localhost:4155/v1/define    -d '{"word":"ephemeral"}'
+curl -s 'localhost:4155/v1/dict/search?q=test&limit=10'
 curl -s 'localhost:4155/v1/history?q=hello&limit=10'
 curl -N 'localhost:4155/v1/translate/stream?text=hello&target=zh-TW'   # SSE
 ```
@@ -222,6 +254,8 @@ curl -N 'localhost:4155/v1/translate/stream?text=hello&target=zh-TW'   # SSE
 - **Security**: binds `127.0.0.1` only — a non-loopback `--bind` is refused unless a
   token is set. `/v1/history` requires `Authorization: Bearer <token>` when a token
   is configured (`[server].token`, or `token_env` to keep it out of `config.toml`).
+  `/v1/dict/search` is *not* token-guarded: dictionary headwords are public
+  reference data, unlike your own history.
 - **Streaming caveat**: SSE token cadence depends on the provider — copilot-proxy
   buffers Claude `/v1/messages`, so Claude models still arrive in a burst.
 

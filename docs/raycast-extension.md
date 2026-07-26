@@ -78,6 +78,17 @@ Raycast offers four ways to surface functionality. We ship the middle two.
   surfaces warnings in the Detail pane / HUD; the plain-text scripts don't.
 - **Extension icons must be a real PNG** (512×512) — emoji icons work only for
   Script Commands. `ray build`/`lint` complains otherwise.
+- **A preference `default` only applies when no value is stored.** Changing a
+  `default` in `package.json` does *not* reach an install that has already
+  materialized that preference — Raycast keeps the stored value, and the new
+  default is inert. Symptom: a behaviour you "fixed" in the manifest persists. See
+  [`../pitfalls/raycast-still-prefills-clipboard-after-default-changed-to-nothing.md`](../pitfalls/raycast-still-prefills-clipboard-after-default-changed-to-nothing.md).
+  Corollary: read preferences through the generated `Preferences.<Command>` type,
+  not a hand-written interface — the generated one makes the field required, so a
+  code default that drifts from the manifest becomes a compile error.
+- **Command arguments are static manifest data** and can't be populated at
+  runtime, so a language argument is necessarily a hand-synced subset. In-view
+  `List.Dropdown`s can call `translate lang list --json` for the full table.
 
 ## Competitive landscape (2026)
 
@@ -122,7 +133,8 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   `translate-selection` (no-view:
   grabs the selection/clipboard and opens Translate prefilled via `launchCommand` —
   editable, not blind-paste), `define` (view: dictionary lookup +
-  LLM fallback + "did you mean" suggestions), and `history` (view: browse/search
+  LLM fallback + "did you mean" suggestions), `look-up-word` (view: the Define
+  Word-style picker, below), and `history` (view: browse/search
   past translations). All share `src/lib/translate.ts` (binary resolve + typed
   `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).
   Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
@@ -134,6 +146,35 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   live-debounce, and tier are inherited from the CLI config (`config show --json`)
   when the matching Raycast preference is empty, so `config.toml` is the single
   source of truth (a Raycast preference overrides it).
+
+### `look-up-word` — the Define Word-style picker
+
+Modeled on Raycast's built-in **Define Word**: an empty search bar lists recent
+history; typing shows ranked headword candidates with definition previews;
+`⏎` pushes a full-page `Detail`.
+
+Three rules shape it, and each is worth preserving:
+
+1. **Typing is local-only.** The list is backed by `translate dict search --json`,
+   which reads the dictionary databases and nothing else (~30 ms). An LLM call per
+   keystroke would take ~6 s and be unusable, so the LLM fallback is deferred to
+   `⏎` — either on a fuzzy candidate or on the explicit *Ask the LLM* row that
+   appears when no local headword matched.
+2. **Only `⏎` writes history.** `dict search` opens no history store at all, so the
+   typing path *cannot* record; `DefineDetail` calls `define` without
+   `--no-history`, so opening a word remembers it. The old `define` command passes
+   `--no-history` because it looks up on every keystroke.
+3. **Language is pickable before and after opening.** A command *argument*
+   dropdown appears in the Raycast root bar; an in-view `List.Dropdown` (populated
+   from `translate lang list --json`) changes it later. Both only steer the LLM
+   fallback — the offline tiers are script-fixed (ECDICT en→zh, CC-CEDICT zh→en) —
+   and the Detail metadata says so rather than letting the choice look ignored.
+
+`define` is kept alongside it, unchanged, so the two UXes can be compared.
+New components: `lib/define-detail.tsx` (full-page definition, the only history
+writer), `lib/history-detail.tsx` (a stored record as a page — no re-run, instant),
+`lib/language-dropdown.tsx`. `lib/did-you-mean.tsx` is deliberately *not* reused
+here: its `⏎` re-runs the search, whereas in this list `⏎` must define.
 
 ## Publishing & distribution
 

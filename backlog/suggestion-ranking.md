@@ -40,7 +40,15 @@ word on top.
 
 ## Current blocker / open questions
 
-- Does the bundled ECDICT actually populate `frq`/`bnc` for enough headwords? (verify)
+- ~~Does the bundled ECDICT actually populate `frq`/`bnc` for enough headwords?~~
+  **Answered 2026-07-26.** `frq` yes — 42,231 of 770,611 rows carry one — but it is a
+  **rank**, not a count (`the`=1, `test`=575, `testosterone`=10400, `0` = unranked), so
+  the sort is *ascending with zeros last*; `frq DESC` is backwards and looks plausible
+  (see [`../pitfalls/ecdict-prefix-search-ranks-obscure-words-first.md`](../pitfalls/ecdict-prefix-search-ranks-obscure-words-first.md)).
+  `bnc` is **not imported at all** — `internal/engine/dictdata.go` reads only `rec[9]`.
+- Inflected forms (`tests`, `testifying`) are unranked and therefore sort late. Their
+  lemma is in the `exchange` column (`test` → `s:tests/d:tested/i:testing`), so a
+  lemma-frequency boost is possible — filed separately in `TODO.md`.
 - Chinese suggestions are prefix matches with no distance/frequency — leave as-is, or
   pinyin/stroke rank?
 - Threshold/cap: only show suggestions within distance N; how many to return.
@@ -51,6 +59,24 @@ word on top.
 ideally ordered). Do **B** (and optionally **C**) when polishing the did-you-mean UX.
 Frontends need no change for B; C would let Translate/Define auto-apply the top
 correction.
+
+`2026-07-26 partially shipped` — the **Look up Word** work
+([`look-up-word.md`](look-up-word.md)) implemented **B** inside the new
+`translate dict search` path: `engine.sortByDistanceThenRank` orders typo candidates
+by `(distance asc, frq asc with 0 last, alpha)`, and the ECDICT lookup that supplies
+the frequency exists (`ecdictDB.lookupMany`). `recieve` now puts `receive` 3rd instead
+of 6th (`relieve` legitimately wins at distance 1, `believe` at rank 212 beats
+`receive` at 497).
+
+What remains — and why this entry is **not** Done:
+
+- The comparator is not yet wired into `wordIndex.nearestN`'s *other* consumers
+  (`internal/engine/dict.go:91`, `localdict.go:115`), so `define` / `translate` / TUI /
+  MCP `suggestions[]` are still distance-only. That is a small change now that both the
+  comparator and the frequency lookup exist.
+- **C** is partly superseded: `dict search`'s `candidates[].distance` already gives a
+  frontend the auto-correct signal without touching `TranslateResult`. Keep C open only
+  for the `define` / `translate` JSON paths.
 
 ## References
 
