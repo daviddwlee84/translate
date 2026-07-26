@@ -31,6 +31,10 @@ isn’t found, the extension shows an install-instructions screen instead of fai
 
 - **Translate** — type to translate; pick the target language; ⌘↵ for a streaming
   view; actions for Copy / Paste / Speak and an engine override.
+- **Translate Text** — a multi-line box for whole paragraphs. Raycast's search bar
+  refuses a long paste ("the text you are trying to paste is too long"), and that
+  limit is the app's, not ours — so long text gets its own form. ⌘⇧S loads the
+  selection, ⌘⇧V the clipboard, ⌘↵ streams.
 - **Translate Selection** — grabs your selection (or clipboard) and opens Translate
   prefilled and editable.
 - **Look up Word** — a dictionary picker: an empty search bar lists your recent

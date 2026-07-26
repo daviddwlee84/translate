@@ -7,6 +7,9 @@
   selection/clipboard prefill.
 - **Translate Selection** — grabs the current selection (or clipboard) and opens
   Translate prefilled, so you can review/edit before copying.
+- **Translate Text** — a multi-line form for whole paragraphs, since Raycast's
+  search bar refuses a long paste. Load the selection or clipboard explicitly,
+  translate to a full page, or stream with ⌘↵.
 - **Look up Word** — a Define Word-style dictionary picker: recent lookups when the
   search bar is empty, ranked headword candidates with definition previews as you
   type, and a full definition page on ↵ (which is what records the lookup). The

@@ -89,6 +89,13 @@ Raycast offers four ways to surface functionality. We ship the middle two.
 - **Command arguments are static manifest data** and can't be populated at
   runtime, so a language argument is necessarily a hand-synced subset. In-view
   `List.Dropdown`s can call `translate lang list --json` for the full table.
+- **The search bar refuses a long paste** ("The text you are trying to paste is
+  too long"). That guard is in the Raycast app binary, not `@raycast/api`, so it
+  can't be raised or caught, and it applies to every search-bar command. Long
+  text needs a `Form.TextArea` — that is what the `translate-text` command is.
+  Behind it, argv caps at `ARG_MAX` (1 MiB), so `src/lib/translate.ts` pipes to
+  stdin above 128 KB. See
+  [`../pitfalls/raycast-search-bar-refuses-long-paste.md`](../pitfalls/raycast-search-bar-refuses-long-paste.md).
 
 ## Competitive landscape (2026)
 
@@ -134,7 +141,8 @@ modes" (Anki / Vocabulary Builder already exist in the store).
   grabs the selection/clipboard and opens Translate prefilled via `launchCommand` —
   editable, not blind-paste), `define` (view: dictionary lookup +
   LLM fallback + "did you mean" suggestions), `look-up-word` (view: the Define
-  Word-style picker, below), and `history` (view: browse/search
+  Word-style picker, below), `translate-text` (view: a `Form.TextArea` for
+  passages the search bar refuses, below), and `history` (view: browse/search
   past translations). All share `src/lib/translate.ts` (binary resolve + typed
   `execFile` wrappers mirroring `internal/engine/engine.go`'s `TranslateResult`).
   Run: `just raycast-dev` (`build`/`lint` variants exist). Live translate is
@@ -175,6 +183,23 @@ New components: `lib/define-detail.tsx` (full-page definition, the only history
 writer), `lib/history-detail.tsx` (a stored record as a page — no re-run, instant),
 `lib/language-dropdown.tsx`. `lib/did-you-mean.tsx` is deliberately *not* reused
 here: its `⏎` re-runs the search, whereas in this list `⏎` must define.
+
+### `translate-text` — the long-passage escape hatch
+
+Every other command takes its input in the search bar, which Raycast caps: a long
+paste is refused outright, and the extension never even sees it. This command is a
+`Form.TextArea` plus target/engine dropdowns; submitting pushes the same full-page
+`Detail` (`lib/translation-detail.tsx`), with `⌘↵` for the streaming view.
+
+Nothing is prefilled — *Load Selection* (`⌘⇧S`) and *Load Clipboard* (`⌘⇧V`) are
+explicit actions, keeping the lesson from `e87db06` that auto-grabbing input on
+open is surprising.
+
+Past 128 KB of UTF-8, `src/lib/translate.ts` stops putting the text in argv and
+pipes it to stdin (`execWithStdin`), because macOS caps a whole argument list at
+`ARG_MAX` = 1 MiB. The CLI already reads stdin when given no text argument, so
+this needed no CLI change. The provider is the real ceiling long before either
+limit: Google puts the text in a GET query string and fails around 180 KB.
 
 ## Publishing & distribution
 

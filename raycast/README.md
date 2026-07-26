@@ -49,6 +49,8 @@ Four commands appear in root search and **stay installed after you stop
 **Translate** (type-to-translate, language dropdown, engine-override submenu,
 streaming ⌘↵, Copy/Paste/Speak), **Translate Selection** (grabs the selection or
 clipboard and opens Translate prefilled, with an optional target-language argument),
+**Translate Text** (a `Form.TextArea` for whole paragraphs — Raycast's search bar
+refuses a long paste, and that limit is the app's, not ours),
 **Define** (single-result dictionary lookup + LLM fallback), **Look up Word**
 (a Define Word-style picker: recent lookups when empty, ranked headword candidates
 with previews as you type, a full definition page on ↵), and **History**
