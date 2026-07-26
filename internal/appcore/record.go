@@ -31,6 +31,23 @@ func clip(s string, n int) string {
 	return s
 }
 
+// Recordable reports whether a result is worth persisting to history.
+//
+// A dictionary miss produces a result with no translation — only "did you mean"
+// suggestions, or a "dictionary not installed" note. Those used to land in
+// history as empty-output rows, which is noise in every history browser. A
+// truncated stream is likewise not a usable record.
+func Recordable(res *engine.TranslateResult) bool {
+	if res == nil || res.Truncated {
+		return false
+	}
+	if strings.TrimSpace(res.Translation) != "" {
+		return true
+	}
+	// A dictionary entry can carry its senses in Dictionary with an empty gloss.
+	return res.Dictionary != nil || res.Learn != nil
+}
+
 // ToRecord builds a history Record from a translation result. When the source was
 // "auto", the engine's detected language is substituted so history stays specific.
 func ToRecord(res *engine.TranslateResult, input, source, target string) store.Record {

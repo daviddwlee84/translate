@@ -11,6 +11,7 @@ import (
 	"github.com/daviddwlee84/translate/internal/appcore"
 	"github.com/daviddwlee84/translate/internal/config"
 	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/lang"
 )
 
 var (
@@ -22,8 +23,10 @@ func newDefineCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "define <word>",
 		Short: "Look up a word in the dictionary (exact → fuzzy → LLM)",
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  runDefine,
+		Long: "Look up a word in the dictionary (exact → fuzzy → LLM).\n\n" +
+			"A successful lookup is written to history; pass --no-history to suppress it.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: runDefine,
 	}
 	c.Flags().BoolVar(&flagDefinePlain, "plain", false, "force the offline dictionary (no LLM fallback)")
 	c.Flags().BoolVar(&flagDefineSmart, "smart", false, "force smart-dict (LLM fallback on a miss)")
@@ -41,14 +44,32 @@ func runDefine(cmd *cobra.Command, args []string) error {
 	res := cfg.Resolve(overrides(), config.ModeCLI)
 	de := appcore.DefineEngine(res, flagDefinePlain, flagDefineSmart)
 	word := strings.Join(args, " ")
+	target, _ := lang.Resolve(res.Target)
+	targetCode := target.Code
 
-	ch, err := de.Translate(cmd.Context(), engine.Request{Text: word, Mode: engine.ModeDict, Stream: false})
+	ctx := cmd.Context()
+	// Target is what the LLM fallback defines *into*; a dictionary hit overrides it
+	// with the language its glosses are actually written in (see localdict.go).
+	ch, err := de.Translate(ctx, engine.Request{Text: word, Target: targetCode, Mode: engine.ModeDict, Stream: false})
 	if err != nil {
 		return err
 	}
 	res2, err := engine.Drain(ch, nil)
 	if err != nil {
 		return err
+	}
+
+	// A lookup is a translation as far as history is concerned; suggestion-only
+	// misses are filtered out by Recordable.
+	if st := openStore(cfg); st != nil {
+		defer st.Close()
+		if appcore.Recordable(res2) {
+			recTarget := res2.Target
+			if recTarget == "" {
+				recTarget = targetCode
+			}
+			_, _ = st.Add(ctx, appcore.ToRecord(res2, word, "auto", recTarget))
+		}
 	}
 
 	if flagJSON {

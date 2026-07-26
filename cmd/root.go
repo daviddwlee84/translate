@@ -333,7 +333,7 @@ func openStore(cfg *config.Config) store.Store {
 // the stable home target (== target unless pair mode redirected this one input),
 // so persisting it keeps pair mode from drifting its home to the away language.
 func recordAndRemember(ctx context.Context, st store.Store, cfg *config.Config, res *engine.TranslateResult, input, source, target, rememberTarget string) {
-	if st != nil {
+	if st != nil && appcore.Recordable(res) {
 		_, _ = st.Add(ctx, appcore.ToRecord(res, input, source, target))
 	}
 	if cfg.General.RememberLastPair {
