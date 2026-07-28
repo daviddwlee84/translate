@@ -7,7 +7,7 @@
   "author": "da-wei_lee",
   "categories": ["Productivity", "Developer Tools"],
   "license": "MIT",
-  "platforms": ["macOS"],
+  "platforms": ["macOS", "Windows"],
   "commands": [
     {
       "name": "translate",
@@ -125,10 +125,10 @@
     {
       "name": "binaryPath",
       "title": "translate binary path",
-      "description": "Absolute path to the translate CLI. Empty = auto-probe ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/go/bin.",
+      "description": "Absolute path to the translate CLI. Empty = auto-probe the usual install dirs (macOS: ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/go/bin — Windows: ~\\.local\\bin, ~\\go\\bin, Scoop, Chocolatey, Program Files).",
       "type": "textfield",
       "required": false,
-      "placeholder": "/Users/you/.local/bin/translate"
+      "placeholder": "Leave empty to auto-probe"
     },
     {
       "name": "defaultTarget",
@@ -165,6 +165,18 @@
       "description": "How long to wait after you stop typing before translating (min 250). Leave empty to inherit the translate config's debounce_ms (falls back to 700).",
       "type": "textfield",
       "required": false
+    }
+  ],
+  "tools": [
+    {
+      "name": "translate-text",
+      "title": "Translate Text",
+      "description": "Translate text using the user's own configured translate engine, preset and fallback chain."
+    },
+    {
+      "name": "look-up-word",
+      "title": "Look up Word",
+      "description": "Look up a word in the local offline dictionary and return its phonetic transcription and senses."
     }
   ],
   "dependencies": {

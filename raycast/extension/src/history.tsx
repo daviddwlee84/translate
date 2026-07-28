@@ -3,9 +3,10 @@ import { ActionPanel, Action, Icon, List } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { runHistory, isBinaryMissing, HistoryEntry } from "./lib/translate";
 import { BinaryNotFound } from "./lib/binary-not-found";
+import { SHORTCUTS } from "./lib/shortcuts";
 
 export default function Command() {
-  const abortable = useRef<AbortController>();
+  const abortable = useRef<AbortController | undefined>(undefined);
   const { data, isLoading, error, revalidate } = usePromise(
     async (): Promise<HistoryEntry[]> =>
       runHistory(undefined, 200, abortable.current?.signal),
@@ -67,13 +68,13 @@ export default function Command() {
                 <Action.CopyToClipboard
                   title="Copy Input"
                   content={h.input}
-                  shortcut={{ modifiers: ["cmd"], key: "i" }}
+                  shortcut={SHORTCUTS.copySource}
                 />
                 <Action
                   title="Reload"
                   icon={Icon.ArrowClockwise}
                   onAction={() => revalidate()}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  shortcut={SHORTCUTS.reload}
                 />
               </ActionPanel>
             }

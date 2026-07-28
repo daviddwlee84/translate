@@ -1,6 +1,8 @@
 import { ActionPanel, Action, Detail, Icon, showHUD } from "@raycast/api";
 import { HistoryEntry, speakText } from "./translate";
 import { DefineDetail } from "./define-detail";
+import { SHORTCUTS } from "./shortcuts";
+import { renderModelOutput } from "./markdown";
 
 /**
  * A stored history row as a full page.
@@ -36,12 +38,12 @@ export function HistoryDetail(props: { entry: HistoryEntry; to: string }) {
           <Action.CopyToClipboard
             title="Copy Input"
             content={entry.input}
-            shortcut={{ modifiers: ["cmd"], key: "i" }}
+            shortcut={SHORTCUTS.copySource}
           />
           <Action.Push
             title="Look up Again"
             icon={Icon.Book}
-            shortcut={{ modifiers: ["cmd"], key: "l" }}
+            shortcut={SHORTCUTS.lookUpAgain}
             target={<DefineDetail word={entry.input} to={to} />}
           />
           <Action
@@ -59,7 +61,10 @@ export function HistoryDetail(props: { entry: HistoryEntry; to: string }) {
 }
 
 export function renderEntry(h: HistoryEntry): string {
-  return [`# ${h.input}`, "", h.output].join("\n");
+  // The stored output is model text, so it gets the same repair pass as a live
+  // translation — a table recorded before the CLI learned to emit GFM structure
+  // would otherwise render as reflowed prose forever.
+  return [`# ${h.input}`, "", renderModelOutput(h.output)].join("\n");
 }
 
 export function formatTS(ts: string): string {

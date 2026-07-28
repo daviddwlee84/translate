@@ -24,6 +24,7 @@ import { useDebouncedValue } from "./lib/hooks";
 import { StreamView } from "./lib/stream-view";
 import { BinaryNotFound } from "./lib/binary-not-found";
 import { DidYouMean } from "./lib/did-you-mean";
+import { SHORTCUTS, label } from "./lib/shortcuts";
 
 const ENGINES = [
   { title: "Auto (fallback chain)", value: "" },
@@ -96,7 +97,7 @@ export default function Command(
   // Only translate once the user pauses (debounce) and cancel superseded in-flight
   // calls (abortable) — so typing a phrase no longer fires an LLM call per keystroke.
   const debouncedText = useDebouncedValue(text, debounceMs);
-  const abortable = useRef<AbortController>();
+  const abortable = useRef<AbortController | undefined>(undefined);
 
   const { data, isLoading, error } = usePromise(
     async (
@@ -180,7 +181,7 @@ export default function Command(
               <Action.Push
                 title="Translate (streaming)"
                 icon={Icon.Text}
-                shortcut={{ modifiers: ["cmd"], key: "return" }}
+                shortcut={SHORTCUTS.streamTranslate}
                 target={
                   <StreamView
                     text={debouncedText.trim()}
@@ -193,7 +194,7 @@ export default function Command(
               <Action.CopyToClipboard
                 title="Copy Source Text"
                 content={debouncedText.trim()}
-                shortcut={{ modifiers: ["cmd"], key: "i" }}
+                shortcut={SHORTCUTS.copySource}
               />
               <Action
                 title="Speak"
@@ -206,7 +207,7 @@ export default function Command(
               <ActionPanel.Submenu
                 title="Engine"
                 icon={Icon.Gear}
-                shortcut={{ modifiers: ["cmd"], key: "e" }}
+                shortcut={SHORTCUTS.engine}
               >
                 {ENGINES.map((e) => (
                   <Action
@@ -224,7 +225,7 @@ export default function Command(
         <List.EmptyView
           icon={Icon.Text}
           title="No translation"
-          description="No result for this input — try rephrasing or another engine (⌘E)."
+          description={`No result for this input — try rephrasing or another engine (${label("engine")}).`}
         />
       )}
     </List>

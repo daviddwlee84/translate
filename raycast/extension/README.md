@@ -11,21 +11,53 @@ This extension **shells out to the `translate` CLI** — it does not translate o
 own. Install the binary first:
 
 ```sh
+# macOS / Linux
 brew install daviddwlee84/tap/translate
-# or, with a Go toolchain:
+
+# any platform, with a Go toolchain (the only route on Windows today)
 go install github.com/daviddwlee84/translate@latest
 ```
 
-On first run, `translate init` sets up your providers/config
-(`~/.config/translate/config.toml`). The extension auto-detects the binary in
-`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/go/bin`; if it lives
-elsewhere, set **“translate binary path”** in the extension preferences. (If it
-isn’t found, the extension shows an install-instructions screen instead of failing.)
+On first run, `translate init` sets up your providers/config. The extension
+auto-detects the binary; if it lives elsewhere, set **“translate binary path”** in
+the extension preferences. (If it isn’t found, the extension shows an
+install-instructions screen instead of failing.)
 
-> **Note:** Raycast runs under a restricted `PATH` and reads no shell env, so API
-> keys must live in `translate`’s config file (via `translate init`), not in
-> `~/.zshrc`. “Translate Selection” and selection-prefill need macOS **Accessibility**
-> permission for Raycast (System Settings → Privacy & Security → Accessibility).
+| | Config file | Binary probed in |
+|---|---|---|
+| macOS | `~/.config/translate/config.toml` | `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/go/bin` |
+| Windows | `%USERPROFILE%\.config\translate\config.toml` | `~\.local\bin`, `~\go\bin`, `%LOCALAPPDATA%\Programs\translate`, Scoop shims, Chocolatey `bin`, `%ProgramFiles%\translate` |
+
+> **Windows support is declared but not yet verified on Windows hardware.** The
+> code paths exist and are gated (no macOS-only APIs, per-platform shortcuts, a
+> `.exe`-aware binary probe), but it has been developed and tested on macOS. If
+> something is wrong there, please open an issue — and note Homebrew is
+> macOS/Linux-only, so `go install` is currently the only Windows install route.
+
+> **Note:** Raycast runs under a restricted `PATH` and reads no shell env on
+> either platform, so API keys must live in `translate`’s config file (via
+> `translate init`), not in `~/.zshrc`. “Translate Selection” and selection-prefill
+> need macOS **Accessibility** permission for Raycast (System Settings → Privacy &
+> Security → Accessibility); on Windows they fall back to the clipboard.
+
+## Ask Translate (Raycast AI)
+
+Type `@translate` in Quick AI or AI Chat. Two tools are exposed:
+
+- **translate-text** — translates through *your* configured engine, presets and
+  fallback chain, so the answer matches what the CLI would give you.
+- **look-up-word** — the offline dictionary, whose `phonetic` field is real data
+  rather than something the model made up.
+
+The extension's `ai.yaml` instructs the model to answer bilingually and gloss
+unfamiliar words (part of speech, KK phonetic, meaning). That makes it useful for
+the context-sensitive questions a plain translation gets wrong — asking what
+`shim` means *in rate limiting* returns the software sense, where a bare lookup
+returns a carpentry wedge.
+
+AI access is a Raycast setting, not necessarily a paid one: the free message
+allowance, a local Ollama model, and Custom Providers (`providers.yaml`, which
+supports GitHub Copilot) all work.
 
 ## Commands
 
@@ -33,7 +65,8 @@ isn’t found, the extension shows an install-instructions screen instead of fai
   view; actions for Copy / Paste / Speak and an engine override.
 - **Translate Text** — a multi-line box for whole paragraphs. Raycast's search bar
   refuses a long paste ("the text you are trying to paste is too long"), and that
-  limit is the app's, not ours — so long text gets its own form. ⌘⇧S loads the
+  limit is the app's, not ours — so long text gets its own form. ⌘⇧S (Ctrl+Shift+S
+  on Windows) loads the
   selection, ⌘⇧V the clipboard, ⌘↵ streams, ⌘⇧A reveals engine + model.
 - **Translate Selection** — grabs your selection (or clipboard) and opens Translate
   prefilled and editable.

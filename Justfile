@@ -63,9 +63,44 @@ raycast-dev:
     cd raycast/extension && ([ -d node_modules ] || npm install) && npm run dev
 
 # type-check / build the extension bundle (does NOT install into Raycast)
+# NOTE: `ray build` defaults to -e dev, where esbuild STRIPS types without
+# checking them — a genuine type error still prints "built successfully".
+# Use `raycast-check` before trusting a build.
 raycast-build:
     cd raycast/extension && ([ -d node_modules ] || npm install) && npm run build
 
 # lint the extension with the Raycast eslint config
 raycast-lint:
-    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run lint
+    cd raycast/extension && ([ -d node_modules ] || npm install) && CI=true npm run lint
+
+# assert the pure modules (no test runner in a Raycast extension — see
+# src/lib/dev-check.ts for why, and for the import discipline it depends on)
+raycast-verify:
+    cd raycast/extension && ([ -d node_modules ] || npm install) \
+      && npx tsc --outDir .build/verify --module commonjs --target ES2022 \
+           --lib ES2023 --esModuleInterop --strict src/lib/dev-check.ts \
+      && node .build/verify/dev-check.js
+
+# THE GATE. Each stage catches what the others miss:
+#   verify   our own invariants: both shortcut branches, table normalisation
+#   build    that esbuild can bundle it, that the tool schemas extract — and it
+#            GENERATES raycast-env.d.ts, which is gitignored, so it must run
+#            before tsc or a fresh clone has no Preferences/Arguments globals
+#   tsc      types (`ray build -e dev` does not typecheck at all)
+#   lint     manifest schema, icons, ESLint, Prettier, reserved shortcuts —
+#            and, ONLY under CI=true, that package-lock.json points at
+#            registry.npmjs.org (a mirror in your global npm config writes a
+#            lockfile the Raycast store rejects)
+#   dist     the build the store actually produces — this one DOES run tsc
+raycast-check: raycast-verify
+    cd raycast/extension && npx ray build
+    cd raycast/extension && npx tsc --noEmit -p tsconfig.json
+    cd raycast/extension && CI=true npx ray lint
+    cd raycast/extension && npx ray build -e dist
+
+# print the JSON schemas Raycast AI will see for each tool in src/tools/.
+# Read it — a field with no "description", or empty "properties", ships a tool
+# the model has to guess at, and neither lint nor build complains.
+raycast-tool-schemas:
+    cd raycast/extension && npx ray build --print-tool-schemas
+

@@ -16,6 +16,7 @@ import { readConfig, runModels, AUTO_TARGET, ModelInfo } from "./lib/translate";
 import { autoLabel, usePair, useLanguages } from "./lib/language-dropdown";
 import { TranslationDetail } from "./lib/translation-detail";
 import { StreamView } from "./lib/stream-view";
+import { SHORTCUTS, label } from "./lib/shortcuts";
 
 const ENGINES = [
   { title: "Auto (fallback chain)", value: "" },
@@ -52,7 +53,9 @@ export default function Command(
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [text, setText] = useState("");
-  const [to, setTo] = useState(
+  // Explicitly <string>: the manifest dropdown's union is only the ten static
+  // options, but this also holds AUTO_TARGET and codes from runLangs().
+  const [to, setTo] = useState<string>(
     props.arguments?.to || prefs.defaultTarget || "",
   );
   const [engine, setEngine] = useState(prefs.engine ?? "");
@@ -144,31 +147,31 @@ export default function Command(
           <Action
             title="Translate (streaming)"
             icon={Icon.Bolt}
-            shortcut={{ modifiers: ["cmd"], key: "return" }}
+            shortcut={SHORTCUTS.streamTranslate}
             onAction={() => submit(true)}
           />
           <Action
             title="Load Selection"
             icon={Icon.TextCursor}
-            shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
+            shortcut={SHORTCUTS.loadSelection}
             onAction={() => load("selection")}
           />
           <Action
             title="Load Clipboard"
             icon={Icon.Clipboard}
-            shortcut={{ modifiers: ["cmd", "shift"], key: "v" }}
+            shortcut={SHORTCUTS.loadClipboard}
             onAction={() => load("clipboard")}
           />
           <Action
             title="Clear"
             icon={Icon.Trash}
-            shortcut={{ modifiers: ["cmd", "shift"], key: "x" }}
+            shortcut={SHORTCUTS.clear}
             onAction={() => setText("")}
           />
           <Action
             title={showAdvanced ? "Hide Advanced" : "Show Advanced"}
             icon={Icon.Cog}
-            shortcut={{ modifiers: ["cmd", "shift"], key: "a" }}
+            shortcut={SHORTCUTS.toggleAdvanced}
             onAction={() => setShowAdvanced((v) => !v)}
           />
         </ActionPanel>
@@ -186,7 +189,7 @@ export default function Command(
         text={
           text
             ? `${text.length.toLocaleString()} characters`
-            : "⌘⇧S loads the selection · ⌘⇧V loads the clipboard · ⌘⇧A advanced"
+            : `${label("loadSelection")} loads the selection · ${label("loadClipboard")} loads the clipboard · ${label("toggleAdvanced")} advanced`
         }
       />
       <Form.Separator />

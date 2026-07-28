@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { platform } from "./platform";
 
 const pexecFile = promisify(execFile);
 
@@ -120,33 +121,28 @@ interface Prefs {
   tier?: string;
 }
 
-const PROBE_DIRS = [
-  join(homedir(), ".local", "bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  join(homedir(), "go", "bin"),
-];
-
 let cachedBin: string | undefined;
 
 /**
- * Resolve an ABSOLUTE path to the translate binary. Raycast runs under launchd
- * with a restricted PATH that does not inherit the shell rc, so a bare
- * `translate` throws ENOENT — we probe known install dirs (preference first).
+ * Resolve an ABSOLUTE path to the translate binary. Raycast does not source a
+ * shell rc on EITHER platform — under launchd on macOS, PATH is roughly
+ * /usr/bin:/bin — so a bare `translate` throws ENOENT. We probe known install
+ * dirs (preference first). The dirs and the filename come from the platform
+ * seam; only the reason differs by OS, not the rule.
  */
 export function resolveBinary(): string {
   const prefs = getPreferenceValues<Prefs>();
   if (prefs.binaryPath && existsSync(prefs.binaryPath)) return prefs.binaryPath;
   if (cachedBin) return cachedBin;
-  for (const dir of PROBE_DIRS) {
-    const candidate = join(dir, "translate");
+  for (const dir of platform.probeDirs) {
+    const candidate = join(dir, platform.binaryName);
     if (existsSync(candidate)) {
       cachedBin = candidate;
       return candidate;
     }
   }
   throw new Error(
-    "translate CLI not found. Set the binary path in extension preferences, or install it (just install / brew install daviddwlee84/tap/translate).",
+    `translate CLI not found. Set the binary path in extension preferences, or install it (${platform.installCommands[0].command}).`,
   );
 }
 
@@ -157,6 +153,9 @@ export function isBinaryMissing(e: unknown): boolean {
 
 function baseEnv(): NodeJS.ProcessEnv {
   // Ensure the CLI can locate its config.toml (providers/API keys) under launchd.
+  // Windows resolves the home dir from %USERPROFILE% (internal/xdgpath calls
+  // os.UserHomeDir), so forcing HOME there would achieve nothing.
+  if (!platform.forcesHome) return { ...process.env };
   return { ...process.env, HOME: process.env.HOME ?? homedir() };
 }
 
@@ -213,6 +212,9 @@ function execWithStdin(
     };
     const kill = (reason: string) =>
       finish(() => {
+        // Windows has no POSIX signals — Node terminates the child outright and
+        // ignores the name. That is still the semantics we want here (cancel a
+        // superseded call); only the graceful-shutdown nuance is lost.
         if (!child.killed) child.kill("SIGTERM");
         reject(Object.assign(new Error(reason), { stderr: err }));
       });
@@ -272,6 +274,17 @@ export interface TranslateOptions {
    * home-language input, so "translate into X" is only true with --no-pair.
    */
   pair?: boolean;
+  /**
+   * LLM prompt style (`--preset`). Only the LLM engines honour it; google and
+   * dict ignore it. "contextual" is the one worth reaching for interactively —
+   * it lists 2-4 senses instead of committing to one.
+   */
+  preset?: "concise" | "contextual" | "dictionary";
+  /**
+   * Extra system-prompt guidance (`--instructions`) — domain terminology, the
+   * context a term appears in. Appended to whichever preset is active.
+   */
+  instructions?: string;
   noHistory?: boolean;
   signal?: AbortSignal;
 }
@@ -314,6 +327,8 @@ export async function runTranslate(
   const tier = opts.tier ?? prefs.tier;
   if (tier) args.push("--tier", tier);
   if (opts.model) args.push("--model", opts.model);
+  if (opts.preset) args.push("--preset", opts.preset);
+  if (opts.instructions) args.push("--instructions", opts.instructions);
   if (opts.noHistory) args.push("--no-history");
 
   const timeout = requestTimeout(text);
@@ -607,6 +622,7 @@ export function spawnTranslateStream(
     child.stdin?.end(text, "utf8");
   }
   return () => {
+    // See the note on the other kill site: on Windows this is a hard terminate.
     if (!child.killed) child.kill("SIGTERM");
   };
 }

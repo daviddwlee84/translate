@@ -10,11 +10,12 @@ import {
 import { useDebouncedValue } from "./lib/hooks";
 import { BinaryNotFound } from "./lib/binary-not-found";
 import { DidYouMean } from "./lib/did-you-mean";
+import { SHORTCUTS } from "./lib/shortcuts";
 
 export default function Command() {
   const [word, setWord] = useState("");
   const debounced = useDebouncedValue(word, 500);
-  const abortable = useRef<AbortController>();
+  const abortable = useRef<AbortController | undefined>(undefined);
 
   const { data, isLoading, error } = usePromise(
     async (w: string): Promise<TranslateResult | undefined> => {
@@ -80,7 +81,7 @@ export default function Command() {
               <Action.CopyToClipboard
                 title="Copy Word"
                 content={data.dictionary?.word ?? word}
-                shortcut={{ modifiers: ["cmd"], key: "i" }}
+                shortcut={SHORTCUTS.copySource}
               />
               <Action
                 title="Speak"

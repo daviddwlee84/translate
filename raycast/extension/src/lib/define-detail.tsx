@@ -15,6 +15,10 @@ import {
   speakText,
   TranslateResult,
 } from "./translate";
+import { binaryMissingMarkdown } from "./binary-not-found";
+import { platform } from "./platform";
+import { renderModelOutput } from "./markdown";
+import { SHORTCUTS } from "./shortcuts";
 
 /**
  * The full-page definition for one word — the payoff of pressing ⏎ on a
@@ -62,7 +66,7 @@ export function DefineDetail(props: {
           <Action.CopyToClipboard
             title="Copy Word"
             content={word}
-            shortcut={{ modifiers: ["cmd"], key: "i" }}
+            shortcut={SHORTCUTS.copySource}
           />
           {data ? (
             <Action.Paste
@@ -83,7 +87,7 @@ export function DefineDetail(props: {
           <Action
             title="Open in Translate"
             icon={Icon.Text}
-            shortcut={{ modifiers: ["cmd", "shift"], key: "t" }}
+            shortcut={SHORTCUTS.openInTranslate}
             onAction={async () => {
               await launchCommand({
                 name: "translate",
@@ -105,20 +109,10 @@ function errorMarkdown(word: string, error: Error): string {
       "",
       "No dictionary entry, and no LLM fallback is configured.",
       "",
-      "Configure a provider in `~/.config/translate/config.toml` (or run `translate init`) to define unknown words with an LLM.",
+      `Configure a provider in \`${platform.configPathHint}\` (or run \`translate init\`) to define unknown words with an LLM.`,
     ].join("\n");
   }
-  if (isBinaryMissing(error)) {
-    return [
-      "# translate CLI not found",
-      "",
-      "Set the binary path in the extension preferences, or install it:",
-      "",
-      "```sh",
-      "brew install daviddwlee84/tap/translate",
-      "```",
-    ].join("\n");
-  }
+  if (isBinaryMissing(error)) return binaryMissingMarkdown();
   return `# ${word}\n\nLookup failed.\n\n\`\`\`\n${String(error.message ?? error)}\n\`\`\``;
 }
 
@@ -152,7 +146,9 @@ export function renderDefinition(r: TranslateResult, word: string): string {
     return lines.join("\n");
   }
   // No dictionary entry — the LLM fallback's definition lives in `translation`.
-  const lines = [`# ${word}`, "", r.translation, ""];
+  // That is free-form model prose, so it goes through the markdown repair pass;
+  // the structured dictionary branch above is our own markup and does not.
+  const lines = [`# ${word}`, "", renderModelOutput(r.translation), ""];
   if (r.warnings?.length) lines.push("---", ...r.warnings.map((w) => `> ${w}`));
   return lines.join("\n");
 }

@@ -9,3 +9,5 @@ raycast/extension/node_modules/
 raycast/extension/dist/
 raycast/extension/.raycast/
 raycast/extension/raycast-env.d.ts
+# `just raycast-verify` compiles dev-check.ts here before running it under node
+raycast/extension/.build/

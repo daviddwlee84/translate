@@ -24,6 +24,7 @@ import { BinaryNotFound } from "./lib/binary-not-found";
 import { DefineDetail } from "./lib/define-detail";
 import { HistoryDetail, oneline } from "./lib/history-detail";
 import { LanguageDropdown } from "./lib/language-dropdown";
+import { SHORTCUTS } from "./lib/shortcuts";
 
 /** How many candidates to ask the CLI for. */
 const SEARCH_LIMIT = 12;
@@ -56,7 +57,9 @@ export default function Command(
   const [query, setQuery] = useState("");
   // Command argument (picked in the Raycast root bar) → Raycast preference →
   // the CLI config's default_target → "en".
-  const [to, setTo] = useState(
+  // Explicitly <string>: the manifest dropdown's union is only the ten static
+  // options, but this also holds codes that came from runLangs().
+  const [to, setTo] = useState<string>(
     props.arguments?.to || prefs.defaultTarget || "",
   );
 
@@ -77,8 +80,8 @@ export default function Command(
     trimmed,
     CJK.test(trimmed) ? DEBOUNCE_MS_CJK : DEBOUNCE_MS,
   );
-  const searchAbort = useRef<AbortController>();
-  const historyAbort = useRef<AbortController>();
+  const searchAbort = useRef<AbortController | undefined>(undefined);
+  const historyAbort = useRef<AbortController | undefined>(undefined);
 
   const search = usePromise(
     async (q: string): Promise<DictSearchResult | undefined> => {
@@ -121,13 +124,13 @@ export default function Command(
       <Action
         title="Use This Word"
         icon={Icon.MagnifyingGlass}
-        shortcut={{ modifiers: ["cmd"], key: "return" }}
+        shortcut={SHORTCUTS.useThisWord}
         onAction={() => setQuery(c.word)}
       />
       <Action.CopyToClipboard
         title="Copy Word"
         content={c.word}
-        shortcut={{ modifiers: ["cmd"], key: "i" }}
+        shortcut={SHORTCUTS.copySource}
       />
       <Action
         title="Speak"
@@ -257,7 +260,7 @@ export default function Command(
                   <Action.Push
                     title="Look up Again"
                     icon={Icon.Book}
-                    shortcut={{ modifiers: ["cmd"], key: "l" }}
+                    shortcut={SHORTCUTS.lookUpAgain}
                     target={
                       <DefineDetail
                         word={h.input}
@@ -273,7 +276,7 @@ export default function Command(
                   <Action
                     title="Reload History"
                     icon={Icon.ArrowClockwise}
-                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                    shortcut={SHORTCUTS.reload}
                     onAction={onRecorded}
                   />
                 </ActionPanel>

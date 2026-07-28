@@ -18,6 +18,23 @@
 - **Define** — dictionary lookup (offline CC-CEDICT / ECDICT) with an LLM fallback
   and "did you mean" suggestions.
 - **History** — browse and search past translations.
+- **Ask Translate (Raycast AI)** — `@translate` in Quick AI or AI Chat, with two
+  tools: `translate-text` (routes through your own configured engine, presets and
+  fallback chain) and `look-up-word` (the offline dictionary, whose phonetics are
+  real data rather than model guesses). The bundled instructions answer
+  bilingually and gloss unfamiliar words, so a context-sensitive question — what
+  `shim` means *in rate limiting* — gets the software sense instead of a
+  carpentry wedge.
+- **Windows support** — `platforms: ["macOS", "Windows"]`. Binary resolution,
+  install hints and config paths sit behind a platform adapter, and every
+  keyboard shortcut is declared per platform (a hardcoded `cmd` is dropped in
+  silence on Windows). Homebrew is macOS/Linux-only, so Windows installs the CLI
+  with `go install`.
+- **Tabular output renders as a table.** A table translated for a terminal loses
+  its alignment twice over — CJK glyphs are double-width, and Raycast's markdown
+  is proportional — so the CLI is now asked for markdown table *structure* rather
+  than space padding, and the extension repairs anything that arrives without it.
+  An action toggles back to the raw model output.
 - Target dropdowns lead with **Auto**, following the CLI's configured
   bidirectional pair (like `^g` in the TUI); picking a language always translates
   into it.

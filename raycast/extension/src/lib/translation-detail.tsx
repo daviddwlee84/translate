@@ -1,4 +1,5 @@
 import { ActionPanel, Action, Detail, Icon, showHUD } from "@raycast/api";
+import { useState } from "react";
 import { usePromise } from "@raycast/utils";
 import {
   isBinaryMissing,
@@ -6,6 +7,9 @@ import {
   speak,
   TranslateResult,
 } from "./translate";
+import { binaryMissingMarkdown } from "./binary-not-found";
+import { SHORTCUTS } from "./shortcuts";
+import { renderModelOutput, looksTabular } from "./markdown";
 
 /**
  * A translation rendered as a full page.
@@ -27,16 +31,32 @@ export function TranslationDetail(props: {
   pair?: boolean;
 }) {
   const { text, to, engine, model, pair } = props;
+  // Every dependency is an ARGUMENT, not a closure capture: the argument array
+  // is what usePromise keys on and re-runs from. A captured variable changes
+  // silently and keeps serving the previous target's translation.
   const { data, isLoading, error } = usePromise(
-    async (): Promise<TranslateResult> =>
-      runTranslate(text, { to, engine, model, pair }),
+    async (
+      t: string,
+      target?: string,
+      eng?: string,
+      mdl?: string,
+      p?: boolean,
+    ): Promise<TranslateResult> =>
+      runTranslate(t, { to: target, engine: eng, model: mdl, pair: p }),
     [text, to, engine, model, pair],
   );
+
+  // Model output goes through the markdown repair pass before it reaches
+  // Detail — see lib/markdown.ts for why alignment can't survive the trip.
+  // `raw` is a per-result escape hatch rather than a preference: a stored
+  // preference value outlives a manifest default change, which is the wrong
+  // behaviour for something you want to flip and flip back.
+  const [raw, setRaw] = useState(false);
 
   const markdown = error
     ? errorMarkdown(error)
     : data
-      ? renderTranslation(data)
+      ? renderTranslation(data, raw)
       : "Translating…";
 
   return (
@@ -61,8 +81,16 @@ export function TranslationDetail(props: {
               <Action.CopyToClipboard
                 title="Copy Source Text"
                 content={text}
-                shortcut={{ modifiers: ["cmd"], key: "i" }}
+                shortcut={SHORTCUTS.copySource}
               />
+              {looksTabular(data.translation) ? (
+                <Action
+                  title={raw ? "Show Formatted" : "Show Raw Output"}
+                  icon={Icon.Code}
+                  shortcut={SHORTCUTS.toggleRaw}
+                  onAction={() => setRaw((v) => !v)}
+                />
+              ) : null}
               <Action
                 title="Speak"
                 icon={Icon.SpeakerHigh}
@@ -80,23 +108,19 @@ export function TranslationDetail(props: {
 }
 
 function errorMarkdown(error: Error): string {
-  if (isBinaryMissing(error)) {
-    return [
-      "# translate CLI not found",
-      "",
-      "Set the binary path in the extension preferences, or install it:",
-      "",
-      "```sh",
-      "brew install daviddwlee84/tap/translate",
-      "```",
-    ].join("\n");
-  }
+  if (isBinaryMissing(error)) return binaryMissingMarkdown();
   return `# Translation failed\n\n\`\`\`\n${String(error.message ?? error)}\n\`\`\``;
 }
 
-/** Plain paragraph (not an H1) so long translations read comfortably. */
-export function renderTranslation(r: TranslateResult): string {
-  const lines = [r.translation, ""];
+/**
+ * Plain paragraph (not an H1) so long translations read comfortably.
+ *
+ * Only the translation itself is repaired: alternatives, notes and warnings are
+ * our own markup and are already well-formed.
+ */
+export function renderTranslation(r: TranslateResult, raw = false): string {
+  const body = raw ? r.translation : renderModelOutput(r.translation);
+  const lines = [body, ""];
   if (r.alternatives?.length)
     lines.push("## Alternatives", ...r.alternatives.map((a) => `- ${a}`), "");
   if (r.notes) lines.push("## Notes", r.notes, "");

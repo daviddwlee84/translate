@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionPanel, Action, Detail } from "@raycast/api";
 import { spawnTranslateStream } from "./translate";
+import { renderModelOutput } from "./markdown";
 
 /** A pushed Detail that streams `translate … --stream` output token-by-token.
  *  Opt-in from the Translate view (⌘↵) — useful for long text and streaming
@@ -21,11 +22,16 @@ export function StreamView({
   const [md, setMd] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const acc = useRef("");
+  // Repair runs ONCE, on completion. A half-arrived table has no full header row
+  // to normalise the other rows against, and re-repairing every chunk would make
+  // the view flicker between shapes as columns appear.
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     acc.current = "";
     setMd("");
     setIsLoading(true);
+    setDone(false);
     const cancel = spawnTranslateStream(
       text,
       { to, engine: engine || undefined, model, pair },
@@ -34,7 +40,10 @@ export function StreamView({
           acc.current += chunk;
           setMd(acc.current);
         },
-        onDone: () => setIsLoading(false),
+        onDone: () => {
+          setIsLoading(false);
+          setDone(true);
+        },
         onError: (err) => {
           acc.current += `\n\n> error: ${err.message}`;
           setMd(acc.current);
@@ -48,7 +57,7 @@ export function StreamView({
   return (
     <Detail
       isLoading={isLoading}
-      markdown={md || "…"}
+      markdown={(done ? renderModelOutput(md) : md) || "…"}
       navigationTitle={to ? `Translate → ${to}` : "Translate"}
       actions={
         <ActionPanel>
