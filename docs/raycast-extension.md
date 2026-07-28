@@ -19,14 +19,24 @@ Raycast offers four ways to surface functionality. We ship the middle two.
 | **Quick Link** | ✗ (can't exec) | 5 min | via deeplink only | ✗ | ✗ | ✗ | launcher only |
 | **Script Command** (bash) — *shipped* | ✓ | ~0.5 h | ✗ (needs `pbpaste`) | ✗ (no prefs) | ✗ (plain text) | only `fullOutput` | Add Script Directory |
 | **TS Extension** (`@raycast/api`) — *shipped* | ✓ | 1–2 d | ✓ `getSelectedText()` | ✓ preferences | ✓ List/Detail/Actions | ✓ (manual `spawn`) | `npm run dev` / store |
-| **AI Extension** (tools) | ✓ | +0.5 d | AI-orchestrated | — | AI Chat | `AI.ask` | store; **Pro-gated** |
+| **AI Extension** (tools) — *shipped* | ✓ | +0.5 d | AI-orchestrated | — | Quick AI / AI Chat | `AI.ask` | `@translate` |
 
 - **Quick Links** open a URL/file/app/`raycast://` deeplink — they have no
   shell-exec surface, so they can't run the CLI directly. Useful only as a hotkey
   that deeplinks into a real command.
-- **AI Extensions** expose "tools" the Raycast AI can call. Feasible (a tool file
-  can `execFile` the binary and return its `--json`), but the AI API requires
-  **Raycast Pro**, so it's an additive Pro-only layer — deferred.
+- **AI Extensions** expose "tools" the Raycast AI can call. Shipped 2026-07-28:
+  `src/tools/{translate-text,look-up-word}.ts` plus `ai.yaml`.
+
+  *Superseded reason for the earlier deferral (kept so the reasoning is
+  auditable): "the AI API requires **Raycast Pro**, so it's an additive Pro-only
+  layer".* That is stale. Raycast Settings → AI offers three other routes in — a
+  free message allowance, **Custom Providers** via `providers.yaml` (GitHub
+  Copilot is listed by name, so the same copilot-proxy this CLI already uses can
+  back Raycast AI), and local Ollama models. Subscription state is therefore not
+  something to reason about in code: the one correct check is the runtime
+  capability test `environment.canAccess(AI)`, and a `tools[]` entry needs no
+  check at all, because Raycast only invokes it after the user has cleared
+  whichever gate applies to them.
 
 ## How Raycast extensions work
 

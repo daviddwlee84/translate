@@ -32,8 +32,23 @@ machine.
   `CHANGELOG.md`, a Title-Case category, `package-lock.json`, and `ray lint` clean.
 - **No telemetry, no Keychain**. If published, expose the openrouter API key via the
   Raycast preferences API (`required: true`), not by reading `config.toml`.
-- **Platform**: mark `platforms: ["macOS"]` (already set) — the binary shell-out doesn't
-  work on Raycast's iOS/Windows clients.
+- **Platform**: `platforms: ["macOS", "Windows"]` as of 2026-07-28.
+
+  *Superseded claim (kept so the reasoning is auditable): this used to read
+  "mark `platforms: ["macOS"]` — the binary shell-out doesn't work on Raycast's
+  iOS/Windows clients." That is wrong for Windows.* Raycast for Windows runs the
+  same Node runtime and `execFile` of a user-installed binary is supported there;
+  only the install locations and the `.exe` suffix differ, which is what
+  `src/lib/platform/` now abstracts. The Go binary cross-compiles cleanly
+  (`GOOS=windows go build`, verified — it is pure Go, `modernc.org/sqlite` needs
+  no cgo), `internal/tts` already branches to PowerShell, and `internal/store`
+  has a `!unix` flock fallback. iOS remains correct: there is no shell there.
+
+  **Still unverified on real hardware.** The code is written and gated but has
+  not been run on a Windows machine — see the checklist in `raycast/README.md`.
+  Distribution is the practical gap: Homebrew is macOS/Linux-only, so `go install`
+  is the only documented Windows path until [release-binaries.md](release-binaries.md)
+  ships a `translate.exe`.
 
 ## Options considered
 

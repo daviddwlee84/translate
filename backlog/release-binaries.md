@@ -19,7 +19,14 @@ use for oh-my-zsh etc.
 
 - Binary is **pure Go, no cgo** (`modernc.org/sqlite` is pure Go), so
   `GOOS`/`GOARCH` cross-compilation is trivial — a single goreleaser run can emit
-  darwin/{amd64,arm64} + linux/{amd64,arm64} archives.
+  darwin/{amd64,arm64} + linux/{amd64,arm64} + **windows/{amd64,arm64}** archives.
+  `GOOS=windows GOARCH=amd64 go build` verified clean on 2026-07-28.
+- **Windows now has a consumer, which changes the priority.** The Raycast
+  extension declares `platforms: ["macOS", "Windows"]` as of 2026-07-28, and
+  Homebrew is macOS/Linux-only — so `go install` (i.e. a Go toolchain on the
+  target) is currently the *only* documented way a Windows user can get the
+  binary the extension shells out to. That is a much weaker story than on macOS,
+  where `brew install` covers it. Option B is what closes it.
 - Current binary size ~22 MB (dictionary is NOT embedded — see dict-bundling).
 - chezmoi external pattern (from the dotfiles `.chezmoiexternal.toml.tmpl`):
   `type = "archive-file"` with a URL templated on `{{ .chezmoi.os }}` /
@@ -37,7 +44,8 @@ use for oh-my-zsh etc.
 ## Current blocker / open questions
 
 - Is `go install` "good enough"? Go is present on all current hosts (mise), so B
-  is only needed if a Go-less host joins the fleet.
+  is only needed if a Go-less host joins the fleet — **or if a Windows user turns
+  up**, since they have no `brew` fallback (2026-07-28).
 - If we do B, should the dictionary DB ship as a release asset (ties this doc to
   [dict-bundling.md](dict-bundling.md))?
 

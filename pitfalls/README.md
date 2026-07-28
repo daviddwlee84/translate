@@ -98,6 +98,7 @@ Pitfalls owned by this folder. Keep alphabetical.
 | `raycast-launchd-path-translate-not-found` | `spawn translate ENOENT`, `translate: command not found` in Raycast, works in terminal not Raycast, launchd PATH not inherited from shell | prevented (absolute-path probe) |
 | `raycast-search-bar-refuses-long-paste` | "The text you are trying to paste is too long", can't paste a paragraph into a Raycast search bar, `onSearchTextChange` never sees it, ARG_MAX / `argument list too long` on the exec | worked around (Form.TextArea + stdin) |
 | `raycast-still-prefills-clipboard-after-default-changed-to-nothing` | Raycast command ignores a changed `package.json` preference `default`, still prefills clipboard/selection, stored preference wins, stale `ray develop` bundle | workaround (reset the stored value) |
+| `translated-table-loses-alignment-in-raycast-detail` | translated table renders as wrapped `────` runs / loose pipe rows in Raycast, no header, columns ragged after translation, fine in the terminal, CJK cells push columns out | fixed (ask for GFM structure; repair on render) |
 | `tui-lipgloss-block-padding-inflates-blank-lines-in-viewport` | TUI shows many blank lines / big gaps between paragraphs, excess vertical whitespace, but `^y` copy is clean, gap grows with paragraph length / narrow width / CJK | fixed (per-line styling) |
 | `tui-viewport-clips-long-translation-no-softwrap` | TUI translation cut mid-sentence but CLI/curl shows full text, no `⚠`, long/multi-line results clipped, viewport SoftWrap | fixed (SoftWrap=true) |
 

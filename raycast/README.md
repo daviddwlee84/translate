@@ -87,6 +87,39 @@ make Chinese lookups ~20× faster without re-downloading.
   through so the CLI finds it.
 - **Exit code is 0 even when an engine fails** (it falls back). The extension
   surfaces `warnings[]` from `--json`; the plain-text scripts don't show them.
+- **A hardcoded `cmd` shortcut is dropped in silence on Windows** (and a
+  `windows` modifier on macOS) — no error, no lint failure, the action just
+  renders with no key. Every shortcut therefore lives in
+  `extension/src/lib/shortcuts.ts` in the two-branch `{ macOS, Windows }` form,
+  and `just raycast-verify` asserts both branches exist.
+- **Three shortcuts are shadowed while the extension is in development.** Raycast
+  injects a Debug section into every action panel under `ray develop`, using ⌘R,
+  ⇧⌘S, ⇧⌘D, ⇧⌘X and ⌘⌥D — and its entries win. So **Reload** (⌘R), **Load
+  Selection** (⇧⌘S) and **Clear** (⇧⌘X) appear to do nothing during development
+  and work correctly in an installed build. They pass lint and typecheck either
+  way, so nothing warns you.
+
+## Windows
+
+`platforms` is `["macOS", "Windows"]`. The UI layer is shared; only
+`extension/src/lib/platform/` differs (binary name, probe dirs, install hints).
+The Go binary is pure Go and cross-compiles with `GOOS=windows go build`.
+
+**Not yet verified on Windows hardware.** Before trusting it, run through:
+
+1. `go install github.com/daviddwlee84/translate@latest`; confirm
+   `translate.exe` lands in `~\go\bin`. (Homebrew is macOS/Linux-only — there is
+   no Windows release artifact yet, see
+   [`../backlog/release-binaries.md`](../backlog/release-binaries.md).)
+2. `translate init`, then `translate "hola" --to en` from PowerShell.
+3. **Open each command from Raycast root search, not the `ray develop` console.**
+   The console inherits your interactive environment and hides exactly the class
+   of bug this checklist exists for.
+4. Check every action shows a Ctrl-based key in the action panel.
+5. Confirm whether `getSelectedText()` works. Both call sites already fall back
+   to the clipboard, so record the answer rather than assuming either way.
+
+The bash script-commands in `script-commands/` stay macOS/Linux only.
 
 See [`../docs/raycast-extension.md`](../docs/raycast-extension.md) for how Raycast
 extensions work, the full integration-tier comparison, and the competitive
