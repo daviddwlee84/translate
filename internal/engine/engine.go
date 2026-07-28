@@ -51,6 +51,16 @@ type Request struct {
 	// structured, always runs NON-STREAMING regardless of Stream.
 	Learn bool
 
+	// LearnMode overrides the direction Learn would otherwise detect offline.
+	// "" or "auto" keeps the script-based teach/correct routing; "teach" and
+	// "correct" force one of those; "explain" selects the third direction, which
+	// answers a QUESTION about a word or phrase rather than translating the input.
+	//
+	// Explain cannot be auto-detected — "shim" is a foreign-language token either
+	// way, and only the caller knows whether the user wants it corrected or
+	// explained — so it is opt-in rather than a fourth branch of the router.
+	LearnMode string
+
 	// Bilingual marks a whole-document bilingual ("doc mode") request: Segments
 	// carries the full ordered document (prose to translate + code shown only as
 	// context) and the LLM returns a JSON map of prose-segment number → translation.
@@ -138,14 +148,16 @@ type Definition struct {
 // model fills only the fields relevant to the auto-detected direction; all glosses,
 // explanations, and notes are written in the native (home) language.
 type LearnResult struct {
-	Direction   string         `json:"direction"`           // "teach" (native→foreign) | "correct" (foreign→native)
+	Direction   string         `json:"direction"`           // "teach" (native→foreign) | "correct" (foreign→native) | "explain" (answer a question)
 	Original    string         `json:"original"`            // the user's input as received
 	Corrected   string         `json:"corrected,omitempty"` // correct-direction: the fixed foreign sentence
 	Translation string         `json:"translation"`         // teach: foreign translation; correct: native translation of intent
+	Answer      string         `json:"answer,omitempty"`    // explain-direction: the answer, in the NATIVE language
+	Sense       string         `json:"sense,omitempty"`     // explain-direction: the contextual sense being explained
 	Notes       string         `json:"notes,omitempty"`     // short tip/encouragement, in the NATIVE language
 	Issues      []LearnIssue   `json:"issues,omitempty"`    // correct-direction grammar/usage fixes
-	Vocab       []LearnGloss   `json:"vocab,omitempty"`     // teach-direction glosses
-	Examples    []LearnExample `json:"examples,omitempty"`  // teach-direction usage examples
+	Vocab       []LearnGloss   `json:"vocab,omitempty"`     // teach- and explain-direction glosses
+	Examples    []LearnExample `json:"examples,omitempty"`  // teach- and explain-direction usage examples
 }
 
 // LearnIssue is one grammar/usage correction (correct-direction).

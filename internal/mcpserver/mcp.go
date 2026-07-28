@@ -28,13 +28,17 @@ type Service interface {
 	HistorySearch(ctx context.Context, query string, limit int) ([]store.Record, error)
 }
 
-// newServer builds the MCP server with the translate/define/history tools.
+// newServer builds the MCP server with the translate/explain/define/history tools.
 func newServer(svc Service, version string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "translate", Version: version}, nil)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "translate",
 		Description: "Translate text into a target language (faithful, register-aware).",
 	}, translateHandler(svc))
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "explain",
+		Description: "Answer a question about what a word or phrase means IN A GIVEN CONTEXT, with glosses and examples. Use this instead of translate or define when the user asks what a term means in a particular field — a technical term's everyday dictionary gloss is usually the wrong answer.",
+	}, explainHandler(svc))
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "define",
 		Description: "Look up the dictionary definition of a word or short term.",

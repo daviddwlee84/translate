@@ -84,7 +84,7 @@ func TestMCPToolsList(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"define", "history", "translate"}
+	want := []string{"define", "explain", "history", "translate"}
 	if len(names) != len(want) {
 		t.Fatalf("tools = %v, want %v", names, want)
 	}

@@ -176,7 +176,13 @@
           "instructions": { "type": "string", "description": "Extra system-prompt guidance" },
           "model": { "type": "string", "description": "Per-request model override" },
           "max_alts": { "type": "integer", "description": "Cap on alternatives (0 => engine default)" },
-          "pair": { "type": "boolean", "description": "Enable bidirectional pair routing" }
+          "pair": { "type": "boolean", "description": "Enable bidirectional pair routing" },
+          "learn": { "type": "boolean", "description": "Return tutor output (a `learn` object) instead of a bare translation. Implies pair; never streams." },
+          "learn_mode": {
+            "type": "string",
+            "enum": ["auto", "teach", "correct", "explain"],
+            "description": "Learn direction. auto routes by script (teach for native input, correct for foreign); explain answers a question about a term rather than translating it. Setting this implies learn."
+          }
         }
       },
       "DefineRequest": {

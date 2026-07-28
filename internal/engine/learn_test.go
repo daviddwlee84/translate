@@ -39,6 +39,51 @@ func TestBuildLearnPromptSelectsDirection(t *testing.T) {
 	}
 }
 
+func TestLearnDirectionExplicitModeWins(t *testing.T) {
+	// "explain" is never auto-detected — a bare foreign term routes to "correct"
+	// on script alone, and only the caller knows a question was meant.
+	req := zhEnLearnReq("shim")
+	if got := learnDirection(req); got != LearnCorrect {
+		t.Errorf("bare foreign term should auto-route to correct, got %q", got)
+	}
+	req.LearnMode = LearnExplain
+	if got := learnDirection(req); got != LearnExplain {
+		t.Errorf("explicit LearnMode should win, got %q", got)
+	}
+	// An explicit mode overrides the script router in the other direction too.
+	zh := zhEnLearnReq("我想學英文")
+	zh.LearnMode = LearnCorrect
+	if got := learnDirection(zh); got != LearnCorrect {
+		t.Errorf("explicit correct should override the teach routing, got %q", got)
+	}
+	// An unrecognised value falls back to auto rather than producing a prompt
+	// with no schema.
+	bad := zhEnLearnReq("我想學英文")
+	bad.LearnMode = "nonsense"
+	if got := learnDirection(bad); got != LearnTeach {
+		t.Errorf("unknown LearnMode should fall back to auto routing, got %q", got)
+	}
+}
+
+func TestBuildLearnPromptExplain(t *testing.T) {
+	req := zhEnLearnReq(`"shim" 在 rate limit 中是什麼意思`)
+	req.LearnMode = LearnExplain
+	sys, _ := buildLearnPrompt(req)
+
+	if !strings.Contains(sys, `"direction": "explain"`) {
+		t.Errorf("explain prompt should carry the explain schema:\n%s", sys)
+	}
+	// The load-bearing instruction: answer the question, don't translate it.
+	if !strings.Contains(sys, "Do NOT simply translate") {
+		t.Errorf("explain prompt must forbid translating the question:\n%s", sys)
+	}
+	// And it must require committing to a sense, which is what makes a
+	// context-sensitive answer verifiable.
+	if !strings.Contains(sys, `"sense"`) {
+		t.Errorf("explain prompt must require a sense field:\n%s", sys)
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	cases := map[string]string{
 		`{"a":1}`:                       `{"a":1}`,

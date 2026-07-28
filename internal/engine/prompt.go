@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/daviddwlee84/translate/internal/bitext"
 	"github.com/daviddwlee84/translate/internal/lang"
 )
 
@@ -80,6 +81,21 @@ func systemPromptFor(preset string) string {
 // this fixes ("test" → "test" instead of "測試").
 const pairDirective = `Bidirectional mode: the text is written in ONE of %s or %s. Detect which of the two it is, and translate it into the OTHER one. ALWAYS translate — never return the text unchanged, even for a single word, a proper name, a technical term, or a loanword.`
 
+// tableDirective is appended to the system prompt when the input looks tabular.
+//
+// A terminal table aligns its columns with space padding measured in cells, and
+// a CJK glyph occupies two of them — so a faithful translation into Chinese
+// necessarily destroys the alignment, and a consumer rendering in a proportional
+// font (the Raycast Detail view) destroys it again. Padding cannot be portable;
+// markdown table STRUCTURE can. So we stop asking for the former and require the
+// latter, which every downstream renderer already understands.
+const tableDirective = `The source text is a table. Reproduce it as a GitHub-flavoured markdown table:
+- One row per line. Every row has the SAME number of "|"-delimited cells.
+- A separator row of "| --- |" cells directly after the header row.
+- Translate only the cell CONTENTS. Keep numbers, identifiers, units, flags and code verbatim.
+- Do NOT pad cells with spaces to align the columns, and do NOT emit box-drawing rules
+  (───, ===, +---+). Alignment is the renderer's job and padding does not survive translation.`
+
 // translateUserPrompt frames the concrete request.
 const translateUserPrompt = `Source language: %s
 Target language: %s
@@ -104,6 +120,11 @@ func buildTranslatePrompt(req Request) (system, user string) {
 	// so the chosen output format (concise/contextual/dictionary) is preserved.
 	if req.Pair && req.PairHome != "" && req.PairAway != "" {
 		system += "\n\n" + fmt.Sprintf(pairDirective, lang.Name(req.PairHome), lang.Name(req.PairAway))
+	}
+	// Same append-don't-replace treatment for tabular input, and gated on a cheap
+	// offline check so ordinary text pays nothing for it.
+	if bitext.IsTabular(req.Text) {
+		system += "\n\n" + tableDirective
 	}
 	if extra := strings.TrimSpace(req.Extra); extra != "" {
 		system += "\n\nUser preferences (apply where relevant, e.g. domain terminology):\n" + extra
@@ -170,15 +191,34 @@ func buildBilingualPrompt(req Request) (system, user string) {
 	return system, fmt.Sprintf(bilingualUserPrompt, src, tgt, b.String())
 }
 
-// learnDirection reports the learn-mode direction, decided OFFLINE via the same
-// script-aware router as pair mode (lang.PairTarget): native (home) input → "teach"
-// (translate + glosses); foreign (away) input → "correct" (grammar-correct + explain).
-// Trusting this over the model's own guess keeps the two output shapes deterministic.
+// Learn direction identifiers. "auto" is the default and means "route by script".
+const (
+	LearnAuto    = "auto"
+	LearnTeach   = "teach"
+	LearnCorrect = "correct"
+	LearnExplain = "explain"
+)
+
+// learnDirection reports the learn-mode direction.
+//
+// An explicit Request.LearnMode wins; otherwise the direction is decided OFFLINE
+// via the same script-aware router as pair mode (lang.PairTarget): native (home)
+// input → "teach" (translate + glosses); foreign (away) input → "correct"
+// (grammar-correct + explain). Trusting this over the model's own guess keeps
+// the output shapes deterministic.
+//
+// "explain" is never auto-selected: a bare term like "shim" is foreign-language
+// input whether the user wants it corrected or explained, so only the caller
+// knows which was meant.
 func learnDirection(req Request) string {
-	if lang.PairTarget(req.PairHome, req.PairAway, req.Text) == req.PairAway {
-		return "teach"
+	switch req.LearnMode {
+	case LearnTeach, LearnCorrect, LearnExplain:
+		return req.LearnMode
 	}
-	return "correct"
+	if lang.PairTarget(req.PairHome, req.PairAway, req.Text) == req.PairAway {
+		return LearnTeach
+	}
+	return LearnCorrect
 }
 
 // learnTeachPrompt drives native→foreign tutoring. %[1]s = native (home) language,
@@ -231,6 +271,47 @@ Rules:
 - List each distinct mistake as one issue; keep explanations concise and beginner-friendly.
 - Interpret the intended meaning of typos/slang; never refuse. Output ONLY the JSON object.`
 
+// learnExplainPrompt answers a QUESTION about a word or phrase instead of
+// translating the input. %[1]s = native (home) language, %[2]s = foreign (away)
+// language being learned.
+//
+// This is the direction a plain translation gets wrong. Asked about "shim", the
+// dictionary engine answers 填片 (a carpentry wedge) and the concise preset
+// answers whatever sense it guesses first — but the user who typed
+// «"shim" 在 rate limit 中是什麼意思» wants the sense that fits THAT context,
+// plus enough gloss to learn the word. Hence the mandatory `sense` field: it
+// forces the model to commit to which meaning it is explaining.
+const learnExplainPrompt = `You are a warm, encouraging language tutor helping a native %[1]s speaker who is learning %[2]s.
+The user asks a QUESTION about a %[2]s word, phrase, or usage — often naming the context it appeared in.
+Answer the question. Do NOT simply translate their input.
+
+Respond with ONE JSON object and NOTHING else — no markdown code fence, no prose before or after it.
+Schema (fill every relevant field; omit a field only when it genuinely has no content):
+{
+  "direction": "explain",
+  "original": "<the user's question, verbatim>",
+  "sense": "<the specific sense you are explaining, named in %[1]s — e.g. the software sense, the legal sense>",
+  "answer": "<the explanation, in %[1]s: what it means in the context asked about, and why>",
+  "translation": "<a short %[1]s gloss of the term itself>",
+  "vocab": [
+    {"term": "<the %[2]s term, or a closely related one worth learning>", "pos": "<part of speech>", "phonetic": "<KK/IPA for English, pinyin for Chinese>", "meaning": "<concise meaning in %[1]s>"}
+  ],
+  "examples": [
+    {"foreign": "<a short natural %[2]s sentence using the term IN THE SENSE ASKED ABOUT>", "native": "<its %[1]s translation>"}
+  ],
+  "notes": "<one short tip: a common confusion, a register warning, or a near-synonym to contrast — in %[1]s, optional>"
+}
+
+Rules:
+- Write "sense", "answer", "meaning" and "notes" in %[1]s (the learner's language).
+- CONTEXT DECIDES THE SENSE. When the user names a domain ("in rate limiting", "in React",
+  "in a contract"), explain the sense used THERE — a technical term's everyday dictionary
+  gloss is usually the wrong answer, not merely a less useful one.
+- When the question is genuinely ambiguous, explain the most likely sense and use "notes"
+  to point at the alternative. Never refuse, and never ask a question back.
+- vocab: at most 4, only terms worth learning. examples: 1-2, short and idiomatic.
+- Output ONLY the JSON object.`
+
 // learnUserPrompt frames the concrete learn request. The system prompt already
 // names both languages, so the user turn carries only the text.
 const learnUserPrompt = `Text:
@@ -242,9 +323,12 @@ const learnUserPrompt = `Text:
 func buildLearnPrompt(req Request) (system, user string) {
 	home := lang.Name(req.PairHome) // native
 	away := lang.Name(req.PairAway) // foreign
-	if learnDirection(req) == "teach" {
+	switch learnDirection(req) {
+	case LearnTeach:
 		system = fmt.Sprintf(learnTeachPrompt, home, away)
-	} else {
+	case LearnExplain:
+		system = fmt.Sprintf(learnExplainPrompt, home, away)
+	default:
 		system = fmt.Sprintf(learnCorrectPrompt, away, home)
 	}
 	if extra := strings.TrimSpace(req.Extra); extra != "" {

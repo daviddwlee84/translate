@@ -34,13 +34,15 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate --json` | Emit the full structured result |
 | `… \| translate --bilingual` (`-2`) | Bilingual pipe view: keep the original (with color) + translation beneath (stdin only) |
 | `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API); records history |
+| `translate <text> --learn` | Tutor mode: translate + gloss, or grammar-correct + explain |
+| `translate <question> --learn-mode explain` | Answer what a term means *in the context asked about* |
 | `translate dict search <prefix>` | Ranked headword candidates with definition previews (`--limit`, `--json`) |
 | `translate history` / `history search <q>` | Recent history / fuzzy search (`--tsv`, `--json`) |
 | `translate init` | Interactive config wizard (probes providers) |
 | `translate models` | Models declared by the configured providers, per tier (`--json`) |
 | `translate config path\|show` · `lang resolve <q>` · `lang list` | Introspection helpers (all `--json`) |
 
-Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--no-pair`/`--pair-with`, `--bilingual`/`-2`, `--no-history`, `--debug`.
+Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--no-pair`/`--pair-with`, `--learn`/`--learn-mode auto|teach|correct|explain`, `--bilingual`/`-2`, `--no-history`, `--debug`.
 Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
 Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
 
@@ -130,6 +132,45 @@ translate "早安" --to ja --no-pair      # → ja   (translate INTO ja, as aske
 Precedence is `--no-pair` > `--pair` > `TRANSLATE_PAIR` > `[general] pair`. Learn
 mode is inherently bidirectional and still implies pair. The TUI toggles the same
 thing with `^g`; the Raycast target dropdowns expose it as an **Auto** entry.
+
+### Learn mode (`--learn`, `--learn-mode`)
+
+Tutor output instead of a bare translation. It is bidirectional (implies pair,
+with your home language as *native* and `pair_with` as *foreign*), always uses an
+LLM provider, and returns a structured payload rather than a stream. `^n` toggles
+it in the TUI; `[general] learn = true` (or `[cli]`/`[tui]`) makes it the default.
+
+Three directions. The first two are picked automatically by script, the way pair
+routing is; the third is opt-in because it cannot be detected — a bare term is
+foreign-language input whether you want it corrected or explained.
+
+| `--learn-mode` | When | What you get |
+|---|---|---|
+| `auto` (default) | — | `teach` for native input, `correct` for foreign |
+| `teach` | you wrote your own language | translation + `vocab` (part of speech, KK/IPA, meaning) + examples |
+| `correct` | you wrote the language you're learning | corrected sentence + per-mistake `issues` + a native gloss |
+| `explain` | you asked a *question* about a term | the sense that fits the context, plus glosses and examples |
+
+`explain` is the one a plain translation gets wrong, because meaning is
+context-dependent and a dictionary is not:
+
+```console
+$ translate "shim" --to zh-TW
+n. 填片, 万能开锁片                        # the carpentry sense — correct, and useless here
+
+$ translate '"shim" 在 rate limit 中是什麼意思' --learn-mode explain --to zh-TW
+◆ 軟體工程中的「墊片/中介層」用法
+在 rate limiting 的情境下，「shim」指的是一層薄薄的中介程式碼…
+  • shim (n.) /ʃɪm/ — 薄的相容層或轉接程式碼，用來攔截並修改行為
+  • throttle (v./n.) /ˈθrɒtl/ — 節流，限制請求速率的動作
+  ✎ We added a shim in front of the API client to enforce rate limiting.
+    ↳ 我們在 API 客戶端前面加了一層 shim 來強制限流。
+```
+
+`--instructions` supplies the same context when you would rather not write it
+into the question. `--json` returns the full `learn` object (`direction`, `sense`,
+`answer`, `vocab[]`, `examples[]`, `issues[]`, `notes`), which is what the HTTP
+API, the MCP `explain` tool, and the Raycast extension consume.
 
 ### Bilingual mode (`--bilingual` / `-2`)
 
@@ -290,9 +331,14 @@ Expose translate as tools to any MCP host (Claude Desktop/Code, Cursor, …) ove
 { "command": "translate", "args": ["mcp"] }
 ```
 
-Tools: `translate` (text + optional target/source), `define` (word), `history`
-(query + limit). Each returns readable text plus a typed structured result.
-Built on the official Go MCP SDK.
+Tools: `translate` (text + optional target/source), `explain` (a question about a
+term + the context it appeared in), `define` (word), `history` (query + limit).
+Each returns readable text plus a typed structured result. Built on the official
+Go MCP SDK.
+
+`explain` is a separate tool rather than a flag on `translate` because an LLM host
+picks tools by their description — a boolean buried in `translate`'s schema would
+never be found.
 
 ## Developer note — Charm v2 (`charm.land/*`)
 

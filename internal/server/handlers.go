@@ -28,6 +28,13 @@ type translateRequest struct {
 	Model        string `json:"model,omitempty"`
 	MaxAlts      int    `json:"max_alts,omitempty"`
 	Pair         *bool  `json:"pair,omitempty"`
+	// Learn requests tutor output — a structured "learn" object on the response
+	// instead of a bare translation. Implies pair, and never streams.
+	Learn bool `json:"learn,omitempty"`
+	// LearnMode picks the direction: "" / "auto" routes by script, "teach" and
+	// "correct" force one, "explain" answers a question about a term rather than
+	// translating it. Setting it implies learn.
+	LearnMode string `json:"learn_mode,omitempty"`
 }
 
 func (r translateRequest) params() appcore.Params {
@@ -40,6 +47,8 @@ func (r translateRequest) params() appcore.Params {
 		Model:        r.Model,
 		MaxAlts:      r.MaxAlts,
 		Pair:         r.Pair,
+		Learn:        r.Learn || r.LearnMode != "",
+		LearnMode:    r.LearnMode,
 	}
 }
 

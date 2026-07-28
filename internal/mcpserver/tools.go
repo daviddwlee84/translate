@@ -20,6 +20,18 @@ type translateInput struct {
 	Source string `json:"source,omitempty" jsonschema:"source language code, or auto to detect (optional)"`
 }
 
+// explainInput is the `explain` tool's arguments.
+//
+// A separate tool rather than a flag on `translate`: an LLM host picks tools by
+// their description, so "answer a question about a term" has to be its own
+// entry to be discoverable at all. A boolean buried in translate's schema would
+// never be found.
+type explainInput struct {
+	Question string `json:"question" jsonschema:"the user's question about a word or phrase, e.g. what does shim mean in rate limiting"`
+	Context  string `json:"context,omitempty" jsonschema:"the domain the term appeared in, e.g. API rate limiting or React (optional but strongly recommended - it decides which sense is explained)"`
+	Target   string `json:"target,omitempty" jsonschema:"language to answer in, e.g. zh-TW (optional; server default otherwise)"`
+}
+
 // defineInput is the `define` tool's arguments.
 type defineInput struct {
 	Word string `json:"word" jsonschema:"the word or short term to look up"`
@@ -46,6 +58,65 @@ func translateHandler(svc Service) mcp.ToolHandlerFor[translateInput, engine.Tra
 		}
 		return textResult(renderTranslation(res)), *res, nil
 	}
+}
+
+// explainHandler answers a question about a term in the sense that fits the
+// context given, rather than translating the question. Structured output is the
+// full TranslateResult (its Learn payload carries the sense, answer, glosses and
+// examples); text content is a readable rendering.
+func explainHandler(svc Service) mcp.ToolHandlerFor[explainInput, engine.TranslateResult] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in explainInput) (*mcp.CallToolResult, engine.TranslateResult, error) {
+		res, err := svc.Translate(ctx, appcore.Params{
+			Text:         in.Question,
+			Target:       in.Target,
+			Instructions: in.Context,
+			Learn:        true,
+			LearnMode:    engine.LearnExplain,
+		})
+		if err != nil {
+			return toolError(err), engine.TranslateResult{}, nil
+		}
+		return textResult(renderExplain(res)), *res, nil
+	}
+}
+
+// renderExplain formats an explain-direction result as readable text.
+func renderExplain(res *engine.TranslateResult) string {
+	l := res.Learn
+	if l == nil {
+		return renderTranslation(res)
+	}
+	var b strings.Builder
+	if s := strings.TrimSpace(l.Sense); s != "" {
+		b.WriteString("Sense: " + s + "\n\n")
+	}
+	if s := strings.TrimSpace(l.Answer); s != "" {
+		b.WriteString(s)
+	} else {
+		b.WriteString(l.Translation)
+	}
+	for _, v := range l.Vocab {
+		b.WriteString("\n- " + v.Term)
+		if v.Pos != "" {
+			b.WriteString(" (" + v.Pos + ")")
+		}
+		if v.Phonetic != "" {
+			b.WriteString(" " + v.Phonetic)
+		}
+		if v.Meaning != "" {
+			b.WriteString(" — " + v.Meaning)
+		}
+	}
+	for _, ex := range l.Examples {
+		b.WriteString("\n  " + ex.Foreign)
+		if s := strings.TrimSpace(ex.Native); s != "" {
+			b.WriteString("\n    " + s)
+		}
+	}
+	if s := strings.TrimSpace(l.Notes); s != "" {
+		b.WriteString("\n\nNote: " + s)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // defineHandler looks up a word. Structured output is the full TranslateResult

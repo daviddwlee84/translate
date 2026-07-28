@@ -39,6 +39,40 @@ func TestBuildTranslatePromptNoDirectiveWhenNotPair(t *testing.T) {
 	}
 }
 
+func TestBuildTranslatePromptTableDirective(t *testing.T) {
+	// The reported failure: a results table translated into zh-TW, whose
+	// space-padded alignment cannot survive either the translation (CJK is
+	// double-width) or a proportional renderer.
+	table := "| Model | V1 | V2 |\n" +
+		"| dense-95 | 0.1210 | 0.0679 |\n" +
+		"| dense-250 | 0.1208 | 0.0826 |"
+	req := Request{Text: table, Source: "auto", Target: "zh-TW", Preset: PresetConcise}
+	sys, _ := buildTranslatePrompt(req)
+
+	if !strings.Contains(sys, "markdown table") {
+		t.Errorf("tabular input did not get the table directive:\n%s", sys)
+	}
+	// The load-bearing half: structure yes, padding no.
+	if !strings.Contains(sys, "Do NOT pad cells") {
+		t.Errorf("table directive must forbid alignment padding:\n%s", sys)
+	}
+	// Appended, not substituted — the preset's own rules must survive.
+	if !strings.Contains(sys, "professional translation engine") {
+		t.Errorf("table directive replaced the preset instead of appending to it:\n%s", sys)
+	}
+}
+
+func TestBuildTranslatePromptNoTableDirectiveForProse(t *testing.T) {
+	req := Request{
+		Text:   "Hello there.\nThis is ordinary prose.\nNothing tabular here.",
+		Source: "auto", Target: "zh-TW", Preset: PresetConcise,
+	}
+	sys, _ := buildTranslatePrompt(req)
+	if strings.Contains(sys, "markdown table") {
+		t.Errorf("prose should not pay for the table directive:\n%s", sys)
+	}
+}
+
 func TestConcisePromptForbidsEcho(t *testing.T) {
 	// Even outside pair mode, the concise prompt must not tell the model to echo a
 	// word in a different language.

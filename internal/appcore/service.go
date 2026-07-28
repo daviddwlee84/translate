@@ -23,6 +23,7 @@ type Service struct {
 	res      config.Resolved
 	trans    engine.Engine   // warm translate engine
 	define   engine.Engine   // warm define engine
+	learn    engine.Engine   // warm bare-LLM engine for learn mode; nil without a provider
 	search   engine.Searcher // headword search; nil when the dictionary is remote
 	store    store.Store     // shared history; nil when disabled / NoHistory
 	provider string          // resolved provider name (for per-request model overrides)
@@ -49,6 +50,16 @@ type Params struct {
 	Model        string // "" => the warm engine's model
 	MaxAlts      int    // 0 => engine default
 	Pair         *bool  // nil => service default; non-nil overrides
+
+	// Learn requests language-tutor output: a structured LearnResult instead of a
+	// bare translation. It implies Pair (the direction routing is the same) and
+	// always runs non-streaming, because the model answers with a JSON object.
+	Learn bool
+	// LearnMode picks the direction when Learn is set: "" / "auto" routes by
+	// script (teach for native input, correct for foreign), "teach" and "correct"
+	// force one, and "explain" answers a QUESTION about a term rather than
+	// translating it. Ignored unless Learn is set.
+	LearnMode string
 }
 
 // NewService resolves config (flags empty, env honored) once, warms both engines,
@@ -80,8 +91,14 @@ func newService(cfg *config.Config, res config.Resolved, trans, def engine.Engin
 	// resolved translate engine — build it from config so it works even when the
 	// engine is a plain LLM.
 	search, _ := DictSearcher(cfg)
+	// Same reasoning for the learn engine: learn mode always runs against a bare
+	// LLM (it bypasses smart-auto and the dictionary), so it is built from config
+	// rather than derived from whichever engine `trans` turned out to be. Nil when
+	// no provider is configured — callers report that rather than falling back,
+	// because a dictionary cannot answer a tutoring request.
+	learn := LearnEngineFromConfig(res)
 	return &Service{
-		cfg: cfg, res: res, trans: trans, define: def, search: search, store: st,
+		cfg: cfg, res: res, trans: trans, define: def, learn: learn, search: search, store: st,
 		provider: provider, source: source, home: home, away: away, pair: pair,
 	}
 }
@@ -113,7 +130,17 @@ func (s *Service) TranslateStream(ctx context.Context, p Params, onToken func(st
 
 func (s *Service) translate(ctx context.Context, p Params, stream bool, onToken func(string)) (*engine.TranslateResult, error) {
 	req := s.buildRequest(p, stream)
-	ch, err := s.trans.Translate(ctx, req)
+	// Learn mode bypasses smart-auto and the dictionary entirely: only a bare LLM
+	// can produce the structured tutor payload, so a missing provider is a clear
+	// error rather than a silent fall back to a dictionary gloss.
+	eng := s.trans
+	if p.Learn {
+		if s.learn == nil {
+			return nil, fmt.Errorf("learn mode requires an LLM provider; check %s", config.Path())
+		}
+		eng = s.learn
+	}
+	ch, err := eng.Translate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -134,20 +161,28 @@ func (s *Service) buildRequest(p Params, stream bool) engine.Request {
 	if p.Pair != nil {
 		pair = *p.Pair
 	}
+	// Learn mode is inherently bidirectional — it reuses pair's home/away routing
+	// to decide which side is the learner's native language — so it forces pair on,
+	// exactly as config.Resolve does for the CLI.
+	if p.Learn {
+		pair = true
+	}
 	target := EffectiveTarget(pair, home, s.away, p.Text)
 
 	req := engine.Request{
-		Text:     p.Text,
-		Source:   source,
-		Target:   target,
-		Mode:     engine.ModeTranslate,
-		Stream:   stream,
-		MaxAlts:  p.MaxAlts,
-		Preset:   firstNonEmpty(p.Preset, s.res.Preset),
-		Extra:    firstNonEmpty(p.Instructions, s.res.Instructions),
-		Pair:     pair,
-		PairHome: home,
-		PairAway: s.away,
+		Text:      p.Text,
+		Source:    source,
+		Target:    target,
+		Mode:      engine.ModeTranslate,
+		Stream:    stream && !p.Learn, // structured output never streams
+		MaxAlts:   p.MaxAlts,
+		Preset:    firstNonEmpty(p.Preset, s.res.Preset),
+		Extra:     firstNonEmpty(p.Instructions, s.res.Instructions),
+		Pair:      pair,
+		PairHome:  home,
+		PairAway:  s.away,
+		Learn:     p.Learn,
+		LearnMode: p.LearnMode,
 	}
 	if p.Model != "" {
 		// Scope the override to the resolved provider so a copilot model id never

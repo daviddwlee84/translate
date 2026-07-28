@@ -44,6 +44,7 @@ var (
 	flagNoPair        bool
 	flagPairWith      string
 	flagLearn         bool
+	flagLearnMode     string
 	flagBilingual     bool
 	flagBilingualMode string
 	flagJSON          bool
@@ -85,6 +86,7 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVar(&flagNoPair, "no-pair", false, "force one-directional: always translate into --to, ignoring [general] pair")
 	f.StringVar(&flagPairWith, "pair-with", "", "the other language for --pair (e.g. en)")
 	f.BoolVar(&flagLearn, "learn", false, "learning mode: teach (native→foreign) or grammar-correct (foreign→native)")
+	f.StringVar(&flagLearnMode, "learn-mode", "", "learn direction: auto (default)|teach|correct|explain — explain answers a question about a term instead of translating it; implies --learn")
 	f.BoolVarP(&flagBilingual, "bilingual", "2", false, "bilingual pipe mode: keep original (with color) + translation beneath (stdin only)")
 	f.StringVar(&flagBilingualMode, "bilingual-mode", "doc", "bilingual strategy: doc (context-aware, one LLM call) | blocks (per-block)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
@@ -120,7 +122,7 @@ func overrides() config.Overrides {
 		Pair:         flagPair,
 		NoPair:       flagNoPair,
 		PairWith:     flagPairWith,
-		Learn:        flagLearn,
+		Learn:        flagLearn || flagLearnMode != "",
 		Debug:        flagDebug,
 	}
 }
@@ -218,7 +220,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
 		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode)
 		if err != nil {
 			return err
 		}
@@ -253,7 +255,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return runBilingual(ctx, oneShotEng, docEng, string(b), src, tgt, res.Instructions, flagBilingualMode)
 		}
 		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode)
 		if err != nil {
 			return err
 		}
@@ -425,7 +427,7 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // Tokens stream live to stdout only when stdout is a TTY (so `translate x | pbcopy`
 // stays clean) and --json was not requested. Piped output is the plain translation
 // with no ANSI; --json emits the full structured result.
-func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool) (*engine.TranslateResult, error) {
+func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool, learnMode string) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	// Stream when the config asks for it on a TTY, or when --stream forces it (a
 	// piped consumer like the Raycast extension). --json/--learn are structured
@@ -433,17 +435,18 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 	stream := (flagStream || (streamPref && stdoutTTY)) && !flagJSON && !learn
 
 	req := engine.Request{
-		Text:     text,
-		Source:   source,
-		Target:   target,
-		Mode:     engine.ModeTranslate,
-		Stream:   stream,
-		Preset:   preset,
-		Extra:    instructions,
-		Pair:     pair,
-		PairHome: pairHome,
-		PairAway: pairAway,
-		Learn:    learn,
+		Text:      text,
+		Source:    source,
+		Target:    target,
+		Mode:      engine.ModeTranslate,
+		Stream:    stream,
+		Preset:    preset,
+		Extra:     instructions,
+		Pair:      pair,
+		PairHome:  pairHome,
+		PairAway:  pairAway,
+		Learn:     learn,
+		LearnMode: learnMode,
 	}
 	ch, err := eng.Translate(ctx, req)
 	if err != nil {
@@ -687,7 +690,8 @@ func renderLearnCLI(res *engine.TranslateResult) string {
 		return res.Translation + "\n"
 	}
 	var b strings.Builder
-	if l.Direction == "correct" {
+	switch l.Direction {
+	case "correct":
 		corrected := strings.TrimSpace(l.Corrected)
 		if corrected == "" {
 			corrected = res.Translation
@@ -710,34 +714,55 @@ func renderLearnCLI(res *engine.TranslateResult) string {
 				b.WriteString("  ✎ " + line + "\n")
 			}
 		}
-	} else {
+	case "explain":
+		// Lead with the sense, because naming which meaning is being explained is
+		// the whole point of this direction — the answer alone reads like any
+		// other gloss and gives no signal that the context was honoured.
+		if s := strings.TrimSpace(l.Sense); s != "" {
+			b.WriteString("◆ " + s + "\n")
+		}
+		if s := strings.TrimSpace(l.Answer); s != "" {
+			b.WriteString(s + "\n")
+		} else if s := strings.TrimSpace(l.Translation); s != "" {
+			b.WriteString(s + "\n")
+		}
+		b.WriteString(renderLearnVocabExamples(l))
+	default:
 		tr := strings.TrimSpace(l.Translation)
 		if tr == "" {
 			tr = res.Translation
 		}
 		b.WriteString(tr + "\n")
-		for _, v := range l.Vocab {
-			head := "  • " + v.Term
-			if v.Pos != "" {
-				head += " (" + v.Pos + ")"
-			}
-			if v.Phonetic != "" {
-				head += " " + v.Phonetic
-			}
-			if v.Meaning != "" {
-				head += " — " + v.Meaning
-			}
-			b.WriteString(head + "\n")
-		}
-		for _, ex := range l.Examples {
-			b.WriteString("  ✎ " + ex.Foreign + "\n")
-			if s := strings.TrimSpace(ex.Native); s != "" {
-				b.WriteString("    ↳ " + s + "\n")
-			}
-		}
+		b.WriteString(renderLearnVocabExamples(l))
 	}
 	if s := strings.TrimSpace(l.Notes); s != "" {
 		b.WriteString("  ⓘ " + s + "\n")
+	}
+	return b.String()
+}
+
+// renderLearnVocabExamples formats the glosses and examples shared by the teach
+// and explain directions.
+func renderLearnVocabExamples(l *engine.LearnResult) string {
+	var b strings.Builder
+	for _, v := range l.Vocab {
+		head := "  • " + v.Term
+		if v.Pos != "" {
+			head += " (" + v.Pos + ")"
+		}
+		if v.Phonetic != "" {
+			head += " " + v.Phonetic
+		}
+		if v.Meaning != "" {
+			head += " — " + v.Meaning
+		}
+		b.WriteString(head + "\n")
+	}
+	for _, ex := range l.Examples {
+		b.WriteString("  ✎ " + ex.Foreign + "\n")
+		if s := strings.TrimSpace(ex.Native); s != "" {
+			b.WriteString("    ↳ " + s + "\n")
+		}
 	}
 	return b.String()
 }
