@@ -18,6 +18,12 @@
       "sourceType": "github",
       "skillPath": "skills/local/project-knowledge-harness/SKILL.md",
       "computedHash": "eaac5f167596223c62c3fac9588137762f715cf2e5843a1a0d0d1b961c2a4984"
+    },
+    "raycast-extension-dev": {
+      "source": "daviddwlee84/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/local/raycast-extension-dev/SKILL.md",
+      "computedHash": "e4c6a168a8197393de414893ae983fa827249c2b8c892f4f412b355ee61beb75"
     }
   }
 }

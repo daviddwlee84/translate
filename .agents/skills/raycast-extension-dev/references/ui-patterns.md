@@ -1,0 +1,348 @@
+# UI patterns
+
+Read this when building a List/Detail/Form surface, adding a dropdown or keyboard
+shortcut, rendering program output as markdown, or designing the empty and error
+states.
+
+## Table of contents
+
+- [List](#list)
+- [Client-side search via keywords](#client-side-search-via-keywords)
+- [Accessories adapt to available width](#accessories-adapt-to-available-width)
+- [Dropdowns](#dropdowns)
+- [Detail and metadata](#detail-and-metadata)
+- [ActionPanel and shortcuts](#actionpanel-and-shortcuts)
+- [Confirmations and toasts](#confirmations-and-toasts)
+- [Rendering untrusted output](#rendering-untrusted-output)
+- [React types](#react-types)
+- [Error states: one descriptor, N renderers](#error-states-one-descriptor-n-renderers)
+
+---
+
+## List
+
+```tsx
+<List
+  isLoading={isLoading}
+  isShowingDetail={showDetail && items.length > 0}
+  onSelectionChange={setSelectedId}
+  searchBarPlaceholder={`Search ${items.length} item${items.length === 1 ? "" : "s"}…`}
+  searchBarAccessory={<GroupDropdown … />}
+>
+  <List.Section title="Running" subtitle={String(running.length)}>
+    {running.map((t) => <Row key={t.id} … />)}
+  </List.Section>
+</List>
+```
+
+- `isShowingDetail` gated on a non-empty list, or an empty list renders a
+  half-width nothing.
+- `List.EmptyView` **must be rendered inside a `<List>`** — it is not standalone.
+- Only one `searchBarAccessory` is allowed. Choose the dimension the user filters
+  by most.
+- Section order should be semantic (Running, Queued, Failed, Done), not
+  alphabetical.
+
+## Client-side search via keywords
+
+If the whole dataset is already in memory, filter in the client through per-item
+`keywords` rather than round-tripping a query to the backend. It is faster and
+usually broader — a backend query DSL often matches only one or two fields.
+
+```tsx
+<List.Item keywords={searchKeywords(item)} … />
+```
+
+```ts
+export function searchKeywords(t: Task): string[] {
+  return [String(t.id), t.command, t.label, t.group, t.path, statusKind(t), resultKind(t)]
+    .filter((k) => k && k.length > 0);          // drop nulls; never emit ""
+}
+```
+
+Assert the filtering, including that a null field drops rather than emitting an
+empty string that matches everything.
+
+## Accessories adapt to available width
+
+With the detail pane open, the list column is roughly a third of the window and
+long accessories truncate into nonsense (`Pueu…  Showing…  Not…ected`). Render
+fewer of them:
+
+```tsx
+const accessories: List.Item.Accessory[] = showDetail
+  ? [{ tag: { value: statusTag(t), color: statusColor(t) } }]
+  : [labelTag, groupText, { text: duration, icon: Icon.Clock }, statusTag];
+```
+
+The same reasoning is why an error descriptor needs a `shortTitle` as well as a
+`title`.
+
+## Dropdowns
+
+Two non-obvious behaviours, both of which produce a silently wrong UI:
+
+**Raycast silently resets a dropdown whose `value` is not among its children.**
+If the persisted selection refers to something that has since been deleted, the
+filter quietly reverts to the first item and the user sees a different dataset
+than they asked for. Render a synthetic item so the value always exists:
+
+```tsx
+{!known.includes(value) && value !== ALL ? (
+  <List.Dropdown.Item title={`${value} (gone)`} value={value} />
+) : null}
+```
+
+**An empty dropdown looks broken.** Seed a static fallback list so the first
+paint, before data arrives, is never empty.
+
+Use a sentinel that cannot collide with real data:
+
+```ts
+export const ALL_GROUPS = " all";   // a leading space is not a legal group name
+```
+
+## Detail and metadata
+
+```tsx
+<List.Item.Detail
+  markdown={md}
+  metadata={
+    <List.Item.Detail.Metadata>
+      <List.Item.Detail.Metadata.Label title="Group" text={t.group} />
+      <List.Item.Detail.Metadata.Separator />
+      <List.Item.Detail.Metadata.TagList title="Status">
+        <List.Item.Detail.Metadata.TagList.Item text={kind} color={color} />
+      </List.Item.Detail.Metadata.TagList>
+    </List.Item.Detail.Metadata>
+  }
+/>
+```
+
+Conditional rows are `{cond ? <Row/> : null}` — an undefined `text` renders an
+empty row rather than nothing.
+
+A standalone `<Detail>` takes `isLoading`, `navigationTitle`, `markdown`,
+`metadata`, and `actions`, and is the right surface for a full error page or a
+log view.
+
+## ActionPanel and shortcuts
+
+```tsx
+<ActionPanel>
+  <ActionPanel.Section>
+    <Action.Push title="Show Log" target={<LogView id={t.id} />} />
+    <Action title="Kill" style={Action.Style.Destructive}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "k" }} onAction={kill} />
+  </ActionPanel.Section>
+  <ActionPanel.Section title="Copy">
+    <Action.CopyToClipboard content={t.command} shortcut={Keyboard.Shortcut.Common.Copy} />
+  </ActionPanel.Section>
+</ActionPanel>
+```
+
+- The **first action is the ⏎ action.** Order matters more than any other UI
+  decision in the panel.
+- Prefer `Keyboard.Shortcut.Common.*` so bindings match the rest of Raycast —
+  and read the table below before writing one into a README, because their key
+  combinations are not what the names suggest.
+- **Name a shortcut after what it does, not after its family.** If you have two
+  restarts, one destructive and one not, `⌘⇧R` and `⌘⌥R` need to be documented by
+  behaviour or someone will lose work.
+- `ActionPanel.Submenu` for a set of alternatives (accounts, groups) that would
+  otherwise flood the panel.
+
+### Shortcuts Raycast has already taken
+
+Three separate sets, and only the first is enforced by anything.
+
+**1. Reserved globally — `ray lint` fails the build.**
+
+| Key | Raycast's use |
+| --- | --- |
+| `⌘K` | Open Action Panel |
+| `⌘P` | Open Search Bar Dropdown |
+
+Bind these and they are silently ignored at runtime; nothing throws. `ray lint`
+is the only thing that catches it, which is one of the reasons `lint` belongs in
+the gate alongside `tsc`.
+
+**2. The Debug section — injected into *every* action panel while an extension
+is in development, and NOT caught by `ray lint`.**
+
+| Key | Raycast's use |
+| --- | --- |
+| `⌘R` | Reload |
+| `⇧⌘S` | Open Support Directory |
+| `⇧⌘D` | Open Documentation |
+| `⇧⌘X` | Clear Assets Cache |
+| `⌘⌥D` | Open React Developer Tools |
+
+These are the dangerous ones. They pass lint, they pass typecheck, and a store
+user never sees the conflict — but **you** develop against it, so your own
+action does nothing and looks broken for reasons that have nothing to do with
+your code. A detail-pane toggle on `⇧⌘D` was dead for exactly this reason and
+took a screenshot to diagnose.
+
+`⌘R` is unavoidable if you use `Keyboard.Shortcut.Common.Refresh`, which is what
+you should use. Leave it — fighting Raycast's own recommended constant is worse
+than a dev-mode duplicate. Everything else in this table, avoid.
+
+**3. `Keyboard.Shortcut.Common.*` — free to use, but check the actual keys.**
+
+| Constant | macOS |
+| --- | --- |
+| `Copy` | `⌘⇧C` |
+| `CopyDeeplink` | `⌘⇧C` |
+| `CopyName` | `⌘⇧.` |
+| `CopyPath` | `⌘⇧,` |
+| `Save` | `⌘S` |
+| `Duplicate` | **`⌘D`** |
+| `Edit` | `⌘E` |
+| `MoveUp` / `MoveDown` | `⌘⇧↑` / `⌘⇧↓` |
+| `New` | `⌘N` |
+| `Open` | `⌘O` |
+| `OpenWith` | `⌘⇧O` |
+| `Pin` | `⌘⇧P` |
+| `Refresh` | `⌘R` |
+| `Remove` | **`⌃X`** |
+| `RemoveAll` | `⌃⇧X` |
+| `ToggleQuickLook` | `⌘Y` |
+
+The two in bold are the ones people guess wrong. `Remove` is **not** `⌘⌫`, and
+`Duplicate` is **not** `⌘⇧D`. Both were written into a README from memory and
+were wrong for months, because nothing checks documentation against bindings.
+If you list shortcuts in a README, copy them from this table or from
+`developers.raycast.com/api-reference/keyboard` — not from what you remember
+typing.
+
+Note also that `Pin` is `⌘⇧P`. Reusing that key for something else (a Pause
+action, say) is legal and works, but the moment a panel gains a real pin action
+you have a silent conflict.
+
+**4. Windows, if `platforms` includes it.**
+
+The `Common.*` constants are typed as plain `Shortcut` and their Windows
+bindings are resolved inside the Raycast app, not in `@raycast/api` — so this
+table cannot be extended with a verified Windows column, and you should not
+guess one into a README either. That is an argument *for* the constants: they
+are the only bindings that adapt without you knowing the answer.
+
+For a literal shortcut, `Keyboard.Shortcut` is a union and the per-platform form
+requires **both** branches:
+
+```tsx
+shortcut={{
+  macOS:   { modifiers: ["cmd", "shift"],  key: "k" },
+  Windows: { modifiers: ["ctrl", "shift"], key: "k" },
+}}
+```
+
+A single-branch `{ modifiers: ["cmd"], key: "k" }` also compiles, and on Windows
+the binding is **silently dropped** — no error, no lint failure, just an action
+with no key beside it. `cmd` and `opt` are macOS-only; `windows` and `alt` are
+the Windows side; `ctrl` and `shift` work on both. Capital `W` in `Windows` —
+the lowercase `windows` key is deprecated and still typechecks.
+
+Full treatment in `cross-platform.md`.
+
+## Confirmations and toasts
+
+```ts
+if (needsConfirm && prefs.confirmDestructive) {
+  const ok = await confirmAlert({
+    title: "Remove 3 items?",
+    message: "This cannot be undone.",
+    rememberUserChoice: true,                     // "Do not show this again"
+    primaryAction: { title: "Remove", style: Alert.ActionStyle.Destructive },
+  });
+  if (!ok) return false;
+}
+const toast = await showToast({ style: Toast.Style.Animated, title: "Removing…" });
+try { await run(); toast.style = Toast.Style.Success; toast.title = "Removed"; }
+catch (e) { await showFailureToast(e, { title: "Removing", message: firstLine(e.detail) }); }
+```
+
+- **Present tense for the in-flight title, past tense for the done title.**
+- **State what the verb does not say.** If `kill --group` also pauses the group,
+  or `remove` moves members to a default, the confirmation is where that goes —
+  verified from the tool's `--help`, not guessed.
+- **Omit `rememberUserChoice` on the genuinely irreversible one.** Some actions
+  should ask every time.
+- **On failure, surface the backend's own prose.** A good CLI refuses things for
+  reasons better than anything you would write.
+- `confirmAlert` **does not work from a menu-bar command** — see `menu-bar.md`.
+
+## Rendering untrusted output
+
+Program output is not markdown. A build log full of `#` and `*` renders as
+headings and bullets, and a fence inside the output closes yours early.
+
+```ts
+function fence(text: string): string {
+  // A ``` inside the output would close our fence; break it with a zero-width space.
+  return "```text\n" + text.replace(/```/g, "``​`") + "\n```";
+}
+```
+
+Use the same helper for stderr in an error page, log previews, and anything a
+user typed.
+
+## React types
+
+**`@raycast/api` bundles its own copy of `@types/react`.** The root
+`React.ReactNode` is therefore a structurally different type that silently fails
+to match Raycast components' children. When a prop holds JSX, type it as an
+element:
+
+```ts
+function logActions(t: Task, extra?: React.JSX.Element | null) { … }
+```
+
+`tsc` catches this; `ray build` does not.
+
+## Error states: one descriptor, N renderers
+
+The failure mode this avoids is real: an extension grew two copies of an
+`errorMarkdown()` helper that drifted apart, because the menu bar cannot render a
+`List.EmptyView` and needed its own.
+
+```ts
+export interface ErrorAction {
+  id: string; title: string; icon?: Image.ImageLike;
+  copy?: string; url?: string; run?: () => void | Promise<void>;
+}
+export interface ErrorDescriptor {
+  icon: Image.ImageLike;
+  title: string;
+  shortTitle: string;     // a few words — the list column is a third of the window
+  description: string;    // one line, for List.EmptyView
+  markdown: string;       // a full page, for Detail
+  actions: ErrorAction[];
+  structural: boolean;
+}
+export function describeError(error: unknown): ErrorDescriptor { … }
+```
+
+**Actions are data, not JSX**, so each renderer maps them to its own primitive:
+
+```tsx
+// In an ActionPanel
+a.copy !== undefined ? <Action.CopyToClipboard content={a.copy} />
+: a.url !== undefined ? <Action.OpenInBrowser url={a.url} />
+: <Action title={a.title} onAction={() => a.run?.()} />
+
+// In a MenuBarExtra
+onAction={() => { if (a.copy) Clipboard.copy(a.copy); else if (a.url) open(a.url); else a.run?.(); }}
+```
+
+Content that earns its place in `markdown`:
+
+- The exact install/start commands, as copy-to-clipboard actions **and** in the
+  text.
+- `openExtensionPreferences` as an action on every structural error.
+- The raw stderr in a fence.
+- An explanation of what each distinct backend error string actually means.
+- Context sensitivity: never offer to start something you are not talking to.
+  If the failing target is a remote host, a local "start service" action is
+  actively misleading.

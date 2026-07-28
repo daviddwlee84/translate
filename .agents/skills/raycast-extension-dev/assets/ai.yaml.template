@@ -1,0 +1,28 @@
+# AI configuration for __NAME__
+#
+# This file holds the CONTENTS of the manifest's `ai` key — no `ai:` wrapper.
+# Four filenames are accepted and the FIRST match wins: ai.json, ai.json5,
+# ai.yaml, ai.yml. Keep exactly one; a stale ai.json silently shadows this file.
+# `ray develop` hot-reloads ai.yaml, ai.yml and ai.json — but not ai.json5.
+
+# Injected as a system message whenever the extension is mentioned with @__NAME__.
+# Put the invariants here: what is destructive, what identifiers mean, what must
+# never happen unasked. Per-tool semantics belong in the tool description and the
+# Input JSDoc, not here.
+instructions: |
+  Never mutate anything unless the user explicitly asks for it.
+  Prefer reporting what you found over speculating about causes.
+
+# Evals are integration tests AND the Suggested Prompts list shown under
+# @__NAME__. Only `input` is required, so there is no excuse for shipping zero:
+# an extension with tools and no evals looks empty to every new user.
+#
+# Set usedAsExample: false on regression cases with contrived phrasing — worth
+# keeping as a test, embarrassing as UI. It defaults to true.
+#
+# Run them with `npx ray evals` (needs AI access and network, so it is a manual
+# step, not part of `just check`).
+evals:
+  - input: "@__NAME__ Give me an overview of everything. Don't change anything."
+  - input: "@__NAME__ What's active right now, and how long has each one been going?"
+  - input: "@__NAME__ What failed, and why? Read the details — don't fix anything yet."

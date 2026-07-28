@@ -1,0 +1,68 @@
+/**
+ * AI tool: __TOOL_NAME__
+ *
+ * The filename MUST equal the tools[].name entry in package.json.
+ * `ray build` runs tsc over this file and derives the tool's JSON schema from
+ * the types below — so the annotations here are the contract, not decoration.
+ *
+ * This JSDoc becomes the tool's `instructions`. Say what the tool is for and
+ * what it must never do; leave parameter semantics to the Input fields.
+ */
+
+// import { Action, Tool } from "@raycast/api";
+
+type Input = {
+  /**
+   * Describe every field, and keep the JSDoc on its OWN LINE — `/** x *​/ f: T`
+   * on one line extracts with no description at all, silently.
+   *
+   * Say where legal values come from (which sibling tool returns these ids),
+   * not just what the field means.
+   */
+  query?: string;
+  /**
+   * Prefer a string union over `string` for anything enumerable — it becomes an
+   * `enum` in the extracted schema and stops the model inventing values.
+   *
+   * Supported: string, number, boolean, string[], string unions, optional
+   * fields, nested object literals, type aliases. NOT supported, and each one
+   * FAILS THE BUILD: any, unknown, numeric or mixed unions, intersections,
+   * Pick/Partial/Omit. And `interface Input extends Base {}` extracts as {}
+   * with no error at all — declare members directly.
+   */
+  status?: "active" | "done";
+};
+
+/**
+ * The default export must be a function taking AT MOST ONE parameter.
+ * `Tools should have at most one parameter (has 2)` is a build error, not a
+ * runtime one.
+ *
+ * Return data, not prose — the model does the writing. Annotate the return type
+ * for tsc's sake, but do not expect it in the extracted schema: `ray build
+ * --print-tool-schemas` emits `input`, `instructions` and `confirmation`, and no
+ * `output` key was produced for any return shape on Raycast API 1.104.23.
+ *
+ * Avoid a bare `@word` anywhere in tool JSDoc — it is parsed as a JSDoc tag and
+ * reappears mangled in the extracted instructions.
+ */
+export default async function tool(input: Input): Promise<unknown[]> {
+  void input;
+  throw new Error("__TOOL_NAME__ is not implemented");
+}
+
+/**
+ * Uncomment for anything that mutates. Raycast calls this BEFORE the tool and
+ * skips the prompt entirely when it returns undefined — so a confirmation can
+ * be conditional and costs nothing on a harmless call.
+ *
+ * Note `style` is `Action.Style`, reused. There is no Tool-local style enum.
+ */
+// export const confirmation: Tool.Confirmation<Input> = async (input) => {
+//   if (!input.query) return undefined;
+//   return {
+//     style: Action.Style.Destructive,
+//     message: `Apply this to ${input.query}? This cannot be undone.`,
+//     info: [{ name: "Target", value: input.query }],
+//   };
+// };
