@@ -24232,3 +24232,989 @@ Three ways out, cheapest first:
 One thing that lines up nicely without any change: the dotfiles install to `$HOME\.local\bin\translate.exe`, and `~/.local/bin` is **first** in the Windows probe list I wrote — so the extension will find it with no `binaryPath` preference needed.
 
 Worth flagging before you test: I've never run any of this on Windows. `raycast/README.md` has the checklist, but the two I'd genuinely expect to bite are `getSelectedText()` (undocumented on Windows — both call sites already fall back to the clipboard, so please just record which happens) and whether Raycast for Windows exposes AI Extensions at all, which no Raycast doc states either way.
+
+---
+
+_**User (2026-07-28 08:02:51Z)**_
+
+是說 @@/Users/david/src/tries/2026-07-09-windows-dotfiles/.chezmoi.toml.tmpl:48 是會裝 Raycast嗎？
+
+---
+
+_**Agent (claude-opus-5 2026-07-28 08:03:05Z)**_
+
+<think><details><summary>Thought Process</summary>
+Looking at line 48 in the `.chezmoi.toml.tmpl` file — that's the `installTranslate` prompt, which installs the translate CLI tool, not Raycast. So the direct answer is no, that line doesn't install Raycast. The broader question is whether the windows-dotfiles repo installs Raycast at all, which I'd need to check further in the configuration.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:05Z)**_
+
+Line 48 is `installTranslate` — that's the CLI only, not Raycast. Let me check whether the repo installs Raycast at all.
+
+_**Agent (claude-opus-5 2026-07-28 08:03:08Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Search windows-dotfiles for Raycast
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && echo "=== Raycast anywhere (excluding transcripts/site/venv) ===" && grep -rni "raycast" . 2>/dev/null | grep -v "^./site/\|^./.venv/\|^./.git/\|^./.specstory/\|^./.agents/skills/\|^./dot_agents/" | head -30; echo "---none above means no hits---"`
+
+```text
+=== Raycast anywhere (excluding transcripts/site/venv) ===
+.chezmoi.toml.tmpl:29:    installWindowsApps   = {{ promptBoolOnce . "installWindowsApps" "Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)" $full }}
+README.md:37:- **Apps** (winget): Windows Terminal, Alacritty, Raycast, PowerToys, Steam.
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:317:- **Apps** (winget): Windows Terminal, Alacritty, Raycast, PowerToys, Steam.
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2069:41	| Raycast | `Raycast.Raycast` |
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2096:68	    as Raycast and PowerToys Run. It's left out of the default set to avoid a
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2097:69	    three-way clash; add it (and pick one launcher) if you prefer it over Raycast.
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2273:32	| Windows GUI apps | on (workstation) | VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast, Docker Desktop, Discord |
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2304:63	## The Raycast / PowerToys clash
+.specstory/history/2026-07-09_16-08-55Z-at-bootstrap-ps1-vs.md:2306:65	Raycast and PowerToys Run both default their launcher to **Alt+Space**. Pick one:
+.specstory/history/2026-07-09_13-02-08Z.md:23:- App: Raycast for Windows, Terminal, Alacritty (要移植我們dotfiles的config過去 或是看怎樣reference 這樣只要single source of truth管同一份), Steam, PowerToys (這會跟Raycast衝突嗎？)
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:425:112	# source) — used for apps with no community winget manifest, e.g. Raycast and the
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:584:271	# Store-only apps: Raycast (default launcher) + the official ChatGPT desktop app.
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:590:277	Winget-InstallStore '9PFXXSHC64H3'   # Raycast
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:598:285	Write-Warning 'Raycast is the default launcher but shares Alt+Space with PowerToys Run -- disable PowerToys Run (PowerToys Settings > PowerToys Run > off) or rebind a hotkey. Raycast for Windows is a Store beta; if it fails to install, Flow Launcher is the fallback: winget install Flow-Launcher.Flow-Launcher.'
+.specstory/history/2026-07-11_05-49-14Z-irm-https-raw-githubusercontent.md:128:WARNING: Raycast is the default launcher but shares Alt+Space with PowerToys Run -- disable PowerToys Run (PowerToys Settings > PowerToys Run > off) or rebind a hotkey. Raycast for Windows is a Store beta; if it fails to install, Flow Launcher is the fallback: winget install Flow-Launcher.Flow-Launcher.
+.specstory/history/2026-07-11_05-49-14Z-irm-https-raw-githubusercontent.md:2696:19:    installWindowsApps   = {{ promptBoolOnce . "installWindowsApps" "Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)" $full }}
+.specstory/history/2026-07-11_05-49-14Z-irm-https-raw-githubusercontent.md:2733:  --promptBool='Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)=false'
+.specstory/history/2026-07-13_10-00-24Z.md:144:115	# source) — used for apps with no community winget manifest, e.g. Raycast and the
+.specstory/history/2026-07-13_10-00-24Z.md:334:305	# Store-only apps: Raycast (default launcher) + the official ChatGPT desktop app.
+.specstory/history/2026-07-13_10-00-24Z.md:340:311	Winget-InstallStore '9PFXXSHC64H3'   # Raycast
+.specstory/history/2026-07-13_10-00-24Z.md:348:319	Write-Warning 'Raycast is the default launcher but shares Alt+Space with PowerToys Run -- disable PowerToys Run (PowerToys Settings > PowerToys Run > off) or rebind a hotkey. Raycast for Windows is a Store beta; if it fails to install, Flow Launcher is the fallback: winget install Flow-Launcher.Flow-Launcher.'
+.specstory/history/2026-07-13_10-00-24Z.md:485:19	    installWindowsApps   = {{ promptBoolOnce . "installWindowsApps" "Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)" $full }}
+.specstory/history/2026-07-13_10-00-24Z.md:780:51	| Raycast | `9PFXXSHC64H3` (msstore) |
+.specstory/history/2026-07-13_10-00-24Z.md:836:107	    **Raycast** (Microsoft Store, id `9PFXXSHC64H3`) is the default launcher.
+.specstory/history/2026-07-13_10-00-24Z.md:838:109	    (PowerToys Settings › PowerToys Run › off) or rebind one. Raycast for Windows
+.specstory/history/2026-07-13_10-00-24Z.md:1147:24	  Windows Terminal, Alacritty, Raycast, PowerToys, Steam.
+.specstory/history/2026-07-13_10-00-24Z.md:1858:  --promptBool='Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)=true' \
+.specstory/history/2026-07-12_10-02-50Z.md:6751:64	OPEN	Raycast extension for try		2025-12-02 08:20:42 +0000 UTC
+.specstory/history/2026-07-27_08-21-15Z-https-github-com-daviddwlee84.md:98:validate	chezmoi init (writes config from prompt answers)	2026-07-27T08:12:45.3443075Z ^[[36;1m  '--promptBool','Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)=false',^[[0m
+.specstory/history/2026-07-27_08-21-15Z-https-github-com-daviddwlee84.md:171:29:    installWindowsApps   = {{ promptBoolOnce . "installWindowsApps" "Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)" $full }}
+---none above means no hits---
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:08Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check for launcher tools in windows-dotfiles
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && echo "=== launcher-ish tools installed ===" && grep -rni "flow-launcher\|powertoys\|everything\|wox\|listary\|keypirinha\|launcher" --include="*.tmpl" --include="*.ps1" --include="*.md" . 2>/dev/null | grep -v "^./site/\|^./.venv/\|^./.specstory/\|^./.agents/" | head -20`
+
+```text
+=== launcher-ish tools installed ===
+README.md:37:- **Apps** (winget): Windows Terminal, Alacritty, Raycast, PowerToys, Steam.
+.chezmoi.toml.tmpl:6:# OS branching: everything here assumes Windows. WSL/macOS/Linux are handled by
+.chezmoi.toml.tmpl:29:    installWindowsApps   = {{ promptBoolOnce . "installWindowsApps" "Install GUI apps via winget (VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys, Raycast)" $full }}
+.chezmoi.toml.tmpl:34:    installUtilityApps   = {{ promptBoolOnce . "installUtilityApps" "Install utility apps via winget (CPU-Z, GPU-Z, TreeSize, VLC, Everything, ShareX, HWiNFO)" $full }}
+backlog/auto-resume-wsl-docker-after-reboot.md:13:notice. What's **not** automated is everything after the reboot — the user must
+backlog/wsl-ubuntu-auto-dotfiles.md:38:   without OOBE (`wsl --install -d Ubuntu --no-launch`, or the launcher's
+backlog/wsl-ubuntu-auto-dotfiles.md:107:  cloud-init (Option A). Rationale: everything lives in the one PS script (repo's
+backlog/windows-arm64-managed-machine-rough-edges.md:36:     whole toolchain is arm64, vs. force amd64 everything.
+backlog/herdr-windows-port-verification.md:46:Everything below was exercised from macOS with chezmoi + pwsh 7.4 + uv:
+backlog/translate-windows-distribution.md:34:The upgrade story is the strongest argument: everything else on this box updates
+backlog/wsl-systemd-vs-wsl-profile.md:15:ansible play (see the pitfall doc). Everything else in the play succeeded
+.agents/skills/mkdocs-site-bootstrap/references/preferences-schema.md:90:# Dump everything
+.agents/skills/mkdocs-site-bootstrap/references/docs-stack-recipe.md:234:  installed everything else from the recipe to keep the patterns aligned
+.specstory/history/2026-07-09_13-02-08Z.md:23:- App: Raycast for Windows, Terminal, Alacritty (要移植我們dotfiles的config過去 或是看怎樣reference 這樣只要single source of truth管同一份), Steam, PowerToys (這會跟Raycast衝突嗎？)
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:570:257	    'Microsoft.PowerToys',
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:584:271	# Store-only apps: Raycast (default launcher) + the official ChatGPT desktop app.
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:598:285	Write-Warning 'Raycast is the default launcher but shares Alt+Space with PowerToys Run -- disable PowerToys Run (PowerToys Settings > PowerToys Run > off) or rebind a hotkey. Raycast for Windows is a Store beta; if it fails to install, Flow Launcher is the fallback: winget install Flow-Launcher.Flow-Launcher.'
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:613:300	    'voidtools.Everything',
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:936:20	| television (`tv`) | fuzzy picker / channel launcher |
+.specstory/history/2026-07-10_23-32-51Z-yazi-https-yazi-rs.md:1459:I have everything I need. This is a small, well-scoped change — the repo already sets `YAZI_CONFIG_HOME` in `00_env.ps1`, and the fix is the sibling `YAZI_FILE_ONE` env var pointing at Git's bundled `file.exe`. Since git here is scoop-installed, the path is `~/scoop/apps/git/current/usr/bin/file.exe` (not the `C:\Program Files\Git` path from the generic yazi docs), so I'll probe both. Writing the plan now.
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:21Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm noticing a discrepancy — the current search results only show Raycast mentioned in `.chezmoi.toml.tmpl` and the README, but the transcripts reference it in an apps installation script using Winget. I need to locate the actual apps script to verify whether Raycast is still listed there, since the grep search didn't catch it.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:21Z)**_
+
+The current tree only mentions Raycast in the prompt text and README — the Store-install line the transcripts describe isn't showing. Let me check the actual apps script.
+
+_**Agent (claude-opus-5 2026-07-28 08:03:21Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect chezmoiscripts for the Store install
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && ls .chezmoiscripts/ && echo "=== 9PFXXSHC64H3 / InstallStore ===" && grep -rn "9PFXXSHC64H3\|InstallStore\|msstore" .chezmoiscripts/ 2>/dev/null | head -20`
+
+```text
+run_once_before_00_migrate_skill_junction.ps1
+run_once_before_01_backup.ps1.tmpl
+run_onchange_after_02_profile_redirect.ps1.tmpl
+run_onchange_after_03_xdg_env.ps1
+run_onchange_after_10_packages.ps1.tmpl
+run_onchange_after_20_editor_overlays.ps1.tmpl
+run_onchange_after_25_claude_settings.ps1.tmpl
+run_onchange_after_30_windows_terminal.ps1
+run_onchange_after_40_openssh_server.ps1.tmpl
+run_onchange_after_45_wsl.ps1.tmpl
+run_onchange_after_46_wsl_ubuntu.ps1.tmpl
+=== 9PFXXSHC64H3 / InstallStore ===
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:116:# Microsoft Store packages (installed by Store product id via the msstore
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:118:# official ChatGPT desktop app. msstore ignores --scope, so we don't pass it.
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:119:function Winget-InstallStore([string]$id) {
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:120:    if (-not (Have winget)) { Register-Failure "msstore:$id (winget unavailable)"; return }
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:123:    Info "winget (msstore) install $id"
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:124:    winget install --id $id -e --source msstore --silent `
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:126:    if ($LASTEXITCODE -ne 0) { Register-Failure "msstore:$id" }
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:404:# "ChatGPT Classic", which winget's msstore source no longer resolves ("no
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:405:# matching package"). Confirm live ids with `winget search --source msstore ...`.
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:406:Winget-InstallStore '9PFXXSHC64H3'   # Raycast
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:407:Winget-InstallStore '9PLM9XGG6VKS'   # ChatGPT (OpenAI)
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:40Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm realizing the grep search should have picked up `.chezmoiscripts/` since the recursive flag descends into dotdirectories, and the exclusion patterns in my filter list shouldn't have caught it either. Let me reconsider what's actually being excluded here.
+
+Actually, I think I've got it — the output was just truncated by `head -30`. The `.chezmoiscripts` match would've appeared further down in the results, but I cut it off before reaching it.
+
+So Raycast is definitely installed through `installWindowsApps` on line 29 (enabled by default for workstations), pulling from the Microsoft Store via that app ID rather than winget. Let me look at the exact section around the PowerToys warning and beta status to understand the full context.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:40Z)**_
+
+Found it — my earlier `head -30` truncated it; the Raycast line was below the cut. Let me get the full context.
+
+_**Agent (claude-opus-5 2026-07-28 08:03:41Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Read the Raycast install block and its gate
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && sed -n '396,420p' .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl; echo "=== gate: which prompt guards it? ==="; awk 'NR>=380 && NR<=410 && (/^{{ if/ || /^{{- if/ || /^{{ end/ || /^{{- end/)' .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl; echo "=== nearest enclosing if ==="; awk 'NR<=406 && (/{{ *-? *if/ || /{{ *-? *end/) {print NR": "$0}' .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl | tail -8`
+
+```text
+    'Grammarly.Grammarly'   # skipped on managed machines (often policy-blocked)
+{{- end }}
+)) { Winget-Install $id }
+
+# Store-only apps: Raycast (default launcher) + the official ChatGPT desktop app.
+# Neither has a community winget manifest, so they install by Store product id.
+# Codex is the npm @openai/codex CLI (coding-agents block above), not a Store app.
+# NB: 9PLM9XGG6VKS is the OpenAI "ChatGPT" listing; the old 9NT1R1C2HH7J was
+# "ChatGPT Classic", which winget's msstore source no longer resolves ("no
+# matching package"). Confirm live ids with `winget search --source msstore ...`.
+Winget-InstallStore '9PFXXSHC64H3'   # Raycast
+Winget-InstallStore '9PLM9XGG6VKS'   # ChatGPT (OpenAI)
+
+# Nerd Fonts so starship glyphs render. Hack-NF-Mono supplies the
+# "Hack Nerd Font Mono" family the Alacritty / Windows Terminal / editor
+# configs reference; Hack-NF ("Hack Nerd Font") is the proportional companion.
+Scoop-Install @('Hack-NF', 'Hack-NF-Mono')
+
+Write-Warning 'Raycast is the default launcher but shares Alt+Space with PowerToys Run -- disable PowerToys Run (PowerToys Settings > PowerToys Run > off) or rebind a hotkey. Raycast for Windows is a Store beta; if it fails to install, Flow Launcher is the fallback: winget install Flow-Launcher.Flow-Launcher.'
+{{ end -}}
+
+{{ if .installGamingApps -}}
+Winget-Install 'Valve.Steam'
+{{ end -}}
+
+=== gate: which prompt guards it? ===
+{{- if not .managedMachine }},
+{{- end }}
+=== nearest enclosing if ===
+251: {{ end -}}
+253: {{ if .installCodingAgents -}}
+339: {{ end -}}
+341: {{ if .installSpecstoryBuild -}}
+376: {{ end -}}
+378: {{ if .installWindowsApps -}}
+395: {{- if not .managedMachine }},
+397: {{- end }}
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:03:59Z)**_
+
+Correcting myself: I truncated my own search earlier, and Raycast **is** installed. Here's the accurate picture.
+
+## Line 48 vs line 29
+
+They're two different prompts, and you're asking about the wrong one:
+
+| Line | Prompt | Installs |
+|---|---|---|
+| `.chezmoi.toml.tmpl:29` | `installWindowsApps` | **Raycast** (+ VSCode, Cursor, Notepad++, Terminal, Alacritty, PowerToys) |
+| `.chezmoi.toml.tmpl:48` | `installTranslate` | the `translate` CLI only — `go install`, no GUI |
+
+So for the extension test you need **both** toggles on. Both default to `$full` (on for the `workstation` role), so a standard workstation apply gets you both.
+
+## How Raycast actually gets installed
+
+`run_onchange_after_10_packages.ps1.tmpl:406`, inside the `{{ if .installWindowsApps }}` block (line 378):
+
+```powershell
+Winget-InstallStore '9PFXXSHC64H3'   # Raycast
+```
+
+Not the community winget source — **Microsoft Store product id**, because Raycast has no winget manifest. Three consequences worth knowing before you apply:
+
+- **It's a Store beta.** The script says so, and has a fallback: *"if it fails to install, Flow Launcher is the fallback"*. If that install fails you have no Raycast to test against.
+- **Alt+Space collides with PowerToys Run**, and `installWindowsApps` installs PowerToys in the same block. The script emits a `Write-Warning` about it — you'll need to disable PowerToys Run or rebind.
+- **`msstore` ignores `--scope`**, per the comment on line 118, so it installs per-user.
+
+## What this means for your test
+
+The pieces line up, with one gap:
+
+- Raycast → Store install ✅
+- `translate.exe` → `~\.local\bin\translate.exe`, which is **first** in my Windows probe list ✅
+- The extension itself → **not covered**. Nothing in the dotfiles installs or registers a Raycast extension; you'll need to clone this repo on the Windows box and run `npm install && npx ray develop` from `raycast/extension`. That needs Node ≥ 22.14 and npm ≥ 7 — worth checking whether the dotfiles install Node before you get there.
+- The binary will be **v0.5.2**, which predates everything I committed today — so `--preset`/`--instructions` passthrough works (old flags), but you'd be testing the extension against a CLI that lacks the table directive. Push `main` and `go install ...@main` first, or the table fix will only be half-present (the extension-side repair will still fire, which is exactly why I built both halves).
+
+One caveat I can't resolve from here: I don't know whether Raycast for Windows exposes AI Extensions at all. No Raycast doc states it either way, and the only evidence is that the store accepts `platforms: ["macOS", "Windows"]` alongside `tools[]`. If `@translate` doesn't appear in Quick AI there, that's the likely reason rather than anything in our manifest.
+
+---
+
+_**User (2026-07-28 08:22:06Z)**_
+
+```
+- The extension itself → not covered. Nothing in the dotfiles installs or registers a Raycast extension; you'll need to clone this repo on the Windows box and run npm install && npx ray develop from raycast/extension. That needs Node ≥ 22.14 and npm ≥ 7 — worth checking whether the dotfiles install Node before you get there.
+```
+
+要不在 dotfiles-windows 那邊添加一個just recipe是可以做到這間事情的？ 還是說建議單獨clone這個repo來測試？
+
+---
+
+_**Agent (claude-opus-5 2026-07-28 08:22:43Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm weighing whether to add a `just` recipe in windows-dotfiles that handles the full setup (clone, install, and ray develop), or keep the ray repo separate for testing. The main tension is that `ray develop` runs as a long-running foreground process with file watching and hot-reloading, which would block the terminal in a recipe—that works fine for an interactive dev loop, but it's not really a "set it and forget it" installation step.
+
+However, there's a key detail: `ray develop` registers the extension with Raycast and that registration persists even after you stop dev mode, so a one-time run of `ray build` followed by `ray develop` gets it into the root search permanently. Plus, the dotfiles repo already has precedent for this exact pattern—the `specstory-build` recipe clones and builds an external repo from a just recipe, and there's also an `upgrade-translate` recipe showing that translate is already a first-class citizen there. So adding a recipe would be consistent with existing conventions.
+
+The real design question is where the cloned repo should live—the dotfiles repo shouldn't vendor the translate repo itself, so I need to decide between cloning to a fixed path like `~/src/translate` or requiring the user to have it cloned already and point at it.
+
+Before settling on an approach, I should look at how `specstory-build` actually works to match those conventions. But honestly, my recommendation is to clone separately for the first test and only add a recipe once it's working—`ray develop` is interactive and long-running, which is a poor fit for a recipe when you're validating untested code that'll need iteration. The dotfiles repo's job is machine setup, not developing another repo, and both `upgrade-translate` and `specstory-build` produce artifacts in `~/.local/bin`, not interactive dev environments. The immediate priority is to clone the extension separately for this Windows test since iteration speed matters when debugging untested code. After that works, I should add a proper recipe scoped as "set up the translate Raycast extension on this box" — matching how `specstory-build` is structured — and document it in the dotfiles backlog first since there are decisions to make around where the clone lives, Node dependencies, and the fact that `ray develop` runs in the foreground. I need to verify whether dotfiles already installs Node, check the `specstory-build` recipe to cite the precedent correctly, and confirm whether `ray` even works on Windows since the skill is supposed to be cross-platform.
+
+Looking at the cross-platform docs, `npm run dev` does work on Windows with the same toolchain requirements, but there's a critical catch: the Justfile recipes assume POSIX shell syntax like `cd raycast/extension && ...`, which won't work on Windows the way they're written.
+
+The `just` command defaults to `sh` unless configured otherwise, or uses `pwsh` if explicitly set. I need to check both the translate repo and the extension repo's Justfile to see if either has a shell configuration that would affect whether `just raycast-check` actually runs on Windows.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:22:43Z)**_
+
+Let me check two things before recommending — whether Node is actually installed, and the precedent recipe.
+
+_**Agent (claude-opus-5 2026-07-28 08:22:45Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check Node install and the precedent recipe
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && echo "=== node/npm install ===" && grep -rn "nodejs\|'node'\|OpenJS\|fnm\|volta\|nvm" .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl | head -10; echo; echo "=== specstory-build recipe (the precedent) ===" && sed -n '/specstory-build/,/^$/p' justfile | head -25; echo "=== justfile shell setting ==="; head -12 justfile`
+
+```text
+=== node/npm install ===
+.chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl:171:    'nodejs-lts', 'bun',
+
+=== specstory-build recipe (the precedent) ===
+specstory-build:
+    pwsh -NoProfile -File ./scripts/build-specstory.ps1
+
+=== justfile shell setting ===
+# Windows dotfiles task runner. Install with: scoop install just
+# Recipes run under PowerShell 7.
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+set shell := ["pwsh", "-NoLogo", "-Command"]
+
+# list recipes
+default:
+    @just --list
+
+# preview pending changes
+diff:
+    chezmoi diff
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:22:45Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check translate repo Justfile shell setting
+
+`echo "=== translate Justfile shell config ===" && head -10 Justfile`
+
+```text
+=== translate Justfile shell config ===
+# translate — dev tasks (run `just` to list)
+
+# show available recipes
+default:
+    @just --list
+
+# build the binary into ./translate
+build:
+    go build -o translate .
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:23:11Z)**_
+
+<think><details><summary>Thought Process</summary>
+Node.js is already installed via scoop as `nodejs-lts`, which should be version 22 or later and meet the requirement. I'm also noticing there's a precedent for build scripts using PowerShell, which I should check for the specstory-build command.
+
+The critical issue is that the translate repo's Justfile doesn't specify a shell setting like windows-dotfiles does, so on Windows it'll default to `sh` which likely won't exist. My `raycast-check` recipe uses POSIX syntax that won't work in that environment. This means running `just raycast-check` will probably fail on the Windows box — the user should run those three commands directly instead.
+
+For the recommendation, I'm thinking they should clone the repo separately for the initial test, then add a recipe afterwards. I'm realizing the Justfile recipes I just added won't actually run on Windows without a `set windows-shell` directive — that's a real gap I introduced, especially since I just declared Windows support. I should flag this as a genuine issue and offer to fix it rather than let it slip by, but I'll keep my answer focused on what they asked and present this as a clear recommendation.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:23:11Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find which prompt gates the Node install
+
+`cd /Users/david/src/tries/2026-07-09-windows-dotfiles && awk 'NR<=171 && (/{{ *-? *if/ || /{{ *-? *end/) {print NR": "$0}' .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl | tail -4; echo "=== context ==="; sed -n '165,175p' .chezmoiscripts/run_onchange_after_10_packages.ps1.tmpl`
+
+```text
+34: {{ if .useChineseMirror }}
+41: {{ end }}
+=== context ===
+    'delta', 'lazygit', 'neovim', 'yazi', 'btop', 'television', 'tlrc',
+    'uv', 'gnupg',
+    # Runtimes are NATIVE via scoop, not mise: mise's activate/shims are
+    # unreliable on Windows and it has no windows-arm64 bun build. node + bun
+    # here; Python via uv (below); go/rust/ruby under Extra runtimes.
+    # copilot-proxy needs bun/bunx.
+    'nodejs-lts', 'bun',
+    # LazyVim pins nvim-treesitter to the `main` branch, which compiles parsers
+    # by shelling out to `tree-sitter build`. That CLI compiles via Rust's `cc`
+    # crate, which only knows MSVC / GCC / Clang -- NOT zig (only the retired
+    # `master` branch accepted zig). So the parser compiler must be a real gcc on
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:23:40Z)**_
+
+<think><details><summary>Thought Process</summary>
+Node.js is already covered since `nodejs-lts` is installed unconditionally through scoop, so that's not a concern. For the first test run, I should clone the repository separately rather than relying on `ray develop` since it's a foreground watcher, not an installation step, and I'm working with untested code—plus the dotfiles' precedents both suggest this approach.
+
+Once it's working, adding a recipe makes sense following the repo's pattern: a thin wrapper in `scripts/*.ps1` with a corresponding `backlog/` entry first. There's also a real issue I need to flag: the translate repo's Justfile lacks `set windows-shell`, so commands like `raycast-check` will fail on Windows since they use POSIX syntax. The windows-dotfiles Justfile sets PowerShell explicitly, but mine doesn't—I should offer to fix that.
+
+On Windows without that setting, just defaults to `sh -c`, which only works if `sh.exe` is on PATH (typically from git via scoop). But the recipes also use POSIX test syntax like `[ -d node_modules ] || npm install`, which breaks under PowerShell or cmd even if sh exists. A proper fix would mean either ensuring sh is available and reliable, or rewriting the recipe bodies to use PowerShell syntax—that's more involved than a one-line change since the pattern appears across several recipes.
+
+For their immediate testing need, the pragmatic move is to just run the three npx commands directly on Windows rather than through `just`, sidestepping the shell issue entirely.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:23:47Z)**_
+
+Node is covered, and I found a real problem with what I shipped.
+
+**Node:** `nodejs-lts` is in the ungated base scoop block (`run_onchange_after_10_packages.ps1.tmpl:171`) — always installed, no prompt. So that concern is resolved; `npm install` will work.
+
+## Recommendation: clone separately for the first test
+
+A recipe is the wrong shape *right now*, for four reasons:
+
+1. **`ray develop` is a long-running foreground watcher, not an install step.** Wrapping it in a recipe hides that it never exits. You'd hit Ctrl-C and wonder whether it worked. (It does persist in root search afterwards — but that's a side effect of running it, not something a recipe makes clearer.)
+2. **You're debugging untested code.** The first Windows run is where you find out whether `getSelectedText()` works, whether the probe dirs are right, whether AI Extensions exist there at all. Indirection is exactly what you don't want in that loop.
+3. **Both dotfiles precedents produce a binary in `~/.local/bin`** — `upgrade-translate` (`go install`) and `specstory-build` (`pwsh -File ./scripts/build-specstory.ps1`). A Raycast extension isn't an artifact; it's a registration inside an app, and there's no `ray install` to make it idempotent.
+4. **Where does the clone live?** That's a decision the dotfiles repo would have to encode, and you don't know yet whether you want it on that box permanently.
+
+**Afterwards, yes — add one.** The repo's convention is a thin recipe delegating to `scripts/*.ps1`, plus a `backlog/` entry first (that repo has the discipline for it). By then you'll know the clone path and whether the thing works at all, which is precisely what the recipe would need to hardcode.
+
+## The problem I introduced
+
+**`just raycast-check` will probably not run on Windows**, and that's my fault. Compare:
+
+```make
+# windows-dotfiles/justfile — explicit
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+
+# translate/Justfile — nothing
+raycast-check:
+    cd raycast/extension && ([ -d node_modules ] || npm install) && npx ray build
+```
+
+`[ -d node_modules ] || npm install` is POSIX test syntax. `just` defaults to `sh`, so this only works if git's `sh.exe` is on PATH — and if you set `windows-shell` to pwsh to be safe, every one of those recipe bodies breaks instead. It's the trap the cross-platform reference names directly: *"just runs fine on Windows, but the recipes assume a POSIX shell."*
+
+**For the test, sidestep it** — run the stages directly from `raycast/extension`:
+
+```powershell
+npm install
+npx ray build          # generates raycast-env.d.ts
+npx tsc --noEmit -p tsconfig.json
+npx ray develop
+```
+
+Two options for a real fix, and I'd want your call before doing either: keep `sh` and just document the git-bash dependency (zero code change, works today if scoop's git is installed), or add `set windows-shell := pwsh` and rewrite the five `raycast-*` recipe bodies in PowerShell (more work, no hidden dependency). The second is more correct; the first is honest about a repo whose primary target is macOS.
+
+Want me to do one of those, and push `main` so `go install ...@main` picks up today's binary?
+
+---
+
+_**User (2026-07-28 08:25:53Z)**_
+
+我們有可能要嘛兩個Justfile 一個for Unix (POSIX)一個for Windows？ 或是它能自動detect寫在同個Justfile？
+
+---
+
+_**Agent (claude-opus-5 2026-07-28 08:26:11Z)**_
+
+<think><details><summary>Thought Process</summary>
+The user is asking whether `just` supports multiple Justfiles for different operating systems, or if it can auto-detect and handle both Unix and Windows within a single file. I'm recalling that `just` has platform-specific features like `set windows-shell` for configuring the shell on Windows only, and recipe attributes like `[windows]` to mark recipes that run only on specific platforms.
+
+The cleanest approach is using `[unix]` and `[windows]` attributes on recipes within one Justfile, which lets you define the same recipe name for different platforms and `just` picks the right one automatically. While you could technically use `import` to load separate files, `just` doesn't have OS-conditional imports, so that's less idiomatic. There are also `os()` and `os_family()` functions available for conditional logic within recipe bodies if needed.
+
+Let me verify this works as expected by testing the actual `just` binary locally — I'll create a test Justfile with duplicate recipe names using platform attributes and confirm it parses and runs correctly, then I can give you a concrete recommendation for your repo.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:26:13Z)**_
+
+Good question — `just` has a built-in answer for this. Let me verify against the actual binary rather than from memory.
+
+_**Agent (claude-opus-5 2026-07-28 08:26:14Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check just version
+
+`just --version; echo "=== does it know these? ==="; just --list-heading "" 2>/dev/null >/dev/null; man just 2>/dev/null | head -1 || true`
+
+```text
+just 1.46.0
+=== does it know these? ===
+just(1)                     General Commands Manual                    just(1)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:26:14Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Test per-platform recipe attributes
+
+```bash
+mkdir -p /tmp/justtest && cd /tmp/justtest && cat > Justfile <<'EOF'
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+
+[unix]
+hello:
+    echo "posix branch: $(uname)"
+
+[windows]
+hello:
+    Write-Host "windows branch"
+
+both:
+    @echo "os={{os()}} family={{os_family()}}"
+EOF
+echo "=== --list ===" && just --list && echo "=== run hello ===" && just hello && echo "=== run both ===" && just both
+```
+
+```text
+=== --list ===
+Available recipes:
+    both
+    hello
+=== run hello ===
+echo "posix branch: $(uname)"
+posix branch: Darwin
+=== run both ===
+os=macos family=unix
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:26:53Z)**_
+
+<think><details><summary>Thought Process</summary>
+So `just` 1.46.0 gives me the tools I need: I can define recipes with the same name using `[unix]` and `[windows]` attributes to auto-detect the platform, use `set windows-shell` for Windows-specific shell configuration, and leverage `os()` or `os_family()` for conditional logic. This means I can maintain a single Justfile that handles both Unix and Windows automatically.
+
+Now I'm checking whether `import` is available as an alternative for splitting into multiple files, and verifying that the `[unix]`/`[windows]` approach actually works with the real recipe bodies in our repo—particularly the five `raycast-*` recipes that have POSIX-specific syntax like the conditional directory checks and npm commands.
+
+Looking at which recipes genuinely need platform-specific variants: `raycast-dev`, `raycast-build`, and `raycast-verify` all use the `[ -d node_modules ]` pattern, while `raycast-scripts` is truly Unix-only since it runs `chmod +x` on shell scripts. The `install` recipe also uses `mkdir -p` and `install -m 0755`, and there's a minor issue with Go's output naming on Windows, but the core fix is straightforward—add `[unix]`/`[windows]` pairs to the recipes that need them and set `windows-shell` globally, then note which ones are Unix-only. Each line needs to cd into the directory separately since `just` runs them independently. I could use `npm --prefix` to avoid the cd altogether, making it idempotent even if slower, or explore shebang recipes, but those don't solve the Windows problem either. The cleanest approach is probably to consolidate the recipes and eliminate duplication.
+
+Actually, the real solution is to keep the recipe bodies shell-agnostic — `cd X && npx foo` works in both sh and pwsh 7. The only non-portable part is the directory check, so I'd split that into a private dependency recipe with platform-specific implementations, leaving the main build recipe unified. That way only one pair of recipes needs duplication instead of spreading it across multiple targets.
+
+Let me verify that `npm --prefix` works as expected and that recipes starting with `_` are actually hidden from `--list` output, then test this approach locally to confirm it's solid before recommending it.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:26:53Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Validate the minimal-duplication design
+
+```bash
+cd /tmp/justtest && cat > Justfile <<'EOF'
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+
+# private (leading _) — platform-split, the ONLY duplicated recipe
+[unix]
+_deps:
+    @[ -d sub/node_modules ] || echo "would: npm --prefix sub install"
+
+[windows]
+_deps:
+    if (-not (Test-Path sub/node_modules)) { npm --prefix sub install }
+
+# shared: `cd X && cmd` is valid in both sh and pwsh 7
+build: _deps
+    @echo "cd sub && npx ray build"
+
+[unix]
+unix-only:
+    @echo "chmod +x scripts/*.sh"
+EOF
+echo "=== --list (private hidden?) ===" && just --list && echo "=== run build ===" && just build
+```
+
+```text
+=== --list (private hidden?) ===
+Available recipes:
+    build     # shared: `cd X && cmd` is valid in both sh and pwsh 7
+    unix-only
+=== run build ===
+would: npm --prefix sub install
+cd sub && npx ray build
+Shell cwd was reset to /Users/david/src/tries/2026-07-09-translate-cli-tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:27:29Z)**_
+
+<think><details><summary>Thought Process</summary>
+I've confirmed the design approach works—the private `_deps` stays hidden from listings, platform-specific recipes with matching names only define the relevant variant, and shared recipes remain single. Now I'm ready to apply this to the translate repo's Justfile to unblock the Windows tests, starting with configuring the Windows PowerShell shell settings.
+
+For the raycast recipes, I need to split `_raycast-deps` by platform, then have `raycast-dev`, `raycast-build`, `raycast-lint`, `raycast-verify`, `raycast-check`, and `raycast-tool-schemas` all depend on it with shell-agnostic bodies. The `raycast-scripts` recipe is Unix-only since it runs bash script-commands, and the `install` recipe should be marked `[unix]` too since it uses `mkdir -p` and `install -m 0755`. The `build` recipe itself works cross-platform with `go build`, so I'll keep that flexible while being honest about what's actually platform-specific.
+
+I'm also noticing that `raycast-verify` uses backslash line continuations, which won't work in PowerShell — I'll need to flatten those into single lines or restructure them. Plus, recipes like `raycast-lint` and `raycast-check` prefix environment variables with `CI=true`, which is POSIX syntax; PowerShell needs `$env:CI='true'` instead. Let me pull the full Justfile and rewrite it carefully with all these splits in mind. Restructuring the recipes so `raycast-check` calls other recipes instead of inlining them, which keeps the CI=true logic in one place. I'm defining platform-specific versions of the dependency-checking recipe using `[unix]` and `[windows]` blocks, then having the main tasks depend on those rather than duplicating the logic. I realize the verify task works the same on both Unix and Windows since PowerShell 7 supports `&&`, so I can consolidate it into a single rule. Only the lint task needs platform-specific handling because of the `CI=true` environment variable syntax difference. I'm also creating a new `raycast-check` task that combines verify and lint, then runs the build.
+
+Now I'm thinking through the execution order — the dependencies run first, then the body commands execute. The build needs to generate `raycast-env.d.ts` before TypeScript checking, but lint doesn't depend on that file since it just checks the manifest, ESLint rules, and formatting. So the dependency chain works: verify and lint run first as gates, then build and type-checking follow.
+
+I'm considering calling `just raycast-lint` from within the recipe body to keep the CI environment variable centralized in one place, which feels cleaner than duplicating it. That spawns a sub-invocation of just, which is fine.
+
+Now I need to review the full Justfile structure — checking whether `raycast-scripts` and `install` should be marked as `[unix]` targets, then implement the changes.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:27:29Z)**_
+
+Verified: `just` 1.46 does exactly this. `[unix]`/`[windows]` on the **same recipe name** — only the matching one is defined, `--list` shows it once, and a leading `_` keeps the split helper private. So: **one Justfile, auto-detecting. Two files are unnecessary.**
+
+Let me read the current one and apply the minimal split.
+
+_**Agent (claude-opus-5 2026-07-28 08:27:29Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./Justfile`
+
+```text
+1	# translate — dev tasks (run `just` to list)
+2	
+3	# show available recipes
+4	default:
+5	    @just --list
+6	
+7	# build the binary into ./translate
+8	build:
+9	    go build -o translate .
+10	
+11	# run: `just run "hola mundo" --to en`  ·  `just run` for the TUI
+12	run *ARGS:
+13	    go run . {{ARGS}}
+14	
+15	# launch the interactive TUI
+16	tui:
+17	    go run .
+18	
+19	# dictionary lookup: `just define ephemeral`
+20	define WORD:
+21	    go run . define {{WORD}}
+22	
+23	# guided config wizard
+24	init:
+25	    go run . init
+26	
+27	# gofmt, vet, and build
+28	check: fmt vet build
+29	
+30	# format the source tree
+31	fmt:
+32	    gofmt -w cmd internal main.go
+33	
+34	# static analysis (scoped to the Go tree; skips raycast/extension/node_modules)
+35	vet:
+36	    go vet . ./cmd/... ./internal/...
+37	
+38	# tidy go.mod / go.sum
+39	tidy:
+40	    go mod tidy
+41	
+42	# run tests
+43	test:
+44	    go test ./cmd/... ./internal/...
+45	
+46	# install into ~/.local/bin (first on PATH; override with DIR=…)
+47	install DIR="~/.local/bin": build
+48	    mkdir -p {{DIR}}
+49	    install -m 0755 translate {{DIR}}/translate
+50	
+51	# remove build artifacts
+52	clean:
+53	    rm -f translate
+54	
+55	# make the Raycast script-commands executable + show how to add them
+56	raycast-scripts:
+57	    chmod +x raycast/script-commands/*.sh
+58	    @echo "Add in Raycast → Settings → Extensions → Script Commands → Add Script Directory:"
+59	    @echo "  {{justfile_directory()}}/raycast/script-commands"
+60	
+61	# run the TS extension in dev (registers it in Raycast; persists after you stop)
+62	raycast-dev:
+63	    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run dev
+64	
+65	# type-check / build the extension bundle (does NOT install into Raycast)
+66	# NOTE: `ray build` defaults to -e dev, where esbuild STRIPS types without
+67	# checking them — a genuine type error still prints "built successfully".
+68	# Use `raycast-check` before trusting a build.
+69	raycast-build:
+70	    cd raycast/extension && ([ -d node_modules ] || npm install) && npm run build
+71	
+72	# lint the extension with the Raycast eslint config
+73	raycast-lint:
+74	    cd raycast/extension && ([ -d node_modules ] || npm install) && CI=true npm run lint
+75	
+76	# assert the pure modules (no test runner in a Raycast extension — see
+77	# src/lib/dev-check.ts for why, and for the import discipline it depends on)
+78	raycast-verify:
+79	    cd raycast/extension && ([ -d node_modules ] || npm install) \
+80	      && npx tsc --outDir .build/verify --module commonjs --target ES2022 \
+81	           --lib ES2023 --esModuleInterop --strict src/lib/dev-check.ts \
+82	      && node .build/verify/dev-check.js
+83	
+84	# THE GATE. Each stage catches what the others miss:
+85	#   verify   our own invariants: both shortcut branches, table normalisation
+86	#   build    that esbuild can bundle it, that the tool schemas extract — and it
+87	#            GENERATES raycast-env.d.ts, which is gitignored, so it must run
+88	#            before tsc or a fresh clone has no Preferences/Arguments globals
+89	#   tsc      types (`ray build -e dev` does not typecheck at all)
+90	#   lint     manifest schema, icons, ESLint, Prettier, reserved shortcuts —
+91	#            and, ONLY under CI=true, that package-lock.json points at
+92	#            registry.npmjs.org (a mirror in your global npm config writes a
+93	#            lockfile the Raycast store rejects)
+94	#   dist     the build the store actually produces — this one DOES run tsc
+95	raycast-check: raycast-verify
+96	    cd raycast/extension && npx ray build
+97	    cd raycast/extension && npx tsc --noEmit -p tsconfig.json
+98	    cd raycast/extension && CI=true npx ray lint
+99	    cd raycast/extension && npx ray build -e dist
+100	
+101	# print the JSON schemas Raycast AI will see for each tool in src/tools/.
+102	# Read it — a field with no "description", or empty "properties", ships a tool
+103	# the model has to guess at, and neither lint nor build complains.
+104	raycast-tool-schemas:
+105	    cd raycast/extension && npx ray build --print-tool-schemas
+106	
+107
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:27:42Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/Justfile has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:28:13Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/Justfile has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:28:21Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify the Justfile parses and picks unix branches
+
+`just --list && echo "=== unix branch resolves? ===" && just --dry-run raycast-lint 2>&1 | head -3 && just --dry-run install 2>&1 | head -3`
+
+```text
+Available recipes:
+    build                      # build the binary into ./translate
+    check                      # gofmt, vet, and build
+    clean                      # remove build artifacts
+    default                    # show available recipes
+    define WORD                # dictionary lookup: `just define ephemeral`
+    fmt                        # format the source tree
+    init                       # guided config wizard
+    install DIR="~/.local/bin" # which is what the windows-dotfiles chezmoi script does.
+    raycast-build              # Use `raycast-check` before trusting a build.
+    raycast-check              # per-platform in exactly one place.
+    raycast-dev                # run the TS extension in dev (registers it in Raycast; persists after you stop)
+    raycast-lint               # spells the same thing `$env:VAR='x'`.
+    raycast-scripts            # equivalent surface.
+    raycast-tool-schemas       # the model has to guess at, and neither lint nor build complains.
+    raycast-verify             # backtick), and `just` runs each line in its own shell anyway.
+    run *ARGS                  # run: `just run "hola mundo" --to en`  ·  `just run` for the TUI
+    test                       # run tests
+    tidy                       # tidy go.mod / go.sum
+    tui                        # launch the interactive TUI
+    vet                        # static analysis (scoped to the Go tree; skips raycast/extension/node_modules)
+=== unix branch resolves? ===
+[ -d raycast/extension/node_modules ] || npm --prefix raycast/extension install
+cd raycast/extension && CI=true npx ray lint
+go build -o translate .
+mkdir -p ~/.local/bin
+install -m 0755 translate ~/.local/bin/translate
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:28:42Z)**_
+
+<think><details><summary>Thought Process</summary>
+The issue is that `--list` is showing the last line of multi-line comment blocks as descriptions, which looks messy. I need to restructure the comments so the line immediately above each recipe (or its attribute) is a clean, single-line description, matching how `just` handles documentation.
+
+I could use the `[doc("...")]` attribute since it's supported in just 1.27+, but the simpler approach is to reorganize each comment block so the final line before the recipe is the summary — keeping longer explanations above it. Let me go through the affected recipes and restructure their comments accordingly.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:28:42Z)**_
+
+Works, but `--list` is now showing the last comment line as each description. Fixing with explicit `[doc]` attributes.
+
+_**Agent (claude-opus-5 2026-07-28 08:28:43Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Add explicit doc attributes and re-list
+
+```bash
+python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("Justfile"); s = p.read_text()
+
+docs = {
+ "install DIR=":            "install into ~/.local/bin (first on PATH; override with DIR=…)",
+ "raycast-scripts:":        "make the Raycast script-commands executable + show how to add them",
+ "raycast-build:":          "build the extension bundle (does NOT typecheck — see raycast-check)",
+ "raycast-lint:":           "lint the extension with the Raycast eslint config (CI mode)",
+ "raycast-verify:":         "assert the pure modules via src/lib/dev-check.ts",
+ "raycast-check:":          "THE GATE: verify → build → tsc → lint → dist",
+ "raycast-tool-schemas:":   "print the JSON schemas Raycast AI sees for each src/tools/ entry",
+}
+
+lines = s.split("\n")
+out = []
+for i, ln in enumerate(lines):
+    stripped = ln.strip()
+    for key, doc in docs.items():
+        if ln.startswith(key):
+            # walk back over any [attr] lines already emitted and insert doc first
+            attrs = []
+            while out and out[-1].strip().startswith("[") and out[-1].strip().endswith("]"):
+                attrs.insert(0, out.pop())
+            out.append(f'[doc("{doc}")]')
+            out.extend(attrs)
+            break
+    out.append(ln)
+p.write_text("\n".join(out))
+print("ok")
+PY
+just --list
+```
+
+```text
+ok
+Available recipes:
+    build                      # build the binary into ./translate
+    check                      # gofmt, vet, and build
+    clean                      # remove build artifacts
+    default                    # show available recipes
+    define WORD                # dictionary lookup: `just define ephemeral`
+    fmt                        # format the source tree
+    init                       # guided config wizard
+    install DIR="~/.local/bin" # install into ~/.local/bin (first on PATH; override with DIR=…)
+    raycast-build              # build the extension bundle (does NOT typecheck — see raycast-check)
+    raycast-check              # THE GATE: verify → build → tsc → lint → dist
+    raycast-dev                # run the TS extension in dev (registers it in Raycast; persists after you stop)
+    raycast-lint               # lint the extension with the Raycast eslint config (CI mode)
+    raycast-scripts            # make the Raycast script-commands executable + show how to add them
+    raycast-tool-schemas       # print the JSON schemas Raycast AI sees for each src/tools/ entry
+    raycast-verify             # assert the pure modules via src/lib/dev-check.ts
+    run *ARGS                  # run: `just run "hola mundo" --to en`  ·  `just run` for the TUI
+    test                       # run tests
+    tidy                       # tidy go.mod / go.sum
+    tui                        # launch the interactive TUI
+    vet                        # static analysis (scoped to the Go tree; skips raycast/extension/node_modules)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:28:49Z)**_
+
+Now the real test — the full gate still has to pass end to end.
+
+_**Agent (claude-opus-5 2026-07-28 08:29:23Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run the restructured gate
+
+`rm -rf raycast/extension/.build && just raycast-check 2>&1 | grep -E "FAIL|error|all checks passed|ready|checked TypeScript" | head -15; echo "EXIT=$?"`
+
+```text
+all checks passed
+ready  - built extension successfully
+ready  - validate package.json file
+ready  - validate package-lock.json
+ready  - validate other lock files
+ready  - validate extension icons
+ready  - validate extension metadata
+ready  - run ESLint
+ready  - run Prettier 3.9.6
+info  - checked TypeScript
+ready  - built extension successfully
+EXIT=0
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:29:34Z)**_
+
+<think><details><summary>Thought Process</summary>
+I'm verifying that the `_raycast-deps` task doesn't reinstall dependencies when node_modules already exists, then I need to commit these changes and update the Windows setup instructions in the README since the `just` command now handles everything those manual npx commands used to do.
+</details></think>
+
+_**Agent (claude-opus-5 2026-07-28 08:29:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check README dev-loop instructions
+
+`grep -n "just \|npx\|npm run" raycast/README.md | head -20`
+
+```text
+18:just install                                  # → ~/.local/bin/translate
+29:just raycast-scripts   # chmod +x the scripts and print the directory to add
+43:just raycast-dev       # npm install (first run) + `ray develop`
+57:(browse/search past translations). `just raycast-build` / `just raycast-lint`
+94:  and `just raycast-verify` asserts both branches exist.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:29:58Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Users/david/src/tries/2026-07-09-translate-cli-tui/raycast/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:30:12Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit the cross-platform Justfile
+
+```bash
+git add Justfile raycast/README.md && git commit -q -F - <<'EOF' && git log --oneline -1 && git status --short
+build: make the Justfile run on Windows as well as Unix
+
+`just` defaults to `sh` on every platform, so the raycast-* recipes —
+`cd X && ([ -d node_modules ] || npm install) && …`, a `\` line
+continuation, a `CI=true cmd` prefix — would have failed on the Windows
+box they were about to be run on. Declaring platforms: ["Windows"] and
+shipping a gate that cannot execute there is not much of a gate.
+
+ONE Justfile, not two. `just` selects a recipe by its [unix] / [windows]
+attribute, so the same name carries two bodies and `just --list` still
+shows it once. Exactly two recipes needed splitting: _raycast-deps
+(POSIX test syntax, no pwsh equivalent) and raycast-lint (a VAR=x prefix,
+which pwsh spells $env:VAR='x'). Everything else runs unchanged on both,
+because pwsh 7 does support `&&` — so the duplication is two recipes
+rather than ten. raycast-check now invokes lint as a sub-`just` instead
+of inlining it, keeping CI=true spelled per-platform in one place.
+
+`set windows-shell` is the line that matters most: without it `just`
+reaches for `sh` on Windows and a POSIX-only recipe fails with "program
+not found" rather than anything that points at the real cause.
+
+Also marks install/clean/raycast-scripts [unix] (they use mkdir -p,
+install -m, chmod, and the script-commands are bash), gives clean a
+Windows twin, and adds [doc(…)] attributes so `--list` shows a summary
+instead of the last line of each explanatory comment block.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+EOF
+```
+
+```text
+c27cdef build: make the Justfile run on Windows as well as Unix
+ M .specstory/history/2026-07-28_04-08-08Z-explore-the-raycast-extension.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-5 2026-07-28 08:30:31Z)**_
+
+Answering the question directly: **one Justfile, auto-detecting.** Two files aren't needed, and `just` 1.46 has first-class support for this — I verified it against the binary rather than trusting memory.
+
+## The mechanism
+
+```make
+[unix]
+_raycast-deps:
+    @[ -d raycast/extension/node_modules ] || npm --prefix raycast/extension install
+
+[windows]
+_raycast-deps:
+    @if (-not (Test-Path raycast/extension/node_modules)) { npm --prefix raycast/extension install }
+```
+
+The **same recipe name** declared twice with `[unix]` / `[windows]` attributes — `just` defines only the matching one, and `just --list` still shows it once. The leading `_` makes it private, so it stays out of the listing entirely.
+
+## What actually had to be split: two recipes, not ten
+
+That was the interesting part. pwsh 7 **does** support `&&`, so `cd X && npx foo` runs identically under `sh` and PowerShell. Only genuinely POSIX-specific syntax needed twins:
+
+| Recipe | Why it needed splitting |
+|---|---|
+| `_raycast-deps` | `[ -d … ] \|\| …` is POSIX `test`; no pwsh equivalent |
+| `raycast-lint` | `CI=true cmd` is a POSIX env prefix; pwsh spells it `$env:CI='true'` |
+
+Everything else stayed single. `raycast-verify`'s `\` line continuation became one long line (pwsh uses a backtick, and `just` runs each line in its own shell anyway), and `raycast-check` now calls `just raycast-lint` as a sub-invocation rather than inlining `CI=true`, so that one platform difference is spelled in exactly one place.
+
+The single most important line is the one that isn't a recipe:
+
+```make
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+```
+
+Without it `just` reaches for `sh` on Windows — its default on *every* platform — and a POSIX-only recipe fails with "program not found" rather than anything that points at the actual cause.
+
+I also marked `install` / `clean` / `raycast-scripts` as `[unix]` (they use `mkdir -p`, `install -m`, `chmod`, and Script Commands are bash), gave `clean` a Windows twin, and added `[doc(…)]` attributes — without those, `--list` was showing the last line of each explanatory comment block as the description, which read as nonsense.
+
+Gate re-run from a cleared `.build/`: green. Committed as `c27cdef`.
+
+So the Windows dev loop is now just `just raycast-check` then `just raycast-dev`, same as here — I've updated `raycast/README.md`'s checklist accordingly and added a seventh item: confirm whether `@translate` shows up in Quick AI at all, since no Raycast doc says whether AI Extensions exist on Windows.
+
+Still outstanding from earlier, and still your call: **push `main`** so `go install ...@main` gets today's binary onto that box — otherwise you'll be testing the extension against v0.5.2, which predates the table directive and `--learn-mode`.

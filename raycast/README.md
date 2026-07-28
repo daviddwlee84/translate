@@ -105,6 +105,16 @@ make Chinese lookups ~20× faster without re-downloading.
 `extension/src/lib/platform/` differs (binary name, probe dirs, install hints).
 The Go binary is pure Go and cross-compiles with `GOOS=windows go build`.
 
+**The `just` recipes work on both platforms.** One Justfile, not two: `just`
+selects a recipe by its `[unix]` / `[windows]` attribute, so the same name can
+carry two bodies and `just --list` still shows it once. Only two recipes are
+actually split — `_raycast-deps` (`[ -d … ] ||` is POSIX test syntax) and
+`raycast-lint` (`CI=true cmd` is POSIX; pwsh spells it `$env:CI='true'`) —
+because pwsh 7 does support `&&`, so everything else runs unchanged on both.
+`set windows-shell` at the top is what stops `just` reaching for `sh`, which is
+its default everywhere and fails on Windows with a confusing "program not
+found" rather than a syntax error.
+
 **Not yet verified on Windows hardware.** Before trusting it, run through:
 
 1. `go install github.com/daviddwlee84/translate@latest`; confirm
@@ -112,12 +122,17 @@ The Go binary is pure Go and cross-compiles with `GOOS=windows go build`.
    no Windows release artifact yet, see
    [`../backlog/release-binaries.md`](../backlog/release-binaries.md).)
 2. `translate init`, then `translate "hola" --to en` from PowerShell.
-3. **Open each command from Raycast root search, not the `ray develop` console.**
+3. `just raycast-check`, then `just raycast-dev`. Node ≥ 22.14 and npm ≥ 7 are
+   required; Raycast for Windows needs Windows 10 21H2+ or 11.
+4. **Open each command from Raycast root search, not the `ray develop` console.**
    The console inherits your interactive environment and hides exactly the class
    of bug this checklist exists for.
-4. Check every action shows a Ctrl-based key in the action panel.
-5. Confirm whether `getSelectedText()` works. Both call sites already fall back
+5. Check every action shows a Ctrl-based key in the action panel.
+6. Confirm whether `getSelectedText()` works. Both call sites already fall back
    to the clipboard, so record the answer rather than assuming either way.
+7. Confirm whether `@translate` appears in Quick AI at all. No Raycast doc states
+   whether AI Extensions exist on Windows; if it is missing, that is the likely
+   reason rather than anything in the manifest.
 
 The bash script-commands in `script-commands/` stay macOS/Linux only.
 
