@@ -90,11 +90,23 @@ func LLMFromProvider(p *config.Provider, model string) *engine.LLMEngine {
 	if model == "" {
 		model = p.Model
 	}
+	tier := "default"
+	switch model {
+	case p.ModelFast:
+		tier = "fast"
+	case p.ModelMax:
+		tier = "max"
+	}
 	return engine.NewLLM(engine.LLMConfig{
 		Name:      p.Name,
 		BaseURL:   p.BaseURL,
 		Model:     model,
 		APIKeyEnv: p.APIKeyEnv,
+		// copilot-proxy's entitlement-backed catalog changes independently of
+		// translate releases. Treat configured ids as preferences and repair a
+		// stale/unserved choice from the live usable catalog at request time.
+		AutoModel: p.Name == "copilot",
+		Tier:      tier,
 	})
 }
 

@@ -221,9 +221,10 @@ type SmartDict struct {
 	DefineDefault bool   `toml:"define_default"`   // `translate define` uses smart-dict when a provider is available
 }
 
-// Recommended copilot-proxy model ids per tier. Claude models are served via the
-// Anthropic Messages API (/v1/messages); the LLM engine routes them there
-// automatically (they 400 on /chat/completions).
+// Preferred copilot-proxy model ids per tier. They are preferences rather than
+// permanent pins: the LLM engine checks the live Copilot catalog and selects the
+// strongest transport-usable alternative in the same tier when entitlement or
+// catalog changes make one unavailable.
 const (
 	ModelDefault = "claude-sonnet-5"  // balanced
 	ModelFast    = "claude-haiku-4-5" // snappy — the out-of-box default tier

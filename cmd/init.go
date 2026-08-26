@@ -129,8 +129,9 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	cfg.General.Instructions = strings.TrimSpace(instructions)
 	cfg.General.Pair = pair
 	cfg.General.PairWith = pairWith
-	// Refresh copilot model ids to the verified-working recommendations (repairs
-	// configs written before a model id changed / was un-served by the proxy).
+	// Refresh copilot model preferences. Runtime resolution checks these against
+	// the live catalog, so a later entitlement/catalog change does not strand the
+	// installed config on an unserved id.
 	if p := cfg.ProviderByName("copilot"); p != nil {
 		p.Model, p.ModelFast, p.ModelMax = config.ModelDefault, config.ModelFast, config.ModelMax
 	}

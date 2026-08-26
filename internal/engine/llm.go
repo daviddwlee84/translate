@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/daviddwlee84/translate/internal/debug"
 	"github.com/daviddwlee84/translate/internal/lang"
 )
 
@@ -25,6 +26,11 @@ type LLMConfig struct {
 	BaseURL   string // e.g. "http://localhost:4141/v1"
 	Model     string // e.g. "claude-sonnet-5"
 	APIKeyEnv string // env var holding the key; "" => no Authorization header
+	// AutoModel consults the live model catalog before a request. When Model is
+	// no longer served (common for copilot-proxy entitlement/catalog changes),
+	// the strongest model in Tier usable by this engine is selected automatically.
+	AutoModel bool
+	Tier      string // default | fast | max; used only by AutoModel fallback
 	// Timeout is the whole-request ceiling (0 => 10m). It exists to stop a wedged
 	// connection hanging a front-end, NOT to bound generation: a document-sized
 	// translation legitimately runs for minutes.
@@ -148,6 +154,40 @@ type streamDelta struct {
 	} `json:"choices"`
 }
 
+// --- OpenAI Responses API wire types (/v1/responses) ---
+
+type responsesRequest struct {
+	Model           string `json:"model"`
+	Instructions    string `json:"instructions,omitempty"`
+	Input           string `json:"input"`
+	MaxOutputTokens int    `json:"max_output_tokens,omitempty"`
+	Stream          bool   `json:"stream"`
+}
+
+type responsesResponse struct {
+	Status            string `json:"status"`
+	IncompleteDetails any    `json:"incomplete_details"`
+	Output            []struct {
+		Type    string `json:"type"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"output"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+type responsesStreamEvent struct {
+	Type  string `json:"type"`
+	Delta string `json:"delta"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Response *responsesResponse `json:"response"`
+}
+
 // --- Anthropic Messages API wire types (/v1/messages) ---
 
 // anthropicMaxTokens is the *floor* for the output cap, enough for any short
@@ -229,9 +269,25 @@ func isAnthropicModel(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "claude")
 }
 
+type modelTransport int
+
+const (
+	transportChat modelTransport = iota
+	transportAnthropic
+	transportResponses
+)
+
+func inferTransport(model string) modelTransport {
+	if isAnthropicModel(model) {
+		return transportAnthropic
+	}
+	return transportChat
+}
+
 // Translate performs a translation, streaming tokens when req.Stream is set.
 // It always returns a channel that closes after exactly one terminal chunk, and
-// dispatches to the Anthropic Messages API for Claude models.
+// dispatches to Anthropic Messages, OpenAI Responses, or Chat Completions based
+// on the selected model's live endpoint metadata.
 func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, error) {
 	// A bilingual doc request carries its content in Segments, not Text.
 	if strings.TrimSpace(req.Text) == "" && !(req.Bilingual && len(req.Segments) > 0) {
@@ -243,14 +299,56 @@ func (e *LLMEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, e
 	if req.Model != "" && (req.ModelProvider == "" || req.ModelProvider == e.cfg.Name) {
 		model = NormalizeModelID(req.Model)
 	}
+	transport := inferTransport(model)
+	if e.cfg.AutoModel {
+		model, transport = e.resolveModel(ctx, model)
+	}
 	// A backstop for a wedged connection. The goroutines below own the cancel:
 	// they run past this function's return, so cancelling here would kill the
 	// stream immediately.
 	ctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-	if isAnthropicModel(model) {
+	switch transport {
+	case transportAnthropic:
 		return e.translateAnthropic(ctx, req, cancel, model)
+	case transportResponses:
+		return e.translateResponses(ctx, req, cancel, model)
+	default:
+		return e.translateOpenAI(ctx, req, cancel, model)
 	}
-	return e.translateOpenAI(ctx, req, cancel, model)
+}
+
+// resolveModel keeps the requested model when it is live and transport-usable;
+// otherwise it picks the best usable model from the provider's current catalog.
+// Catalog failures are non-fatal: retaining the configured id preserves the
+// existing request/chain fallback behavior when the proxy itself is down.
+func (e *LLMEngine) resolveModel(ctx context.Context, requested string) (string, modelTransport) {
+	probeCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+	defer cancel()
+	catalog, err := e.modelCatalog(probeCtx)
+	if err != nil || len(catalog) == 0 {
+		return requested, inferTransport(requested)
+	}
+	models := make([]string, 0, len(catalog))
+	for _, model := range catalog {
+		if !usableModel(model.ID, model.SupportedEndpoints) {
+			continue
+		}
+		models = append(models, model.ID)
+		if strings.EqualFold(NormalizeModelID(model.ID), requested) {
+			return NormalizeModelID(model.ID), transportForModel(model.ID, model.SupportedEndpoints)
+		}
+	}
+	selected := pickBestModel(models, e.cfg.Tier)
+	if selected == "" {
+		return requested, inferTransport(requested)
+	}
+	for _, model := range catalog {
+		if strings.EqualFold(NormalizeModelID(model.ID), selected) {
+			debug.Logf("%s: model %q is not in the live usable catalog; auto-selected %q for tier %q", e.cfg.Name, requested, selected, e.cfg.Tier)
+			return selected, transportForModel(model.ID, model.SupportedEndpoints)
+		}
+	}
+	return selected, inferTransport(selected)
 }
 
 // ModelLister is implemented by engines that can enumerate their models.
@@ -258,17 +356,34 @@ type ModelLister interface {
 	Models(ctx context.Context) ([]string, error)
 }
 
+type modelInfo struct {
+	ID                 string   `json:"id"`
+	SupportedEndpoints []string `json:"supported_endpoints"`
+}
+
 type modelsResponse struct {
-	Data []struct {
-		ID                 string   `json:"id"`
-		SupportedEndpoints []string `json:"supported_endpoints"`
-	} `json:"data"`
+	Data []modelInfo `json:"data"`
 }
 
 // Models fetches the provider's model ids, keeping only those usable through the
-// transports this engine speaks: OpenAI /chat/completions, or (for claude-*) the
-// Anthropic /v1/messages endpoint. Ids needing only /responses are dropped.
+// transports this engine speaks: OpenAI /chat/completions, OpenAI /responses, or
+// (for claude-*) the Anthropic /v1/messages endpoint.
 func (e *LLMEngine) Models(ctx context.Context) ([]string, error) {
+	catalog, err := e.modelCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, model := range catalog {
+		if usableModel(model.ID, model.SupportedEndpoints) {
+			out = append(out, model.ID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (e *LLMEngine) modelCatalog(ctx context.Context) ([]modelInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.endpoint("/models"), nil)
@@ -288,28 +403,46 @@ func (e *LLMEngine) Models(ctx context.Context) ([]string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&mr); err != nil {
 		return nil, err
 	}
-	var out []string
-	for _, m := range mr.Data {
-		if usableModel(m.ID, m.SupportedEndpoints) {
-			out = append(out, m.ID)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
+	return mr.Data, nil
 }
 
 // usableModel reports whether a model id can be driven by this engine.
 func usableModel(id string, endpoints []string) bool {
+	if strings.Contains(strings.ToLower(id), "embedding") {
+		return false
+	}
 	if isAnthropicModel(id) {
 		return true // routed via /v1/messages
 	}
 	for _, ep := range endpoints {
-		if ep == "/chat/completions" {
+		if ep == "/chat/completions" || ep == "/responses" {
 			return true
 		}
 	}
 	// No endpoint metadata (e.g. Ollama) => assume chat-usable.
 	return len(endpoints) == 0
+}
+
+func transportForModel(id string, endpoints []string) modelTransport {
+	if isAnthropicModel(id) {
+		return transportAnthropic
+	}
+	hasChat, hasResponses := false, false
+	for _, endpoint := range endpoints {
+		switch endpoint {
+		case "/chat/completions":
+			hasChat = true
+		case "/responses":
+			hasResponses = true
+		}
+	}
+	if hasChat {
+		return transportChat
+	}
+	if hasResponses {
+		return transportResponses
+	}
+	return transportChat
 }
 
 // finalize builds the terminal result from the accumulated translation text.
@@ -465,6 +598,164 @@ func markTruncated(res *TranslateResult) {
 	res.Truncated = true
 	res.Warnings = append(res.Warnings,
 		"output was cut off before completion (stream truncated) — press Enter to retry")
+}
+
+func responseOutputText(response *responsesResponse) string {
+	if response == nil {
+		return ""
+	}
+	var full strings.Builder
+	for _, output := range response.Output {
+		if output.Type != "message" {
+			continue
+		}
+		for _, content := range output.Content {
+			if content.Type == "output_text" {
+				full.WriteString(content.Text)
+			}
+		}
+	}
+	return full.String()
+}
+
+// translateResponses uses the OpenAI Responses API. copilot-proxy exposes its
+// newest GPT tiers (including gpt-5.6-sol/terra/luna) only on this endpoint.
+func (e *LLMEngine) translateResponses(ctx context.Context, req Request, cancel context.CancelFunc, model string) (<-chan Chunk, error) {
+	ok := false
+	defer func() {
+		if !ok {
+			cancel()
+		}
+	}()
+	system, user := promptFor(req)
+	stream := req.Stream && !req.Learn && !req.Bilingual
+	floor := anthropicMaxTokens
+	if req.Learn || req.Bilingual {
+		floor = learnMaxTokens
+	}
+	body := responsesRequest{
+		Model:           model,
+		Instructions:    system,
+		Input:           user,
+		MaxOutputTokens: outputTokenBudget(user, floor),
+		Stream:          stream,
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint("/responses"), bytes.NewReader(buf))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if stream {
+		httpReq.Header.Set("Accept", "text/event-stream")
+	}
+	e.auth(httpReq)
+
+	ch := make(chan Chunk, 32)
+	ok = true
+	go func() {
+		defer cancel()
+		defer close(ch)
+		resp, err := e.http.Do(httpReq)
+		if err != nil {
+			ch <- Chunk{Kind: ChunkError, Err: fmt.Errorf("%s: %w", e.cfg.Name, err)}
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			ch <- Chunk{Kind: ChunkError, Err: e.httpError(resp)}
+			return
+		}
+
+		var full strings.Builder
+		complete := true
+		if stream {
+			complete, err = e.readResponsesSSE(ctx, resp.Body, ch, &full)
+			if err != nil {
+				ch <- Chunk{Kind: ChunkError, Err: err}
+				return
+			}
+		} else {
+			var response responsesResponse
+			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				ch <- Chunk{Kind: ChunkError, Err: fmt.Errorf("%s: decode response: %w", e.cfg.Name, err)}
+				return
+			}
+			if response.Error != nil {
+				ch <- Chunk{Kind: ChunkError, Err: fmt.Errorf("%s: %s", e.cfg.Name, response.Error.Message)}
+				return
+			}
+			full.WriteString(responseOutputText(&response))
+			complete = response.Status != "incomplete"
+		}
+		if full.Len() == 0 {
+			ch <- Chunk{Kind: ChunkError, Err: fmt.Errorf("%s: empty response", e.cfg.Name)}
+			return
+		}
+		res := e.finalizeResult(full.String(), model, req)
+		if !complete {
+			markTruncated(res)
+		}
+		ch <- Chunk{Kind: ChunkDone, Result: res}
+	}()
+	return ch, nil
+}
+
+func (e *LLMEngine) readResponsesSSE(ctx context.Context, r io.Reader, ch chan<- Chunk, full *strings.Builder) (bool, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	completed := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(line[len("data:"):])
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var event responsesStreamEvent
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			continue
+		}
+		switch event.Type {
+		case "response.output_text.delta":
+			if event.Delta == "" {
+				continue
+			}
+			full.WriteString(event.Delta)
+			select {
+			case ch <- Chunk{Kind: ChunkToken, Text: event.Delta}:
+			case <-ctx.Done():
+				return false, fmt.Errorf("%s: %w", e.cfg.Name, ctx.Err())
+			}
+		case "response.completed":
+			completed = true
+			if full.Len() == 0 {
+				full.WriteString(responseOutputText(event.Response))
+			}
+		case "response.incomplete":
+			if full.Len() == 0 {
+				full.WriteString(responseOutputText(event.Response))
+			}
+			return false, nil
+		case "response.failed", "error":
+			message := "responses request failed"
+			if event.Error != nil && event.Error.Message != "" {
+				message = event.Error.Message
+			} else if event.Response != nil && event.Response.Error != nil && event.Response.Error.Message != "" {
+				message = event.Response.Error.Message
+			}
+			return false, fmt.Errorf("%s: %s", e.cfg.Name, message)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("%s: read stream: %w", e.cfg.Name, err)
+	}
+	return completed, nil
 }
 
 // translateOpenAI uses the OpenAI /chat/completions endpoint.

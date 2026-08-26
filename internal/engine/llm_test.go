@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -170,6 +171,67 @@ func TestOpenAIStreamCompleteness(t *testing.T) {
 	}
 }
 
+func TestResponsesStreamCompleteness(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantText  string
+		wantClean bool
+	}{
+		{
+			name: "complete",
+			body: `event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"你好"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"世界"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"status":"completed"}}
+`,
+			wantText:  "你好世界",
+			wantClean: true,
+		},
+		{
+			name: "dropped",
+			body: `event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"你好"}
+`,
+			wantText:  "你好",
+			wantClean: false,
+		},
+		{
+			name: "incomplete",
+			body: `event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"你好"}
+
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"status":"incomplete"}}
+`,
+			wantText:  "你好",
+			wantClean: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := NewLLM(LLMConfig{Name: "copilot", BaseURL: "http://127.0.0.1:1", Model: "gpt-5.6-terra"})
+			chunks := make(chan Chunk, 8)
+			var full strings.Builder
+			clean, err := e.readResponsesSSE(context.Background(), strings.NewReader(tc.body), chunks, &full)
+			if err != nil {
+				t.Fatalf("readResponsesSSE: %v", err)
+			}
+			if clean != tc.wantClean {
+				t.Fatalf("complete = %v, want %v", clean, tc.wantClean)
+			}
+			if full.String() != tc.wantText {
+				t.Fatalf("text = %q, want %q", full.String(), tc.wantText)
+			}
+		})
+	}
+}
+
 // A mid-stream Anthropic error event must surface as a terminal error, not a
 // silently-truncated success.
 func TestAnthropicStreamErrorEvent(t *testing.T) {
@@ -286,5 +348,98 @@ func TestNewLLMHasNoClientTimeout(t *testing.T) {
 	}
 	if e.cfg.Timeout != defaultRequestTimeout {
 		t.Fatalf("cfg.Timeout = %v, want the %v default", e.cfg.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestCopilotAutoModelReplacesUnavailablePreference(t *testing.T) {
+	var requestedModel, requestedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":"gpt-5.6-sol","supported_endpoints":["/responses"]},
+				{"id":"gpt-5.6-terra","supported_endpoints":["/responses"]},
+				{"id":"gpt-5.4","supported_endpoints":["/responses","/chat/completions"]},
+				{"id":"gemini-3.1-pro-preview","supported_endpoints":["/chat/completions"]},
+				{"id":"text-embedding-3-small","supported_endpoints":[]}
+			]}`))
+		case "/responses":
+			requestedPath = r.URL.Path
+			var body responsesRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode responses request: %v", err)
+			}
+			requestedModel = body.Model
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"恐龍"}]}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	e := NewLLM(LLMConfig{
+		Name: "copilot", BaseURL: srv.URL, Model: "claude-sonnet-5", AutoModel: true, Tier: "default",
+	})
+	ch, err := e.Translate(context.Background(), Request{
+		Text: "dinosaur", Source: "auto", Target: "zh-TW", Mode: ModeTranslate,
+	})
+	if err != nil {
+		t.Fatalf("Translate setup: %v", err)
+	}
+	res, err := Drain(ch, nil)
+	if err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if requestedPath != "/responses" {
+		t.Fatalf("request path = %q, want /responses", requestedPath)
+	}
+	if requestedModel != "gpt-5.6-terra" {
+		t.Fatalf("request model = %q, want gpt-5.6-terra", requestedModel)
+	}
+	if res.Model != "gpt-5.6-terra" {
+		t.Fatalf("result model = %q, want gpt-5.6-terra", res.Model)
+	}
+}
+
+func TestCopilotAutoModelKeepsLivePreference(t *testing.T) {
+	var requestedModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":"gpt-5.4","supported_endpoints":["/chat/completions"]},
+				{"id":"gpt-5-mini","supported_endpoints":["/chat/completions"]}
+			]}`))
+		case "/chat/completions":
+			var body chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode chat request: %v", err)
+			}
+			requestedModel = body.Model
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"你好"},"finish_reason":"stop"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	e := NewLLM(LLMConfig{
+		Name: "copilot", BaseURL: srv.URL, Model: "gpt-5-mini", AutoModel: true,
+	})
+	ch, err := e.Translate(context.Background(), Request{
+		Text: "hello", Source: "auto", Target: "zh-TW", Mode: ModeTranslate,
+	})
+	if err != nil {
+		t.Fatalf("Translate setup: %v", err)
+	}
+	if _, err := Drain(ch, nil); err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if requestedModel != "gpt-5-mini" {
+		t.Fatalf("request model = %q, want configured live model gpt-5-mini", requestedModel)
 	}
 }

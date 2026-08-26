@@ -86,10 +86,15 @@ token** (so a down provider switches cleanly; a mid-stream error surfaces rather
 than restarting):
 
 - **copilot-proxy** — OpenAI-compatible at `http://localhost:4141/v1`, no API key.
-  Default tier is **fast** (`claude-haiku-4-5`); `--tier default` → `claude-sonnet-5`,
-  `--tier max` → `claude-opus-4-8`. Claude models are served only via the proxy's
-  Anthropic Messages endpoint (`/v1/messages`) — the engine routes `claude-*` ids
-  there automatically (they 400 on `/chat/completions`).
+  Default tier is **fast** (prefers `claude-haiku-4-5`); `--tier default` prefers
+  `claude-sonnet-5`, and `--tier max` prefers `claude-opus-4-8`. Before each
+  Copilot request, `translate` checks the live catalog: if that preference is no
+  longer served, it chooses a live replacement while preserving the tier:
+  `fast` prefers Luna/mini/Flash, `default` prefers Terra/balanced flagships, and
+  `max` prefers Sol/highest-quality models. The ranking follows the same model
+  families as `copilot-model --auto`. Claude models route through `/v1/messages`,
+  Responses-only GPT models through `/v1/responses`, and chat-capable alternatives
+  through `/chat/completions`.
 - **Ollama** — `http://localhost:11434/v1` (offline; `llama3.2:3b`).
 - **Google** — free, keyless; also reports the detected source language.
 - **openrouter** — configured but off the default chain; needs `OPENROUTER_API_KEY`.
