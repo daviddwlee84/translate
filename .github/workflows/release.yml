@@ -1,0 +1,57 @@
+# Tag -> prebuilt binaries, Homebrew formula, and Scoop manifest.
+#
+# One ubuntu runner covers every target: the binary is pure Go (no cgo), so
+# CGO_ENABLED=0 cross-compiles darwin/linux/windows x amd64/arm64 in a single
+# job. No docker images, no macOS or Windows runners, no self-hosted hardware.
+# cgo is the thing that would force a build matrix; we do not have it.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # GoReleaser needs full history to build the changelog.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # AGENTS.md: "There is no CHANGELOG; the annotated tag message is the
+      # release note." Honour that, falling back to GoReleaser's own commit
+      # changelog when a tag carries no message body.
+      - name: Use the annotated tag message as release notes
+        run: |
+          notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          if [ -n "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            printf '%s\n' "$notes" > "$RUNNER_TEMP/release-notes.md"
+            echo "RELEASE_NOTES_ARG=--release-notes=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
+          fi
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --clean ${{ env.RELEASE_NOTES_ARG }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Cross-repo push (scoop bucket). The default GITHUB_TOKEN is scoped
+          # to this repository only and cannot do it.
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      # Not GoReleaser's job: `brews:` was deprecated in v2.10 in favour of
+      # `homebrew_casks:`, and a cask would be quarantined by Gatekeeper.
+      - name: Bump the Homebrew tap formula
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: scripts/bump-formula.sh --version "$GITHUB_REF_NAME"

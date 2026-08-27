@@ -347,6 +347,21 @@ func Load() (cfg *Config, created bool, err error) {
 	return cfg, false, nil
 }
 
+// LoadForRead reads the config without ever creating it. Unlike Load it has no
+// side effects, which is what shell completion needs: pressing TAB must not
+// write a config file. A missing or unparseable file yields Default().
+func LoadForRead() *Config {
+	b, err := os.ReadFile(Path())
+	if err != nil {
+		return Default()
+	}
+	cfg := Default() // start from defaults so omitted keys keep sane values
+	if err := toml.Unmarshal(b, cfg); err != nil {
+		return Default()
+	}
+	return cfg
+}
+
 // Save writes the config atomically (temp file + rename). It stamps the current
 // schema generation and (when known) the writing app version, so a later build
 // can detect an outdated config.

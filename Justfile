@@ -54,6 +54,22 @@ tidy:
 test:
     go test ./cmd/... ./internal/...
 
+# validate .goreleaser.yaml (CI runs this on every PR)
+release-check:
+    goreleaser check
+
+# full local release dry run into ./dist — builds all 6 targets, no publishing
+release-snapshot:
+    goreleaser release --snapshot --clean
+
+# preview the Homebrew formula a release would push (needs `just release-snapshot` first)
+formula-preview VERSION:
+    ./scripts/bump-formula.sh --version {{VERSION}} --dry-run
+
+# print the completion candidates for a flag: `just complete --to`
+complete FLAG:
+    go run . __complete {{FLAG}} ""
+
 # install into ~/.local/bin (first on PATH; override with DIR=…)
 # Unix only: Windows gets the binary from `go install` (GOBIN=~\.local\bin),
 # which is what the windows-dotfiles chezmoi script does.

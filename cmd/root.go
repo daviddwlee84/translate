@@ -78,7 +78,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVarP(&flagFrom, "from", "f", "", "source language (\"auto\" to detect)")
 	f.StringVar(&flagModel, "model", "", "LLM model id override")
 	f.StringVar(&flagProvider, "provider", "", "provider name (e.g. copilot, ollama)")
-	f.StringVar(&flagEngine, "engine", "", "engine: auto|<provider>|google|dict")
+	f.StringVar(&flagEngine, "engine", "", "engine: smartauto|auto|llm|<provider>|google")
 	f.StringVar(&flagTier, "tier", "", "model tier: default|fast|max")
 	f.StringVar(&flagPreset, "preset", "", "LLM prompt style: concise|contextual|dictionary")
 	f.StringVar(&flagInstructions, "instructions", "", "extra system-prompt guidance (domain focus, etc.)")
@@ -97,6 +97,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagSpeakLang, "speak-lang", "", "force the spoken language (e.g. en, zh-TW)")
 
 	root.SuggestionsMinimumDistance = 2
+	registerCompletions(root)
 	root.AddCommand(newConfigCmd(), newLangCmd(), newDefineCmd(), newModelsCmd(), newHistoryCmd(), newInitCmd(), newDictCmd(), newSpeakCmd(), newServeCmd(), newMcpCmd())
 	return root
 }

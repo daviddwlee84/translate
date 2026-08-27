@@ -1,0 +1,78 @@
+# GoReleaser builds every release artifact from a single Linux runner.
+#
+# The binary is pure Go (modernc.org/sqlite has no cgo), so CGO_ENABLED=0
+# cross-compiles all six targets in one job — no docker images, no macOS or
+# Windows runners. The Go linker ad-hoc-signs darwin binaries even when
+# cross-compiling, so they run on Apple Silicon without notarization.
+#
+# What this publishes:
+#   - GitHub Release: 6 archives + checksums.txt
+#   - Scoop manifest pushed to daviddwlee84/scoop-bucket
+# The Homebrew formula is NOT published here: GoReleaser deprecated `brews:`
+# (formulae) in v2.10 in favour of `homebrew_casks:`, and a cask would be
+# quarantined by Gatekeeper. scripts/bump-formula.sh handles the tap instead.
+version: 2
+
+project_name: translate
+
+before:
+  hooks:
+    - go mod download
+    # Shell completions ride along inside every archive. Package managers do
+    # not generate these for you, and `go install` never will.
+    - sh -c 'mkdir -p completions'
+    - sh -c 'go run . completion bash       > completions/translate.bash'
+    - sh -c 'go run . completion zsh        > completions/translate.zsh'
+    - sh -c 'go run . completion fish       > completions/translate.fish'
+    - sh -c 'go run . completion powershell > completions/translate.ps1'
+
+builds:
+  - id: translate
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    # cmd.version is a plain `var version string`. Do NOT point -X at
+    # debug.ReadBuildInfo().Main.Version — that is not a linker symbol, so the
+    # substitution silently no-ops. See backlog/homebrew-distribution.md.
+    ldflags:
+      - -s -w -X github.com/daviddwlee84/translate/cmd.version={{ .Tag }}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - completions/*
+
+checksum:
+  name_template: checksums.txt
+
+scoops:
+  - name: translate
+    repository:
+      owner: daviddwlee84
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/daviddwlee84/translate
+    description: Fast terminal translation tool (CLI + TUI)
+    license: MIT
+    commit_author:
+      name: goreleaser-bot
+      email: bot@goreleaser.com
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'

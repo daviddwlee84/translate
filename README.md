@@ -8,8 +8,26 @@ dictionary, with typo-tolerant language resolution and translation history.
 ## Install
 
 ```sh
-brew install daviddwlee84/tap/translate               # macOS/Linux via Homebrew (builds from source)
-go install github.com/daviddwlee84/translate@latest   # or with a Go toolchain, into $GOBIN (~/.local/bin)
+brew install daviddwlee84/tap/translate               # macOS/Linux — prebuilt, no Go toolchain needed
+scoop bucket add daviddwlee84 https://github.com/daviddwlee84/scoop-bucket
+scoop install daviddwlee84/translate                  # Windows
+go install github.com/daviddwlee84/translate@latest   # any OS with a Go toolchain, into $GOBIN
+```
+
+Prebuilt binaries and checksums for macOS/Linux/Windows × amd64/arm64 are also
+attached to every [GitHub release](https://github.com/daviddwlee84/translate/releases).
+
+### Shell completion
+
+Homebrew and Scoop install completions for you. For a manual or `go install`
+build, generate them yourself — `translate --to <TAB>` then completes language
+codes, `--provider`/`--model` your configured providers, and so on:
+
+```sh
+translate completion zsh  > ~/.zfunc/_translate                  # zsh (dir must be on $fpath)
+translate completion bash > ~/.local/share/bash-completion/completions/translate
+translate completion fish > ~/.config/fish/completions/translate.fish
+translate completion powershell | Out-String | Invoke-Expression # pwsh (add to $PROFILE)
 ```
 
 ## Build & run

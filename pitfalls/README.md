@@ -89,10 +89,12 @@ Pitfalls owned by this folder. Keep alphabetical.
 
 | Slug | Symptom keywords | Status |
 |---|---|---|
+| `cobra-completion-command-does-not-complete-flag-values` | `--to <TAB>` lists files not language codes, `__complete` prints only `:0`, `ShellCompDirectiveDefault`, no completion after installing from a package manager, `RegisterFlagCompletionFunc` typo degrades silently | fixed (cmd/completion.go + formula generates completions) |
 | `duplicate-translate-on-path-dotfiles-bin-shadows-local-bin` | two `translate` on PATH, `command -v -a`, reinstall has no effect, `~/.dotfiles/bin` shadows `~/.local/bin` | workaround; fix in TODO P2 |
 | `ecdict-prefix-search-ranks-obscure-words-first` | dictionary suggestions ranked worst-first, `ORDER BY frq DESC`, `frq` is a rank not a count, `LIKE 'x%'` does a full `SCAN entries`, 400 ms prefix query | fixed (range predicate + ascending rank) |
 | `go-install-module-path-mismatch` | `module declares its path as: translate`, `but was required as`, `parsing go.mod` | fixed (module renamed) |
 | `gobin-points-at-mise-toolchain-dir` | binary vanishes after Go upgrade, `go env GOBIN` = `.../mise/installs/go/<ver>/bin` | workaround (pin GOBIN) |
+| `goreleaser-cannot-publish-homebrew-formulae` | `brews:` deprecated, `homebrew_casks:`, "translate is damaged and cannot be opened", `com.apple.quarantine`, do prebuilt binaries need notarization | worked around (template + push the formula ourselves) |
 | `llm-stream-truncation-silently-rendered-as-complete` | translation cut mid-word / half output, no error, `detected:` line still shown, streamed result truncated, copilot-proxy SSE dropped | fixed (assert stream completeness) |
 | `raycast-extension-uses-installed-binary-not-working-tree` | new CLI flag/subcommand invisible to the extension, empty Model dropdown, `unknown flag: --no-pair`, `translate models` prints a translation of the word "models", `just raycast-dev` doesn't pick up CLI changes | prevented (`just install`; visible degrade) |
 | `raycast-launchd-path-translate-not-found` | `spawn translate ENOENT`, `translate: command not found` in Raycast, works in terminal not Raycast, launchd PATH not inherited from shell | prevented (absolute-path probe) |

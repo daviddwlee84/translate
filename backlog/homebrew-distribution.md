@@ -1,6 +1,6 @@
 # Homebrew distribution — installability via `brew`
 
-**Status**: shipped (2026-07-20) — tap live, prereqs landed in v0.3.1
+**Status**: shipped (2026-07-20); **superseded 2026-08-27** — see "Correction" below
 **Effort**: M
 **Related**: `TODO.md` Done · `cmd/version.go` (version prerequisite) · [release-binaries.md](release-binaries.md) (goreleaser/prebuilt path) · dotfiles `go_tools` role + `.chezmoiexternal`
 
@@ -15,6 +15,38 @@ shipping.
 (both verified empirically on this repo's go1.26.4), and the "modern" prebuilt-cask
 path has a new macOS Gatekeeper trap that makes the *simplest* path also the *best*
 one for a single-maintainer CLI.
+
+## Correction (2026-08-27): the Gatekeeper objection was cask-only
+
+The analysis below rejected prebuilt binaries because Homebrew removed the
+`--no-quarantine` bypass (~Nov 2025), so an unsigned prebuilt binary shows
+*"translate is damaged and cannot be opened"*. **That reasoning holds for casks
+and only for casks.**
+
+Verified: `grep -rh quarantine /usr/local/Homebrew/Library/Homebrew/*.rb` returns
+only `require "cask/quarantine"`. Homebrew applies `com.apple.quarantine` in the
+**cask** code path; a *formula* that installs a prebuilt binary is never
+quarantined. On top of that, the Go linker ad-hoc-signs darwin binaries even when
+cross-compiling from Linux (`codesign -dv` → `adhoc, linker-signed`), so the
+binary is loadable on Apple Silicon regardless.
+
+So as of 2026-08-27 the formula is **prebuilt**, not build-from-source: it drops
+`depends_on "go" => :build`, installs in seconds, and adds
+`generate_completions_from_executable(bin/"translate", shell_parameter_format: :cobra)`
+— which the source-build formula never did, meaning the tap shipped *no*
+completions and every user depended on their own dotfiles to generate them.
+
+Two constraints that shaped the implementation:
+
+- GoReleaser **deprecated `brews:` (formulae) in v2.10** in favour of
+  `homebrew_casks:` — and a cask is exactly what we must not produce. So the
+  formula is templated from `packaging/translate.rb.tmpl` and pushed by
+  `scripts/bump-formula.sh`; GoReleaser only handles the Scoop bucket.
+- Cross-repo pushes need a PAT (`TAP_GITHUB_TOKEN`); a workflow's default
+  `GITHUB_TOKEN` is scoped to its own repository.
+
+Option A below is still the right call for what it was choosing between — it is
+the *cask* that was the trap, not the prebuilt binary.
 
 ## Shipped (2026-07-20)
 

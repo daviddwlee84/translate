@@ -117,10 +117,12 @@ found" rather than a syntax error.
 
 **Not yet verified on Windows hardware.** Before trusting it, run through:
 
-1. `go install github.com/daviddwlee84/translate@latest`; confirm
-   `translate.exe` lands in `~\go\bin`. (Homebrew is macOS/Linux-only — there is
-   no Windows release artifact yet, see
-   [`../backlog/release-binaries.md`](../backlog/release-binaries.md).)
+1. `scoop bucket add daviddwlee84 https://github.com/daviddwlee84/scoop-bucket`
+   then `scoop install daviddwlee84/translate`; confirm `translate.exe` resolves
+   via `Get-Command translate`. (Prebuilt Windows binaries ship on every tag —
+   see [`../backlog/release-binaries.md`](../backlog/release-binaries.md).
+   `go install …@latest` still works if you prefer a source build, but note it
+   lands in `~\go\bin` and installs no shell completions.)
 2. `translate init`, then `translate "hola" --to en` from PowerShell.
 3. `just raycast-check`, then `just raycast-dev`. Node ≥ 22.14 and npm ≥ 7 are
    required; Raycast for Windows needs Windows 10 21H2+ or 11.

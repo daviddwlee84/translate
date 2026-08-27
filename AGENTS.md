@@ -22,22 +22,70 @@ is needed for additive changes. A **breaking** change (renamed/removed/re-meanin
 an explicit migration in `runRoot` before the re-save. `Save` stamps schema + the writing app
 version (`config.Generator`, set in `cmd.Execute`).
 
-To ship the current `main` to this machine via chezmoi:
+### Cutting a release
 
-1. `go test ./...` green, working tree clean.
+Pushing an annotated `vX.Y.Z` tag is the whole release. `.github/workflows/release.yml`
+then does everything else on one `ubuntu-latest` runner:
+
+1. GoReleaser cross-compiles six targets (darwin/linux/windows × amd64/arm64).
+   The binary is pure Go, so `CGO_ENABLED=0` covers them all from Linux — no
+   docker images, no macOS/Windows runners, no self-hosted hardware.
+2. It publishes the GitHub Release: six archives (each containing the binary,
+   `LICENSE`, `README.md`, and generated `completions/`) plus `checksums.txt`.
+3. It pushes the Scoop manifest to `daviddwlee84/scoop-bucket`.
+4. `scripts/bump-formula.sh` renders `packaging/translate.rb.tmpl` from those
+   checksums and pushes it to `daviddwlee84/homebrew-tap`.
+
+So the steps are:
+
+1. `go test ./cmd/... ./internal/...` green, working tree clean.
 2. `git push origin main`
 3. `git tag -a vX.Y.Z -m "<highlights>"` && `git push origin vX.Y.Z`
-4. verify: `go install github.com/daviddwlee84/translate@vX.Y.Z && translate --version` → `vX.Y.Z`
-5. install on this machine (dotfiles repo): run `just upgrade-go` — it installs each go
-   tool at `@latest` (= the new tag) into `~/.local/bin`. The `go_tools` pin in
-   `dot_ansible/roles/go_tools/defaults/main.yml` is only the *fresh-install floor*
-   (its header says **don't** bump it for upgrades); `chezmoi apply`/ansible is
-   install-only and won't move an already-installed binary. Make sure no stale copy
-   shadows `~/.local/bin` earlier on `PATH` (e.g. a hand-built one in `~/.dotfiles/bin`).
+4. Watch the run: `gh run watch`. Verify with `gh release view vX.Y.Z`.
+5. Install on this machine: **macOS** `brew upgrade daviddwlee84/tap/translate`;
+   **Windows** `scoop update translate`; **Linux** `just upgrade-go` in the
+   dotfiles repo (still `go install @latest` there). The `go_tools` pin in
+   `dot_ansible/roles/go_tools/defaults/main.yml` is only the *fresh-install
+   floor* — don't bump it for upgrades. Make sure no stale copy shadows the
+   installed one earlier on `PATH`.
 
-There is no CHANGELOG; the annotated tag message is the release note. Keep commit
-subjects in `feat(scope): …` / `fix(scope): …` form so `git log <prev-tag>..<tag>`
-reads as a coherent changelog.
+**Never hand-edit `Formula/translate.rb` in the tap.** It is a generated artifact
+of `packaging/translate.rb.tmpl`; the next release overwrites it. Same for
+`bucket/translate.json` in the scoop bucket, which GoReleaser owns.
+
+### One-time setup (do this before the first tag)
+
+Everything here is scriptable with `gh` **except minting the token** — GitHub
+removed the PAT-creation API on purpose (`POST /authorizations` now 404s), so
+that one step is browser-only.
+
+1. Create a **fine-grained PAT** at
+   <https://github.com/settings/personal-access-tokens/new>:
+   - *Repository access* → **Only select repositories** → `daviddwlee84/homebrew-tap`
+     **and** `daviddwlee84/scoop-bucket`
+   - *Permissions* → *Repository permissions* → **Contents: Read and write**
+   - Set an expiry you will actually notice; the release job fails loudly when it
+     lapses.
+2. Store it (this part *is* `gh`):
+
+   ```sh
+   gh secret set TAP_GITHUB_TOKEN --repo daviddwlee84/translate
+   ```
+
+3. Verify: `gh secret list --repo daviddwlee84/translate`.
+
+The workflow's default `GITHUB_TOKEN` cannot substitute — it is scoped to this
+repository and cannot push to the tap or the bucket.
+
+Before tagging, `goreleaser check` validates `.goreleaser.yaml` (CI runs it on
+every PR too). `goreleaser release --snapshot --clean` does a full local dry run
+into `dist/` without publishing anything.
+
+There is no CHANGELOG; the annotated tag message is the release note — the
+workflow feeds it to GoReleaser via `--release-notes`, falling back to the commit
+changelog when a tag has no message body. Keep commit subjects in
+`feat(scope): …` / `fix(scope): …` form so `git log <prev-tag>..<tag>` reads as a
+coherent changelog.
 
 <!-- project-knowledge-harness:agent-guidance -->
 <!-- Snippet for the project's agent contract file (AGENTS.md / CLAUDE.md /
