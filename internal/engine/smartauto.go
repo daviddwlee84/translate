@@ -50,7 +50,7 @@ func (e *SmartAutoEngine) Available(ctx context.Context) bool {
 // Translate routes a single word/term to the dictionary (smart-dict) and a phrase
 // to the LLM. Streaming is preserved by returning the chosen sub-engine's channel.
 func (e *SmartAutoEngine) Translate(ctx context.Context, req Request) (<-chan Chunk, error) {
-	if isLookup(req.Text) {
+	if !req.PreserveFormat && isLookup(req.Text) {
 		debug.Logf("smart-auto: %q → dictionary lookup (smart-dict), target=%s", truncateText(req.Text), req.Target)
 		r := req
 		r.Mode = ModeDict

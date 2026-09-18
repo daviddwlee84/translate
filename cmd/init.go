@@ -149,7 +149,7 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	if openrouterKey {
 		fmt.Fprintln(os.Stderr, "note: OPENROUTER_API_KEY detected — the openrouter provider is available.")
 	}
-	return nil
+	return setupMissingDictionaries(cmd.Context(), cfg, os.Stderr, promptDictInstall)
 }
 
 // targetLangOptions builds the language dropdown options (name + code).

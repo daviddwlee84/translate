@@ -447,8 +447,11 @@ func transportForModel(id string, endpoints []string) modelTransport {
 
 // finalize builds the terminal result from the accumulated translation text.
 func (e *LLMEngine) finalize(full, model string, req Request) *TranslateResult {
+	if !req.PreserveFormat {
+		full = strings.TrimSpace(full)
+	}
 	res := &TranslateResult{
-		Translation: strings.TrimSpace(full),
+		Translation: full,
 		Target:      req.Target,
 		Engine:      e.cfg.Name,
 		Model:       model,

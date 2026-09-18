@@ -92,30 +92,53 @@ func (e *LocalDictEngine) lookupZh(ctx context.Context, word string, req Request
 			return single(notInstalled(req, "CC-CEDICT not installed — run `translate dict update cedict`"), nil)
 		}
 	}
-	if entries := e.lookupCedict(ctx, word); len(entries) > 0 {
-		return single(cedictResult(word, entries), nil)
+	entries, note, err := e.lookupCedict(ctx, word)
+	if err != nil {
+		return single(nil, err)
+	}
+	if len(entries) > 0 {
+		res := cedictResult(word, entries)
+		res.Notes = note
+		return single(res, nil)
 	}
 	if e.cfg.Fuzzy {
 		if sugg := e.prefixSuggestZh(ctx, word, suggestLimit); len(sugg) > 0 {
 			// CC-CEDICT prefix matches carry no edit distance → 0 (unknown).
-			return single(suggestResult(sugg, req, 0), nil)
+			res := suggestResult(sugg, req, 0)
+			res.Notes = note
+			return single(res, nil)
 		}
 	}
-	return single(nil, fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word))
+	err = fmt.Errorf("dictionary: %w: %q", ErrNoDictEntry, word)
+	if note != "" {
+		err = &dictionarySetupError{note: note, err: err}
+	}
+	return single(nil, err)
 }
 
 // lookupCedict prefers the built index (a point query) over the in-memory one
 // (which re-parses the whole 9.8 MB file per process).
-func (e *LocalDictEngine) lookupCedict(ctx context.Context, word string) []*cedictEntry {
+func (e *LocalDictEngine) lookupCedict(ctx context.Context, word string) ([]*cedictEntry, string, error) {
+	var indexErr error
 	if e.cedb.available() {
-		if entries, err := e.cedb.lookup(ctx, word); err == nil && len(entries) > 0 {
-			return entries
-		} else if err == nil {
-			return nil // the index answered "no such headword" — trust it
+		entries, err := e.cedb.lookup(ctx, word)
+		if err == nil {
+			return entries, "", nil
 		}
+		indexErr = err
 		// A broken index falls through to the plain file rather than failing.
 	}
-	return e.ce.lookup(word)
+	if err := e.ce.load(); err != nil {
+		if indexErr != nil {
+			err = fmt.Errorf("index: %v; source: %w", indexErr, err)
+		}
+		return nil, "", fmt.Errorf("CC-CEDICT is unusable — run `translate dict update cedict`: %w", err)
+	}
+	note := ""
+	if indexErr != nil {
+		note = "CC-CEDICT index is unusable; using the source file — run `translate dict reindex`"
+	}
+	return e.ce.lookup(word), note, nil
 }
 
 func (e *LocalDictEngine) prefixSuggestZh(ctx context.Context, word string, n int) []string {
@@ -136,18 +159,25 @@ func (e *LocalDictEngine) prefixSuggestZh(ctx context.Context, word string, n in
 
 func (e *LocalDictEngine) lookupEn(ctx context.Context, word string, req Request) <-chan Chunk {
 	if !e.ec.available() {
+		note := "ECDICT not installed — run `translate dict update ecdict`"
 		// No ECDICT yet: fall back to dictionaryapi.dev (English defs) if enabled.
 		if e.cfg.APIFallback != nil {
 			ch, err := e.cfg.APIFallback.Translate(ctx, req)
 			if err == nil {
-				return ch
+				var res *TranslateResult
+				res, err = Drain(ch, nil)
+				if err == nil {
+					res.Notes = joinDictNotes(res.Notes, note+"; using the online dictionary (English definitions)")
+					return single(res, nil)
+				}
 			}
+			return single(nil, &dictionarySetupError{note: note + "; online dictionary failed", err: err})
 		}
-		return single(notInstalled(req, "ECDICT not installed — run `translate dict update ecdict`"), nil)
+		return single(notInstalled(req, note), nil)
 	}
 	en, err := e.ec.lookup(ctx, word)
 	if err != nil {
-		return single(nil, fmt.Errorf("dictionary: %w", err))
+		return single(nil, fmt.Errorf("ECDICT is unusable — run `translate dict update ecdict`: %w", err))
 	}
 	if en != nil {
 		return single(ecdictResult(en), nil)
@@ -221,6 +251,25 @@ func suggestResult(sugg []string, req Request, bestDist int) *TranslateResult {
 func notInstalled(req Request, note string) *TranslateResult {
 	return &TranslateResult{Target: req.Target, Engine: "dictionary", Notes: note}
 }
+
+func joinDictNotes(a, b string) string {
+	if a == "" || a == b {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "; " + b
+}
+
+// Retain setup context even when a dictionary lookup ends in ErrNoDictEntry.
+type dictionarySetupError struct {
+	note string
+	err  error
+}
+
+func (e *dictionarySetupError) Error() string { return fmt.Sprintf("%s: %v", e.note, e.err) }
+func (e *dictionarySetupError) Unwrap() error { return e.err }
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)

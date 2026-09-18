@@ -121,9 +121,17 @@ func parseGoogle(data []json.RawMessage, req Request) (*TranslateResult, error) 
 			b.WriteString(txt)
 		}
 	}
-	res := &TranslateResult{Translation: strings.TrimSpace(b.String()), Target: req.Target}
-	if res.Translation == "" {
+	translation := b.String()
+	if !req.PreserveFormat {
+		translation = strings.TrimSpace(translation)
+	}
+	res := &TranslateResult{Translation: translation, Target: req.Target}
+	if strings.TrimSpace(res.Translation) == "" {
 		return nil, fmt.Errorf("google: no translation in response")
+	}
+	if req.PreserveFormat {
+		res.Warnings = append(res.Warnings,
+			"google cannot honor format-preservation instructions; output may change formatting")
 	}
 	if len(data) > 2 {
 		var det string

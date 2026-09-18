@@ -40,7 +40,8 @@ echo "bonjour" | ./translate --to en      # pipe
 ```
 
 First run writes a default config to `~/.config/translate/config.toml`; run
-`./translate init` for a guided setup that probes which providers are up.
+`./translate init` for a guided setup that probes which providers are up and
+offers to download missing offline dictionaries.
 
 ## Usage
 
@@ -50,6 +51,7 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate` (no args, TTY) | Interactive TUI |
 | `translate --to <lang> --from <lang>` | Language override; both are fuzzy (`chinees` → `zh`) |
 | `translate --json` | Emit the full structured result |
+| `… \| translate --preserve-format` | Force document translation; `=false` disables automatic document handling |
 | `… \| translate --bilingual` (`-2`) | Bilingual pipe view: keep the original (with color) + translation beneath (stdin only) |
 | `translate define <word>` | Dictionary lookup (bilingual: zh↔en local, or English API); records history |
 | `translate <text> --learn` | Tutor mode: translate + gloss, or grammar-correct + explain |
@@ -60,9 +62,36 @@ First run writes a default config to `~/.config/translate/config.toml`; run
 | `translate models` | Models declared by the configured providers, per tier (`--json`) |
 | `translate config path\|show` · `lang resolve <q>` · `lang list` | Introspection helpers (all `--json`) |
 
-Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--instructions`, `--pair`/`--no-pair`/`--pair-with`, `--learn`/`--learn-mode auto|teach|correct|explain`, `--bilingual`/`-2`, `--no-history`, `--debug`.
-Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
+Flags: `--engine smartauto|auto|<provider>|google`, `--provider`, `--model`, `--tier default|fast|max`, `--preset concise|contextual|dictionary`, `--preserve-format`, `--instructions`, `--pair`/`--no-pair`/`--pair-with`, `--learn`/`--learn-mode auto|teach|correct|explain`, `--bilingual`/`-2`, `--no-history`, `--debug`.
+Env overrides: `TRANSLATE_TARGET`, `TRANSLATE_SOURCE`, `TRANSLATE_ENGINE`, `TRANSLATE_PROVIDER`, `TRANSLATE_MODEL`, `TRANSLATE_PRESET`, `TRANSLATE_CONFIG`, `TRANSLATE_DEBUG`.
 Precedence: **flag > env > `[cli]`/`[tui]` > `[general]` > default**.
+
+### Documents and Markdown pipes
+
+Multiline stdin and clear Markdown blocks (headings, lists, quotes, code fences,
+or indented code) automatically use a document prompt. It translates the complete
+prose while asking the model to retain paragraphs, list nesting, tables, emphasis,
+and links, and to leave code, URLs, paths, identifiers, and flags unchanged.
+Short words and phrases keep the configured dictionary/translation behavior.
+
+```sh
+cat report.md | translate | glow           # translated Markdown, rendered by glow
+translate --preserve-format < report.md    # force document handling
+translate --preserve-format=false < report.md # use the configured preset instead
+```
+
+Automatic recognition overrides an inherited config preset such as `contextual`.
+An explicit `--preset` or `TRANSLATE_PRESET` selects that style instead;
+`--preserve-format` explicitly set to true wins over both. Text arguments require
+the flag to enable document handling. Learn and bilingual modes have their own
+output formats and cannot be combined with forced document handling.
+
+The document path keeps one LLM request and supports `--stream` and `--json`.
+It retains input/output whitespace after stripping input ANSI escapes, and only
+adds a final stdout newline when missing. Format preservation is prompt-based:
+the model can still alter Markdown or code. Google cannot follow the document
+prompt; when selected directly or reached through fallback it reports that
+limitation on stderr. Diagnostics never become part of the Markdown on stdout.
 
 ### Per-front-end defaults (`[cli]` / `[tui]`)
 
@@ -246,8 +275,16 @@ translate dict update all      # one-time ~67 MB download/build into ~/.local/sh
 translate dict reindex         # rebuild the CC-CEDICT search index from an existing download (no network)
 ```
 
+`translate init` offers **Download now** (default) or **Later** after saving your
+preferences, downloading only missing local data. Choosing Later leaves a retry
+command; cancellation or download failure keeps the saved configuration and any
+dictionary already installed. Existing CC-CEDICT data without an index needs
+only `dict reindex`; unusable data is reported with a repair command.
+
 Until then, English lookups fall back to dictionaryapi.dev (`[dict] api_fallback`),
-and Chinese lookups prompt you to run the update. Misses show a ranked "did you
+with English definitions and an installation hint on stderr. Chinese lookups
+also carry an installation hint, including when smart-dict falls back to an LLM.
+Misses show a ranked "did you
 mean" list. Set `[dict] source = "api"` to use only dictionaryapi.dev.
 
 `dict update cedict` also builds `cedict.db`, a SQLite index beside the plain
@@ -285,7 +322,7 @@ show "did you mean" without calling the LLM.
 translate define serendipity        # exact ECDICT entry
 translate define zzzznotaword       # miss → LLM definition (⚠ warning on stderr)
 translate define helllo             # distance-1 typo → "did you mean: hello, …"
-translate define --plain <word>     # force the offline dictionary, no LLM fallback
+translate define --plain <word>     # dictionary only: no LLM; configured English API fallback still applies
 translate define <word> --no-history  # look up without recording it
 ```
 

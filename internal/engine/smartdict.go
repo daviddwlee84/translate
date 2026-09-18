@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -72,13 +73,17 @@ func (e *SmartDictEngine) Translate(ctx context.Context, req Request) (<-chan Ch
 		// The dictionary engines are single-shot (no token stream), so drain fully
 		// before deciding whether the answer is good enough.
 		res, derr := Drain(dictCh, nil)
+		if err := ctx.Err(); err != nil {
+			out <- Chunk{Kind: ChunkError, Err: err}
+			return
+		}
 		if e.dictAnswered(res, derr) {
 			debug.Logf("smart-dict: %q answered from dictionary", strings.TrimSpace(req.Text))
 			out <- Chunk{Kind: ChunkDone, Result: res}
 			return
 		}
 		debug.Logf("smart-dict: %q → LLM fallback (no usable dictionary entry)", strings.TrimSpace(req.Text))
-		e.fallback(ctx, req, derr, out)
+		e.fallback(ctx, req, res, derr, out)
 	}()
 	return out, nil
 }
@@ -103,8 +108,28 @@ func (e *SmartDictEngine) dictAnswered(res *TranslateResult, derr error) bool {
 
 // fallback runs the LLM in translate mode and pipes its chunks to out, stamping a
 // warning on the terminal result so the downgrade is visible.
-func (e *SmartDictEngine) fallback(ctx context.Context, req Request, derr error, out chan<- Chunk) {
+func (e *SmartDictEngine) fallback(ctx context.Context, req Request, dictRes *TranslateResult, derr error, out chan<- Chunk) {
 	word := strings.TrimSpace(req.Text)
+	note := ""
+	var warnings []string
+	if dictRes != nil {
+		note = dictRes.Notes
+		warnings = append(warnings, dictRes.Warnings...)
+	}
+	var setupErr *dictionarySetupError
+	if derr != nil && (!errors.Is(derr, ErrNoDictEntry) || errors.As(derr, &setupErr)) {
+		warnings = append(warnings, derr.Error())
+	}
+	fallbackError := func(err error) error {
+		reason := note
+		if derr != nil {
+			reason = joinDictNotes(reason, derr.Error())
+		}
+		if reason == "" {
+			reason = fmt.Sprintf("no dictionary entry for %q", word)
+		}
+		return fmt.Errorf("smart-dict: %s; LLM fallback failed: %w", reason, err)
+	}
 
 	r := req
 	r.Mode = ModeTranslate
@@ -116,13 +141,18 @@ func (e *SmartDictEngine) fallback(ctx context.Context, req Request, derr error,
 
 	llmCh, err := e.llm.Translate(ctx, r)
 	if err != nil {
-		out <- Chunk{Kind: ChunkError, Err: fmt.Errorf("smart-dict: no dictionary entry for %q and LLM fallback failed: %w", word, err)}
+		out <- Chunk{Kind: ChunkError, Err: fallbackError(err)}
 		return
 	}
 	for ch := range llmCh {
 		if ch.Kind == ChunkDone && ch.Result != nil {
+			ch.Result.Notes = joinDictNotes(note, ch.Result.Notes)
+			ch.Result.Warnings = append(ch.Result.Warnings, warnings...)
 			ch.Result.Warnings = append(ch.Result.Warnings,
 				fmt.Sprintf("no dictionary entry for %q — defined via %s (LLM)", word, ch.Result.Engine))
+		}
+		if ch.Kind == ChunkError {
+			ch.Err = fallbackError(ch.Err)
 		}
 		out <- ch
 	}

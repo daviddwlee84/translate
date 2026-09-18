@@ -67,10 +67,12 @@ func BuildCedictDB(ctx context.Context, srcPath, dbPath string, prog func(string
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO entries(key,trad,simp,pinyin,defs,n) VALUES(?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	n := 0
 	sc := bufio.NewScanner(src)
@@ -108,6 +110,9 @@ func BuildCedictDB(ctx context.Context, srcPath, dbPath string, prog func(string
 	}
 	if err = sc.Err(); err != nil {
 		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("cedict index: no valid entries")
 	}
 	if err = tx.Commit(); err != nil {
 		return err

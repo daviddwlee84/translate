@@ -33,6 +33,10 @@ type Request struct {
 	ModelProvider string
 	Preset        string // LLM prompt style: "" => concise (LLM translate only)
 	Extra         string // extra user instructions appended to the system prompt
+	// PreserveFormat translates a document in place instead of applying a preset's
+	// output shape. LLMs preserve structure through their prompt; output whitespace
+	// is retained. Smart-auto bypasses dictionary lookup even for a single word.
+	PreserveFormat bool
 
 	// Pair marks a bidirectional "pair" request: the text is written in one of
 	// two languages (PairHome/PairAway) and must be translated into the OTHER.

@@ -73,6 +73,60 @@ func TestBuildTranslatePromptNoTableDirectiveForProse(t *testing.T) {
 	}
 }
 
+func TestBuildDocumentPromptReplacesPreset(t *testing.T) {
+	text := "\n    printf 'hello'\n\n# Report\n\n- Preserve `--flag` and [the link](https://example.com).  \n\n" +
+		"| Name | Value |\n| --- | --- |\n| Count | 3 |\n\nAfter the table.\n"
+	for _, preset := range []string{PresetConcise, PresetContextual, PresetDictionary} {
+		t.Run(preset, func(t *testing.T) {
+			req := Request{
+				Text: text, Source: "auto", Target: "zh-TW", Preset: preset,
+				PreserveFormat: true, Extra: "Use Taiwanese terminology.",
+			}
+			sys, user := buildTranslatePrompt(req)
+			for _, unwanted := range []string{
+				"Output a SHORT list of 2-4 lines", "Then a blank line, then 1-2 example sentences",
+				"The source text is a table.", "never echo it back",
+			} {
+				if strings.Contains(sys, unwanted) {
+					t.Errorf("document prompt retains conflicting instruction %q", unwanted)
+				}
+			}
+			for _, want := range []string{
+				"Translate ALL natural-language prose", "Do not\n  summarize", "Markdown heading levels",
+				"inline code", "file paths", "URLs", "identifiers", "numeric values",
+				"preserve all surrounding prose", "Use Taiwanese terminology.",
+			} {
+				if !strings.Contains(sys, want) {
+					t.Errorf("document prompt missing preservation requirement %q", want)
+				}
+			}
+			if !strings.HasSuffix(user, text) {
+				t.Errorf("document user prompt lost input whitespace: %q", user)
+			}
+		})
+	}
+}
+
+func TestBuildDocumentPromptPairKeepsProtectedLiterals(t *testing.T) {
+	req := Request{
+		Text: "# Test\n\n`echo test`\n", Source: "auto", Target: "zh-TW",
+		PreserveFormat: true, Pair: true, PairHome: "zh-TW", PairAway: "en",
+	}
+	sys, _ := buildTranslatePrompt(req)
+	for _, code := range []string{req.PairHome, req.PairAway} {
+		if !strings.Contains(sys, lang.Name(code)) {
+			t.Errorf("document pair prompt missing language %q", code)
+		}
+	}
+	if strings.Contains(sys, "never return the text unchanged") {
+		t.Error("document pair prompt would force changes to code-only input")
+	}
+	if !strings.Contains(sys, "Detect its language from the prose") ||
+		!strings.Contains(sys, "Keep code and all protected literals verbatim") {
+		t.Errorf("document pair prompt lost prose routing or literal protection: %s", sys)
+	}
+}
+
 func TestConcisePromptForbidsEcho(t *testing.T) {
 	// Even outside pair mode, the concise prompt must not tell the model to echo a
 	// word in a different language.

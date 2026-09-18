@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -61,6 +62,9 @@ func (ci *cedictIndex) load() error {
 			}
 		}
 		ci.err = sc.Err()
+		if ci.err == nil && len(ci.byKey) == 0 {
+			ci.err = fmt.Errorf("no valid CC-CEDICT entries")
+		}
 		ci.keys = make([]string, 0, len(ci.byKey))
 		for k := range ci.byKey {
 			ci.keys = append(ci.keys, k)

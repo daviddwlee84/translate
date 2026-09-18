@@ -66,6 +66,7 @@ func DownloadCedict(ctx context.Context, url, dst string, prog func(string)) err
 	if err != nil {
 		return err
 	}
+	defer os.Remove(tmp)
 	if _, err := io.Copy(f, gz); err != nil {
 		f.Close()
 		os.Remove(tmp)
@@ -74,6 +75,9 @@ func DownloadCedict(ctx context.Context, url, dst string, prog func(string)) err
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return err
+	}
+	if err := validateCedictSource(ctx, tmp); err != nil {
+		return fmt.Errorf("cedict download: %w", err)
 	}
 	return os.Rename(tmp, dst)
 }
@@ -125,10 +129,12 @@ func BuildEcdictDB(ctx context.Context, csvURL, dbPath string, prog func(string)
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO entries(word,word_lc,phonetic,translation,definition,pos,frq,exchange) VALUES(?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	r := csv.NewReader(resp.Body)
 	r.FieldsPerRecord = -1 // tolerate ragged rows
@@ -145,7 +151,7 @@ func BuildEcdictDB(ctx context.Context, csvURL, dbPath string, prog func(string)
 		if rerr == io.EOF {
 			break
 		}
-		if rerr != nil || len(rec) < 4 {
+		if rerr != nil || len(rec) < 4 || strings.TrimSpace(rec[0]) == "" {
 			continue
 		}
 		frq := 0
@@ -163,6 +169,9 @@ func BuildEcdictDB(ctx context.Context, csvURL, dbPath string, prog func(string)
 			return err
 		}
 		n++
+	}
+	if n == 0 {
+		return fmt.Errorf("ecdict import: no valid entries")
 	}
 	if err = tx.Commit(); err != nil {
 		return err

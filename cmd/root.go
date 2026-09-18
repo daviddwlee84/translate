@@ -32,27 +32,28 @@ import (
 )
 
 var (
-	flagTo            string
-	flagFrom          string
-	flagModel         string
-	flagProvider      string
-	flagEngine        string
-	flagTier          string
-	flagPreset        string
-	flagInstructions  string
-	flagPair          bool
-	flagNoPair        bool
-	flagPairWith      string
-	flagLearn         bool
-	flagLearnMode     string
-	flagBilingual     bool
-	flagBilingualMode string
-	flagJSON          bool
-	flagStream        bool
-	flagNoHistory     bool
-	flagDebug         bool
-	flagSpeak         bool
-	flagSpeakLang     string
+	flagTo             string
+	flagFrom           string
+	flagModel          string
+	flagProvider       string
+	flagEngine         string
+	flagTier           string
+	flagPreset         string
+	flagInstructions   string
+	flagPair           bool
+	flagNoPair         bool
+	flagPairWith       string
+	flagLearn          bool
+	flagLearnMode      string
+	flagBilingual      bool
+	flagBilingualMode  string
+	flagPreserveFormat bool
+	flagJSON           bool
+	flagStream         bool
+	flagNoHistory      bool
+	flagDebug          bool
+	flagSpeak          bool
+	flagSpeakLang      string
 )
 
 // NewRootCmd builds the root command and its subcommands.
@@ -91,6 +92,7 @@ func NewRootCmd() *cobra.Command {
 	f.StringVar(&flagBilingualMode, "bilingual-mode", "doc", "bilingual strategy: doc (context-aware, one LLM call) | blocks (per-block)")
 	f.BoolVar(&flagJSON, "json", false, "emit the full result as JSON")
 	f.BoolVar(&flagStream, "stream", false, "force token streaming to stdout even when it is not a TTY (for piped consumers, e.g. the Raycast extension)")
+	root.Flags().BoolVar(&flagPreserveFormat, "preserve-format", false, "preserve document structure (auto for multiline/Markdown stdin; =false disables; one-shot only)")
 	f.BoolVar(&flagNoHistory, "no-history", false, "do not record this translation in history")
 	f.BoolVar(&flagDebug, "debug", false, "log intermediate decisions (routing, engine choice, dict hit/miss)")
 	f.BoolVarP(&flagSpeak, "speak", "s", false, "speak the foreign side of the result aloud (free TTS)")
@@ -164,7 +166,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	res := cfg.Resolve(overrides(), invocationMode(args))
+	mode := invocationMode(args)
+	res := cfg.Resolve(overrides(), mode)
+	if err := validatePreserveFormat(cmd, mode, res.Learn); err != nil {
+		return err
+	}
 	if res.Debug {
 		// The one-shot CLI logs to stderr; the TUI logs to a file, since its
 		// alt-screen would be corrupted by stderr writes.
@@ -192,9 +198,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "translate: warning: pair mode is on but pair-with (%q) equals the target (%q) — pair mode is a no-op; set a different pair_with (run `translate init`)\n", pairWith, tgt)
 	}
 
-	if res.Provider == nil && res.Engine != "auto" {
-		return fmt.Errorf("no provider configured; check %s", config.Path())
-	}
 	eng, err := appcore.BuildEngine(res)
 	if err != nil {
 		return err
@@ -220,8 +223,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	switch {
 	case len(args) > 0:
 		text := strings.Join(args, " ")
+		preserve := preserveFormatForInput(cmd, text, false, res.Learn)
 		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode, preserve)
 		if err != nil {
 			return err
 		}
@@ -239,8 +243,8 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		// Strip ANSI/SGR escapes so colored piped input (e.g. `tldr rg | translate`)
 		// never pollutes the prompt. The raw bytes are retained only for --bilingual,
 		// which needs the original styling for display.
-		text := strings.TrimSpace(bitext.Strip(string(b)))
-		if text == "" {
+		text := bitext.Strip(string(b))
+		if strings.TrimSpace(text) == "" {
 			return fmt.Errorf("no input on stdin")
 		}
 		// Bilingual is a multi-block reading view; --json/--learn keep their own
@@ -255,8 +259,12 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			}
 			return runBilingual(ctx, oneShotEng, docEng, string(b), src, tgt, res.Instructions, flagBilingualMode)
 		}
+		preserve := preserveFormatForInput(cmd, text, true, res.Learn)
+		if !preserve {
+			text = strings.TrimSpace(text)
+		}
 		effTgt := appcore.EffectiveTarget(res.Pair, tgt, pairWith, text)
-		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode)
+		r, err := oneShot(ctx, oneShotEng, text, src, effTgt, res.Stream, res.Preset, res.Instructions, res.Pair, tgt, pairWith, res.Learn, flagLearnMode, preserve)
 		if err != nil {
 			return err
 		}
@@ -269,6 +277,36 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	default:
 		return runTUI(ctx, eng, res, st, src, tgt, pairWith)
 	}
+}
+
+// validatePreserveFormat rejects explicit use outside the one-shot translation
+// path. Automatic recognition never interferes with learn or bilingual output.
+func validatePreserveFormat(cmd *cobra.Command, mode config.Mode, learn bool) error {
+	if !cmd.Flags().Changed("preserve-format") {
+		return nil
+	}
+	if mode == config.ModeTUI {
+		return fmt.Errorf("--preserve-format is only available for one-shot translation (text arguments or stdin)")
+	}
+	if flagPreserveFormat && (learn || flagBilingual) {
+		return fmt.Errorf("--preserve-format cannot be combined with learn or bilingual mode")
+	}
+	return nil
+}
+
+// preserveFormatForInput treats inherited presets as short-text preferences.
+// Explicit flags/environment still choose a style unless preservation is forced.
+func preserveFormatForInput(cmd *cobra.Command, text string, stdin, learn bool) bool {
+	if learn || flagBilingual {
+		return false
+	}
+	if cmd.Flags().Changed("preserve-format") {
+		return flagPreserveFormat
+	}
+	if !stdin || cmd.Flags().Changed("preset") || strings.TrimSpace(os.Getenv("TRANSLATE_PRESET")) != "" {
+		return false
+	}
+	return bitext.IsDocument(text)
 }
 
 // openDebugLog opens (append) the TUI debug log file, creating the state dir.
@@ -428,7 +466,7 @@ func resolvePair(rawSource, rawTarget string) (source, target string) {
 // Tokens stream live to stdout only when stdout is a TTY (so `translate x | pbcopy`
 // stays clean) and --json was not requested. Piped output is the plain translation
 // with no ANSI; --json emits the full structured result.
-func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool, learnMode string) (*engine.TranslateResult, error) {
+func oneShot(ctx context.Context, eng engine.Engine, text, source, target string, streamPref bool, preset, instructions string, pair bool, pairHome, pairAway string, learn bool, learnMode string, preserveFormat bool) (*engine.TranslateResult, error) {
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	// Stream when the config asks for it on a TTY, or when --stream forces it (a
 	// piped consumer like the Raycast extension). --json/--learn are structured
@@ -436,19 +474,21 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 	stream := (flagStream || (streamPref && stdoutTTY)) && !flagJSON && !learn
 
 	req := engine.Request{
-		Text:      text,
-		Source:    source,
-		Target:    target,
-		Mode:      engine.ModeTranslate,
-		Stream:    stream,
-		Preset:    preset,
-		Extra:     instructions,
-		Pair:      pair,
-		PairHome:  pairHome,
-		PairAway:  pairAway,
-		Learn:     learn,
-		LearnMode: learnMode,
+		Text:           text,
+		Source:         source,
+		Target:         target,
+		Mode:           engine.ModeTranslate,
+		Stream:         stream,
+		Preset:         preset,
+		Extra:          instructions,
+		Pair:           pair,
+		PairHome:       pairHome,
+		PairAway:       pairAway,
+		Learn:          learn,
+		LearnMode:      learnMode,
+		PreserveFormat: preserveFormat,
 	}
+	debug.Logf("document: preserve_format=%v", preserveFormat)
 	ch, err := eng.Translate(ctx, req)
 	if err != nil {
 		return nil, err
@@ -462,29 +502,27 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 	// draining, so the final result must still be emitted below.
 	var onTok func(string)
 	streamed := false
+	lastTokenByte := byte(0)
 	if stream {
 		onTok = func(t string) {
 			if t != "" {
 				streamed = true
+				lastTokenByte = t[len(t)-1]
 			}
 			fmt.Print(t)
 		}
 	}
 	res, err := engine.Drain(ch, onTok)
 	if err != nil {
-		if streamed {
+		if streamed && (!preserveFormat || lastTokenByte != '\n') {
 			fmt.Println() // terminate any partial streamed line before the error surfaces
 		}
 		return nil, err
 	}
 
-	// Never downgrade silently: if the auto-chain fell back, say which engine
-	// failed and why, and how to switch.
-	for _, w := range res.Warnings {
-		fmt.Fprintf(os.Stderr, "translate: warning: %s\n", w)
-	}
-	if len(res.Warnings) > 0 && res.Learn == nil {
-		fmt.Fprintf(os.Stderr, "translate: used %q (switch with --engine, or check the model/provider)\n", res.Engine)
+	writeResultDiagnostics(os.Stderr, res)
+	if len(res.Warnings) > 0 && res.Engine != "" && res.Learn == nil {
+		fmt.Fprintf(os.Stderr, "translate: used %q\n", res.Engine)
 	}
 
 	switch {
@@ -497,7 +535,16 @@ func oneShot(ctx context.Context, eng engine.Engine, text, source, target string
 	case res.Learn != nil:
 		fmt.Print(renderLearnCLI(res))
 	case streamed:
-		fmt.Println() // newline after the streamed tokens
+		if !preserveFormat || lastTokenByte != '\n' {
+			fmt.Println()
+		}
+	case len(res.Suggestions) > 0 && res.Translation == "":
+		fmt.Print(renderDict(res))
+	case preserveFormat:
+		fmt.Print(res.Translation)
+		if res.Translation != "" && !strings.HasSuffix(res.Translation, "\n") {
+			fmt.Println()
+		}
 	default:
 		// Piped output, or a non-streaming engine answered a stream request with no
 		// tokens (dictionary single-word, google, …): emit the full result now.

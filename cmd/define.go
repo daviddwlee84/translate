@@ -28,7 +28,7 @@ func newDefineCmd() *cobra.Command {
 		Args: cobra.MinimumNArgs(1),
 		RunE: runDefine,
 	}
-	c.Flags().BoolVar(&flagDefinePlain, "plain", false, "force the offline dictionary (no LLM fallback)")
+	c.Flags().BoolVar(&flagDefinePlain, "plain", false, "use the dictionary without LLM fallback (configured API fallback still applies)")
 	c.Flags().BoolVar(&flagDefineSmart, "smart", false, "force smart-dict (LLM fallback on a miss)")
 	return c
 }
@@ -72,14 +72,11 @@ func runDefine(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	writeResultDiagnostics(os.Stderr, res2)
 	if flagJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(res2)
-	}
-	// Surface an LLM-fallback downgrade the same way the CLI translate path does.
-	for _, w := range res2.Warnings {
-		fmt.Fprintf(os.Stderr, "translate: warning: %s\n", w)
 	}
 	fmt.Print(renderDict(res2))
 	if flagSpeak && cfg.TTS.Enabled {
@@ -94,6 +91,9 @@ func renderDict(res *engine.TranslateResult) string {
 	if d == nil {
 		if len(res.Suggestions) > 0 {
 			return "no exact match — did you mean: " + strings.Join(res.Suggestions, ", ") + "\n"
+		}
+		if res.Translation == "" {
+			return ""
 		}
 		return res.Translation + "\n"
 	}

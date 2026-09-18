@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -58,35 +60,49 @@ func runDictUpdate(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		what = args[0]
 	}
+	if what != "cedict" && what != "ecdict" && what != "all" {
+		return fmt.Errorf("unknown target %q (use cedict|ecdict|all)", what)
+	}
+	if err := updateDictionaries(cmd.Context(), cfg, what, os.Stderr); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "done. Requested dictionary data is installed.")
+	return nil
+}
+
+// updateDictionaries is shared by explicit refreshes and the init wizard. Init
+// passes only missing targets; `dict update` deliberately refreshes its target.
+func updateDictionaries(ctx context.Context, cfg *config.Config, what string, out io.Writer) error {
 	dir := engine.DictDir(cfg.Dict.Dir)
-	ctx := cmd.Context()
-	prog := func(s string) { fmt.Fprintln(os.Stderr, "  "+s) }
+	prog := func(s string) { fmt.Fprintln(out, "  "+s) }
 
 	if what == "cedict" || what == "all" {
-		fmt.Fprintf(os.Stderr, "CC-CEDICT (Chinese→English):\n")
+		fmt.Fprintf(out, "CC-CEDICT (Chinese→English):\n")
 		if err := engine.DownloadCedict(ctx, cfg.Dict.CedictURL, engine.CedictPath(dir), prog); err != nil {
 			return fmt.Errorf("cedict: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "  -> %s\n", engine.CedictPath(dir))
+		fmt.Fprintf(out, "  -> %s\n", engine.CedictPath(dir))
 		// The plain file is re-parsed by every process (~1.7 s); the index makes
 		// lookups a point query. A build failure is not fatal — the file still works.
 		if err := engine.BuildCedictDB(ctx, engine.CedictPath(dir), engine.CedictDBPath(dir), prog); err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: index build failed (%v) — run `translate dict reindex` later\n", err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			fmt.Fprintf(out, "  warning: index build failed (%v) — run `translate dict reindex` later\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "  -> %s\n", engine.CedictDBPath(dir))
+			fmt.Fprintf(out, "  -> %s\n", engine.CedictDBPath(dir))
 		}
 	}
 	if what == "ecdict" || what == "all" {
-		fmt.Fprintf(os.Stderr, "ECDICT (English→Chinese, this takes a minute):\n")
+		fmt.Fprintf(out, "ECDICT (English→Chinese, this takes a minute):\n")
 		if err := engine.BuildEcdictDB(ctx, cfg.Dict.EcdictURL, engine.EcdictDBPath(dir), prog); err != nil {
 			return fmt.Errorf("ecdict: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "  -> %s\n", engine.EcdictDBPath(dir))
+		fmt.Fprintf(out, "  -> %s\n", engine.EcdictDBPath(dir))
 	}
 	if what != "cedict" && what != "ecdict" && what != "all" {
 		return fmt.Errorf("unknown target %q (use cedict|ecdict|all)", what)
 	}
-	fmt.Fprintln(os.Stderr, "done. Dictionary mode (^e) is now bilingual zh↔en.")
 	return nil
 }
 
