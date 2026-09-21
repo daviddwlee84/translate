@@ -33,8 +33,9 @@ then does everything else on one `ubuntu-latest` runner:
 2. It publishes the GitHub Release: six archives (each containing the binary,
    `LICENSE`, `README.md`, and generated `completions/`) plus `checksums.txt`.
 3. It pushes the Scoop manifest to `daviddwlee84/scoop-bucket`.
-4. `scripts/bump-formula.sh` renders `packaging/translate.rb.tmpl` from those
-   checksums and pushes it to `daviddwlee84/homebrew-tap`.
+4. `daviddwlee84/homebrew-tap` independently reads stable releases hourly or on
+   manual dispatch. It validates checksums, formulas, and installation before
+   committing. This repository never writes the tap.
 
 So the steps are:
 
@@ -42,16 +43,17 @@ So the steps are:
 2. `git push origin main`
 3. `git tag -a vX.Y.Z -m "<highlights>"` && `git push origin vX.Y.Z`
 4. Watch the run: `gh run watch`. Verify with `gh release view vX.Y.Z`.
-5. Install on this machine: **macOS** `brew upgrade daviddwlee84/tap/translate`;
-   **Windows** `scoop update translate`; **Linux** `just upgrade-go` in the
-   dotfiles repo (still `go install @latest` there). The `go_tools` pin in
-   `dot_ansible/roles/go_tools/defaults/main.yml` is only the *fresh-install
-   floor* — don't bump it for upgrades. Make sure no stale copy shadows the
-   installed one earlier on `PATH`.
+5. Upgrade with the installation owner: **macOS**
+   `brew upgrade daviddwlee84/tap/translate`; **Windows** `scoop update translate`.
+   Dotfiles-managed Linux releases use `just upgrade-personal`; a manual Go
+   installation can use `go install github.com/daviddwlee84/translate@latest`.
+   Do not overwrite package-managed binaries or leave a stale copy earlier on
+   `PATH`.
 
-**Never hand-edit `Formula/translate.rb` in the tap.** It is a generated artifact
-of `packaging/translate.rb.tmpl`; the next release overwrites it. Same for
-`bucket/translate.json` in the scoop bucket, which GoReleaser owns.
+**Never hand-edit `Formula/translate.rb` in the tap.** The tap owns its registry,
+renderer, and immutable-release receipts. Retry synchronization with
+`gh workflow run sync.yml --repo daviddwlee84/homebrew-tap -f tool=translate`.
+`bucket/translate.json` in the Scoop bucket remains owned by GoReleaser.
 
 ### One-time setup (do this before the first tag)
 
@@ -61,8 +63,7 @@ that one step is browser-only.
 
 1. Create a **fine-grained PAT** at
    <https://github.com/settings/personal-access-tokens/new>:
-   - *Repository access* → **Only select repositories** → `daviddwlee84/homebrew-tap`
-     **and** `daviddwlee84/scoop-bucket`
+   - *Repository access* → **Only select repositories** → `daviddwlee84/scoop-bucket`
    - *Permissions* → *Repository permissions* → **Contents: Read and write**
    - Set an expiry you will actually notice; the release job fails loudly when it
      lapses.
@@ -75,7 +76,8 @@ that one step is browser-only.
 3. Verify: `gh secret list --repo daviddwlee84/translate`.
 
 The workflow's default `GITHUB_TOKEN` cannot substitute — it is scoped to this
-repository and cannot push to the tap or the bucket.
+repository and cannot push to the Scoop bucket. Homebrew sync uses the tap
+repository’s own `GITHUB_TOKEN`; it needs no cross-repository secret.
 
 Before tagging, `goreleaser check` validates `.goreleaser.yaml` (CI runs it on
 every PR too). `goreleaser release --snapshot --clean` does a full local dry run

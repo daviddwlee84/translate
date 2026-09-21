@@ -437,3 +437,15 @@ Backward-looking knowledge — past traps and non-obvious debugging — lives in
 message and land on the root cause + workaround instead of re-debugging from
 scratch.
 <!-- project-knowledge-harness:readme-roadmap --> (end)
+
+## Homebrew publication
+
+The [Homebrew tap](https://github.com/daviddwlee84/homebrew-tap) is the sole
+formula writer. Its hourly/manual workflow reads stable GitHub release assets,
+checks their checksums, and installs/tests a formula before committing it.
+This repository continues publishing GitHub releases and Scoop manifests.
+To retry formula synchronization without a new application release:
+
+```sh
+gh workflow run sync.yml --repo daviddwlee84/homebrew-tap -f tool=translate
+```

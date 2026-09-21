@@ -8,9 +8,8 @@
 # What this publishes:
 #   - GitHub Release: 6 archives + checksums.txt
 #   - Scoop manifest pushed to daviddwlee84/scoop-bucket
-# The Homebrew formula is NOT published here: GoReleaser deprecated `brews:`
-# (formulae) in v2.10 in favour of `homebrew_casks:`, and a cask would be
-# quarantined by Gatekeeper. scripts/bump-formula.sh handles the tap instead.
+# Homebrew formulas are synchronized by daviddwlee84/homebrew-tap using its
+# own repository token. This configuration only writes the Scoop bucket.
 version: 2
 
 project_name: translate
