@@ -13,3 +13,6 @@ raycast/extension/.raycast/
 raycast/extension/raycast-env.d.ts
 # `just raycast-verify` compiles dev-check.ts here before running it under node
 raycast/extension/.build/
+
+# Python packaging verification caches
+__pycache__/

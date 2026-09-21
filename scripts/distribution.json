@@ -1,0 +1,16 @@
+{
+  "main": ".",
+  "version_symbol": "github.com/daviddwlee84/translate/cmd.version",
+  "required": [
+    "main.go",
+    "internal/server/openapi.json",
+    "internal/server/swagger/swagger-ui-bundle.js",
+    "internal/server/swagger/swagger-ui.css"
+  ],
+  "smoke": [
+    [
+      "serve",
+      "--help"
+    ]
+  ]
+}

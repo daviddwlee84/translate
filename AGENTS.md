@@ -31,7 +31,8 @@ then does everything else on one `ubuntu-latest` runner:
    The binary is pure Go, so `CGO_ENABLED=0` covers them all from Linux — no
    docker images, no macOS/Windows runners, no self-hosted hardware.
 2. It publishes the GitHub Release: six archives (each containing the binary,
-   `LICENSE`, `README.md`, and generated `completions/`) plus `checksums.txt`.
+   `LICENSE`, `README.md`, and generated `completions/`), a rootless
+   `translate_<version>_source.tar.gz`, and `checksums.txt`.
 3. It pushes the Scoop manifest to `daviddwlee84/scoop-bucket`.
 4. `daviddwlee84/homebrew-tap` independently reads stable releases hourly or on
    manual dispatch. It validates checksums, formulas, and installation before
@@ -183,3 +184,12 @@ invariant.
 `pitfalls/` is excluded from N/A (no packaging — these files stay in the repo) (see N/A) and
 **not** auto-redacted; review for secrets before committing.
 <!-- project-knowledge-harness:agent-guidance --> (end)
+
+## Distribution verification
+
+From v0.6.2, source archives exclude only `.specstory` and the four agent plan
+roots. Existing evidence-only roots contain commented nested `go.mod` markers
+so the parent Go module ZIP also excludes them. Preserve OpenAPI/Swagger
+embedded assets and never create marker modules over build inputs.
+Run `python3 -m unittest discover -s scripts -p test_distribution.py`, then
+`python3 scripts/check-distribution.py --version v0.6.2` after committing changes.

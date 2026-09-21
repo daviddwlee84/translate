@@ -6,7 +6,7 @@
 # cross-compiling, so they run on Apple Silicon without notarization.
 #
 # What this publishes:
-#   - GitHub Release: 6 archives + checksums.txt
+#   - GitHub Release: 6 binary archives + a compact source archive + checksums.txt
 #   - Scoop manifest pushed to daviddwlee84/scoop-bucket
 # Homebrew formulas are synchronized by daviddwlee84/homebrew-tap using its
 # own repository token. This configuration only writes the Scoop bucket.
@@ -48,6 +48,12 @@ archives:
       - LICENSE
       - README.md
       - completions/*
+
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+  format: tar.gz
+  prefix_template: ""
 
 checksum:
   name_template: checksums.txt

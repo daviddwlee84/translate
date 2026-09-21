@@ -10,11 +10,18 @@ on:
   push:
     tags: ['v*.*.*']
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
   release:
+    needs: validate
     name: Build and publish
     runs-on: ubuntu-latest
     steps:
@@ -27,6 +34,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Validate stable tag on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'scripts')
+          import release
+          release.verify_tag(os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_REF_NAME'])
+          PY
 
       # AGENTS.md: "There is no CHANGELOG; the annotated tag message is the
       # release note." Honour that, falling back to GoReleaser's own commit
@@ -41,8 +59,8 @@ jobs:
 
       - uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
-          args: release --clean ${{ env.RELEASE_NOTES_ARG }}
+          version: v2.18.2
+          args: release --clean --skip=publish,announce ${{ env.RELEASE_NOTES_ARG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Cross-repo push (scoop bucket). The default GITHUB_TOKEN is scoped
@@ -51,3 +69,16 @@ jobs:
 
       # daviddwlee84/homebrew-tap owns hourly/manual formula synchronization.
       # This release publishes assets and Scoop only; no cross-repo tap write.
+
+      - name: Verify actual source and native binary payloads
+        run: |
+          python3 scripts/check-distribution.py --version "$GITHUB_REF_NAME" --source-archive "dist/translate_${GITHUB_REF_NAME#v}_source.tar.gz"
+          python3 scripts/release.py check --project translate --tag "$GITHUB_REF_NAME" --smoke
+      - name: Publish a complete verified draft without replacing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py publish --project translate --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$RUNNER_TEMP/release-notes.md"
+      - name: Publish generated Scoop manifest
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: python3 scripts/publish-scoop.py --tag "$GITHUB_REF_NAME"

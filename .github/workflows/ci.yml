@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,7 +44,24 @@ jobs:
           cache: true
       - uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
+          version: v2.18.2
           args: check
         env:
           TAP_GITHUB_TOKEN: unused-by-check
+
+  distribution:
+    name: Source and Go module packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: python3 scripts/check-distribution.py --version distribution-check

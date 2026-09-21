@@ -17,6 +17,14 @@ go install github.com/daviddwlee84/translate@latest   # any OS with a Go toolcha
 Prebuilt binaries and checksums for macOS/Linux/Windows × amd64/arm64 are also
 attached to every [GitHub release](https://github.com/daviddwlee84/translate/releases).
 
+From v0.6.2, each release also includes a rootless
+`translate_<version>_source.tar.gz` covered by `checksums.txt`. Source archives
+exclude `.specstory` and the exact Claude, Codex, Cursor and OpenCode plan roots.
+Nested `go.mod` markers in existing evidence-only directories separately keep
+that evidence out of Go module ZIPs; Go does not honor `export-ignore`. OpenAPI
+and Swagger resources remain embedded. Git tracking and clone history remain
+unchanged. Both source and module packages are extracted and built in CI.
+
 ### Shell completion
 
 Homebrew and Scoop install completions for you. For a manual or `go install`
