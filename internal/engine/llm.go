@@ -128,9 +128,10 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Stream      bool          `json:"stream"`
+	Temperature *float64      `json:"temperature,omitempty"`
 }
 
 type chatResponse struct {
@@ -771,15 +772,25 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, cancel con
 			cancel()
 		}
 	}()
-	system, user := promptFor(req)
 	stream := req.Stream && !req.Learn && !req.Bilingual // structured JSON output: parse at done
-	body := chatRequest{
-		Model: model,
-		Messages: []chatMessage{
+	body := chatRequest{Model: model, Stream: stream}
+	translateGemma := isTranslateGemma(model)
+	var warnings []string
+	if translateGemma {
+		prompt, promptWarnings, err := buildTranslateGemmaPrompt(req)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", e.cfg.Name, err)
+		}
+		warnings = promptWarnings
+		body.Messages = []chatMessage{{Role: "user", Content: prompt}}
+		deterministic := 0.0 // repeat translations should not vary
+		body.Temperature = &deterministic
+	} else {
+		system, user := promptFor(req)
+		body.Messages = []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
-		},
-		Stream: stream,
+		}
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -838,6 +849,12 @@ func (e *LLMEngine) translateOpenAI(ctx context.Context, req Request, cancel con
 			complete = cr.Choices[0].FinishReason != "length" // "length" => hit the cap
 		}
 		res := e.finalizeResult(full.String(), model, req)
+		res.Warnings = append(res.Warnings, warnings...)
+		if translateGemma {
+			if warning := translateGemmaOutputWarning(req.Target, res.Translation); warning != "" {
+				res.Warnings = append(res.Warnings, warning)
+			}
+		}
 		if !complete {
 			markTruncated(res)
 		}

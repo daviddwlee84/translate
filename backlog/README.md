@@ -58,3 +58,4 @@ Add new entries here as you create them. Keep alphabetical.
 | `raycast-extension` | P? — local dev shipped, publish deferred (2026-07) | P? "Publish the Raycast extension to the store…" |
 | `release-binaries` | deferred (2026-07) | P? "Ship prebuilt release binaries…" |
 | `suggestion-ranking` | P? — deferred (2026-07) | P? "Frequency-aware did-you-mean ranking…" |
+| `translategemma` | P? — base support shipped, follow-ups deferred (2026-11) | P? "TranslateGemma: Simplified to Traditional post-processing", P3 "TranslateGemma: …" |

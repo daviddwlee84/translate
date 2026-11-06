@@ -150,7 +150,8 @@ than restarting):
   families as `copilot-model --auto`. Claude models route through `/v1/messages`,
   Responses-only GPT models through `/v1/responses`, and chat-capable alternatives
   through `/chat/completions`.
-- **Ollama** — `http://localhost:11434/v1` (offline; `llama3.2:3b`).
+- **Ollama** — `http://localhost:11434/v1` (offline; `llama3.2:3b`). For Google's
+  translation-only model, see [TranslateGemma](docs/translategemma.md).
 - **Google** — free, keyless; also reports the detected source language.
 - **openrouter** — configured but off the default chain; needs `OPENROUTER_API_KEY`.
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/daviddwlee84/translate/internal/config"
 	"github.com/daviddwlee84/translate/internal/engine"
+	"github.com/daviddwlee84/translate/internal/hostinfo"
 	"github.com/daviddwlee84/translate/internal/lang"
 )
 
@@ -149,7 +150,32 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	if openrouterKey {
 		fmt.Fprintln(os.Stderr, "note: OPENROUTER_API_KEY detected — the openrouter provider is available.")
 	}
+	if engineChoice == "ollama" || ollamaUp {
+		if hint := translateGemmaHint(hostinfo.Detect(cmd.Context())); hint != "" {
+			fmt.Fprintln(os.Stderr, hint)
+		}
+	}
 	return setupMissingDictionaries(cmd.Context(), cfg, os.Stderr, promptDictInstall)
+}
+
+// translateGemmaHint suggests a local translation model size for this host. It
+// never downloads anything or changes the config.
+func translateGemmaHint(host hostinfo.Host) string {
+	suggestion, ok := hostinfo.RecommendTranslateGemma(host)
+	if !ok {
+		return ""
+	}
+	var memory string
+	switch {
+	case host.VRAM > 0:
+		memory = fmt.Sprintf("%d GB GPU memory", host.VRAM/hostinfo.GB)
+	case host.Unified:
+		memory = fmt.Sprintf("%d GB unified memory", host.RAM/hostinfo.GB)
+	default:
+		memory = fmt.Sprintf("%d GB RAM, no GPU detected", host.RAM/hostinfo.GB)
+	}
+	return fmt.Sprintf("note: for offline translation on this host (%s), consider %s: `ollama pull %s` downloads %.1f GB. See docs/translategemma.md.",
+		memory, suggestion.Tag, suggestion.Tag, suggestion.DownloadGB)
 }
 
 // targetLangOptions builds the language dropdown options (name + code).
